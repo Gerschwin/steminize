@@ -1,0 +1,23 @@
+[package]
+name = "stemdeck"
+version = "1.0.0"
+description = "Stem separation that runs on your own machine"
+edition = "2021"
+license = "MIT"
+
+[lib]
+name = "stemdeck_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+
+[profile.release]
+lto = true
+opt-level = "s"
+strip = true

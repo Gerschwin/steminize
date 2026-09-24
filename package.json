@@ -1,0 +1,30 @@
+{
+  "name": "stemdeck",
+  "version": "1.0.0",
+  "description": "Stem separation (Demucs) that runs entirely on your device",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "node --experimental-transform-types --no-warnings tests/run.ts",
+    "tauri": "tauri"
+  },
+  "author": "Neil",
+  "license": "MIT",
+  "dependencies": {
+    "@breezystack/lamejs": "^1.2.7",
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "^2.7.3",
+    "@tauri-apps/plugin-fs": "^2.5.2",
+    "fflate": "^0.8.3",
+    "onnxruntime-web": "^1.30.0",
+    "soundtouchjs": "^0.3.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.5",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0"
+  },
+  "private": true,
+  "type": "module"
+}

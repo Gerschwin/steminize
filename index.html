@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Stemdeck</title>
+    <meta name="description" content="Split songs into vocals, drums, bass and more. Runs entirely on your device." />
+    <meta name="theme-color" content="#0f1115" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./icon-192.png" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="brand">
+        <img src="./icon.svg" alt="" width="28" height="28" />
+        <span>Stemdeck</span>
+      </div>
+      <div class="chips">
+        <span class="chip" id="backendChip" title="Where separation runs">Checking device…</span>
+        <span class="chip ok" id="privacyChip" title="Audio never leaves this device">On-device</span>
+      </div>
+      <div class="top-actions">
+        <button class="btn ghost" id="installBtn" hidden>Install app</button>
+        <button class="btn ghost" id="modelsBtn">Models</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="side">
+        <label class="drop" id="drop">
+          <input type="file" id="fileInput" accept="audio/*,.mp3,.wav,.flac,.ogg,.m4a,.aac,.opus,.aiff,.aif" multiple hidden />
+          <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M12 3v12m0-12 4 4m-4-4-4 4M4 15v3a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <strong>Drop songs here</strong>
+          <span>or click to choose files · MP3, WAV, FLAC, M4A, OGG</span>
+        </label>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>Queue</h2>
+            <button class="btn tiny ghost" id="clearDone" hidden>Clear finished</button>
+          </div>
+          <ul class="queue" id="queue"></ul>
+          <p class="muted empty" id="queueEmpty">Nothing queued yet.</p>
+        </section>
+
+        <section class="card settings" id="settings">
+          <div class="card-head">
+            <h2>Separation</h2>
+            <button class="btn tiny ghost" id="resetSettings" title="Restore defaults">Reset</button>
+          </div>
+
+          <div class="field">
+            <span class="label">Model</span>
+            <div class="model-cards" id="modelCards"></div>
+          </div>
+
+          <div class="field">
+            <span class="label">Stems</span>
+            <select id="twoStems"></select>
+            <div class="stem-toggles" id="stemToggles" title="Stems to keep"></div>
+          </div>
+
+          <details class="more">
+            <summary>Quality &amp; device</summary>
+            <div class="field">
+              <span class="label">Shifts <output id="shiftsOut"></output></span>
+              <input type="range" id="shifts" min="1" max="10" step="1" />
+              <small class="muted">Averages several slightly offset passes. Each extra shift adds a full pass: 2 = twice as slow, a small gain.</small>
+            </div>
+            <div class="field">
+              <span class="label">Overlap <output id="overlapOut"></output></span>
+              <input type="range" id="overlap" min="0.1" max="0.5" step="0.05" />
+              <small class="muted">Blend between 7.8 s segments. 25% is Demucs' default; 10% is a little faster.</small>
+            </div>
+            <div class="field row">
+              <label>Download size
+                <select id="precision">
+                  <option value="compact">Compact (fp16)</option>
+                  <option value="full">Full (fp32)</option>
+                </select>
+              </label>
+              <label>Run on
+                <select id="device">
+                  <option value="auto">Auto</option>
+                  <option value="gpu">GPU (WebGPU)</option>
+                  <option value="cpu">CPU</option>
+                </select>
+              </label>
+            </div>
+          </details>
+
+          <details class="more">
+            <summary>Output format</summary>
+            <div class="field">
+              <div class="seg" id="format">
+                <button data-v="wav">WAV</button><button data-v="flac">FLAC</button><button data-v="mp3">MP3</button>
+              </div>
+            </div>
+            <div class="field row">
+              <label id="wavDepthWrap">Bit depth
+                <select id="wavDepth"><option value="16">16-bit</option><option value="24">24-bit</option><option value="32f">32-bit float</option></select>
+              </label>
+              <label id="flacDepthWrap">Bit depth
+                <select id="flacDepth"><option value="16">16-bit</option><option value="24">24-bit</option></select>
+              </label>
+              <label id="mp3Wrap">Bitrate
+                <select id="mp3Bitrate"><option>128</option><option>192</option><option>256</option><option>320</option></select>
+              </label>
+              <label>Clipping
+                <select id="clip">
+                  <option value="rescale">Rescale</option>
+                  <option value="clamp">Clamp</option>
+                  <option value="none">None</option>
+                </select>
+              </label>
+            </div>
+          </details>
+          <p class="estimate" id="estimate"></p>
+        </section>
+      </aside>
+
+      <section class="stage">
+        <div class="welcome" id="welcome">
+          <h1>Split any song into stems</h1>
+          <p class="lead">Vocals, drums, bass and the rest, using Meta's Demucs model. Everything runs on this device; your audio is never uploaded.</p>
+          <ol class="steps">
+            <li><b>Add songs</b> on the left. You can queue several.</li>
+            <li><b>Pick a model.</b> The first run downloads it once (136–664 MB), then it works offline.</li>
+            <li><b>Play, loop and practise.</b> Mute or solo stems, slow down, change key, then export.</li>
+          </ol>
+          <p class="muted small">Speed depends heavily on your hardware: a recent GPU is much faster than CPU only. Try one song first to see how long yours takes.</p>
+        </div>
+
+        <div class="deck" id="deck" hidden>
+          <div class="deck-head">
+            <div>
+              <h1 id="trackTitle"></h1>
+              <p class="muted" id="trackMeta"></p>
+            </div>
+            <div class="deck-actions">
+              <button class="btn ghost" id="rerunBtn" title="Separate again with the current settings">Re-run</button>
+              <button class="btn ghost" id="exportMixBtn" title="Save what you hear: mutes, levels, tempo and pitch">Export mix</button>
+              <button class="btn primary" id="saveAllBtn">Save all stems</button>
+            </div>
+          </div>
+
+          <div class="transport">
+            <button class="play" id="playBtn" aria-label="Play">
+              <svg viewBox="0 0 24 24" class="i-play"><path d="M8 5v14l11-7z"/></svg>
+              <svg viewBox="0 0 24 24" class="i-pause"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
+            </button>
+            <div class="time"><span id="timeNow">0:00</span><span class="muted"> / <span id="timeTotal">0:00</span></span></div>
+            <div class="overview" id="overviewWrap"><canvas id="overview"></canvas></div>
+          </div>
+
+          <div class="tools">
+            <div class="tool loop">
+              <button class="btn toggle" id="loopBtn" aria-pressed="false" title="Loop (L)">Loop</button>
+              <button class="btn tiny ghost" id="setA" title="Loop start at playhead ([)">Set A</button>
+              <button class="btn tiny ghost" id="setB" title="Loop end at playhead (])">Set B</button>
+              <span class="muted small" id="loopInfo">Drag across the waveform to pick a section</span>
+            </div>
+            <div class="tool">
+              <label>Tempo <output id="tempoOut">100%</output></label>
+              <input type="range" id="tempo" min="0.5" max="1.5" step="0.01" value="1" />
+              <button class="btn tiny ghost" data-reset="tempo">Reset</button>
+            </div>
+            <div class="tool">
+              <label>Pitch <output id="pitchOut">0 st</output></label>
+              <input type="range" id="pitch" min="-12" max="12" step="1" value="0" />
+              <button class="btn tiny ghost" data-reset="pitch">Reset</button>
+            </div>
+            <div class="tool">
+              <label>Volume</label>
+              <input type="range" id="volume" min="0" max="1" step="0.01" value="0.9" />
+            </div>
+          </div>
+
+          <div class="lanes" id="lanes"></div>
+          <p class="muted small shortcuts">Space play/pause · ← → skip 5 s · L loop · [ ] set loop points · 1–6 mute stems</p>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="modelsDlg">
+      <form method="dialog" class="dlg-head">
+        <h2>Models</h2>
+        <button class="btn tiny ghost" aria-label="Close">Close</button>
+      </form>
+      <p class="muted small">Models are stored in this browser/app and reused offline. If downloads are blocked on your network, fetch the files from Hugging Face yourself and import them here (the file names must match).</p>
+      <div id="modelList"></div>
+      <div class="dlg-foot">
+        <span class="muted small" id="storageInfo"></span>
+        <label class="btn ghost">Import model file…<input type="file" id="importModel" accept=".onnx" multiple hidden /></label>
+      </div>
+    </dialog>
+
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
