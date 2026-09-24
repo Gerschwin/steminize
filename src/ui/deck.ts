@@ -101,6 +101,25 @@ export class Deck {
     for (const b of document.querySelectorAll<HTMLElement>('[data-reset]'))
       b.onclick = () => (b.dataset.reset === 'tempo' ? this.setTempoPitch(1, this.pitch) : this.setTempoPitch(this.tempo, 0));
     $<HTMLInputElement>('volume').oninput = (e) => this.player.setVolume(Number((e.target as HTMLInputElement).value));
+    // Pan sliders are hidden unless switched on (remembered).
+    const panBtn = $('panToggle');
+    const showPan = (on: boolean) => {
+      pressed(panBtn, on);
+      $('lanes').classList.toggle('show-pan', on);
+      try {
+        localStorage.setItem('stemdeck.showPan', on ? '1' : '');
+      } catch {
+        /* ignore */
+      }
+    };
+    let panOn = false;
+    try {
+      panOn = localStorage.getItem('stemdeck.showPan') === '1';
+    } catch {
+      /* ignore */
+    }
+    showPan(panOn);
+    panBtn.onclick = () => showPan(panBtn.getAttribute('aria-pressed') !== 'true');
     this.initOverview();
     this.initKeys();
     new ResizeObserver(() => this.invalidateLayers()).observe($('deck'));
@@ -144,7 +163,7 @@ export class Deck {
       const label = s.name.startsWith('no_') ? `No ${s.name.slice(3)}` : s.name;
       const ctl = h('div', { class: 'lane-ctl', style: `--c:${colour}` }, h('span', { class: 'name' }, label), mute, solo, dl,
         h('label', { class: 'mini' }, h('span', {}, 'Vol'), vol),
-        h('label', { class: 'mini' }, h('span', {}, 'Pan'), pan, panOut));
+        h('label', { class: 'mini pan' }, h('span', {}, 'Pan'), pan, panOut));
       const wave = h('div', { class: 'wave' }, canvas);
       const el = h('div', { class: 'lane' }, ctl, wave);
       lanes.append(el);
@@ -197,6 +216,8 @@ export class Deck {
     const g = this.gains();
     this.lanes.forEach((x, i) => x.el.classList.toggle('off', g[i] === 0));
     this.player.setGains(g, this.pans());
+    // If pan is hidden but in use, say so on the button so it isn't forgotten.
+    $('panToggle').textContent = this.lanes.some((x) => x.pan) ? 'Pan (active)' : 'Pan';
   }
 
   private setTempoPitch(tempo: number, pitch: number) {

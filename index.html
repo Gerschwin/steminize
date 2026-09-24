@@ -39,7 +39,14 @@
         <section class="card">
           <div class="card-head">
             <h2>Queue</h2>
-            <button class="btn tiny ghost" id="clearDone" hidden>Clear finished</button>
+            <div class="q-actions">
+              <label class="switch" title="Start separating as soon as songs are added"><input type="checkbox" id="autoStart" /> Auto-start</label>
+              <button class="btn tiny ghost" id="clearDone" hidden>Clear finished</button>
+            </div>
+          </div>
+          <div class="q-bar">
+            <button class="btn tiny primary" id="queueBtn" hidden></button>
+            <button class="btn tiny ghost" id="applyWaiting" hidden title="Songs keep the settings they were added with">Use current settings for waiting songs</button>
           </div>
           <ul class="queue" id="queue"></ul>
           <p class="muted empty" id="queueEmpty">Nothing queued yet.</p>
@@ -178,6 +185,9 @@
             </div>
           </div>
 
+          <div class="lanes-head">
+            <button class="btn tiny ghost toggle" id="panToggle" aria-pressed="false" title="Show left–right pan sliders">Pan</button>
+          </div>
           <div class="lanes" id="lanes"></div>
           <p class="muted small shortcuts">Space play/pause · ← → skip 5 s · L loop · [ ] set loop points · 1–6 mute stems</p>
         </div>

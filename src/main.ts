@@ -48,23 +48,61 @@ interface Track {
   text: string;
   frac: number; // -1 = indeterminate
   started?: number; // performance.now() when separation began
+  settings: Settings; // locked when the song is added
   result?: Result;
   el: HTMLLIElement;
 }
 const tracks: Track[] = [];
 let busy = false;
+/** Whether the queue may start the next song. */
+let running = false;
+/** Stop after the song that is currently processing. */
+let pauseAfter = false;
+
+const pref = (k: string, d: string) => {
+  try {
+    return localStorage.getItem(k) ?? d;
+  } catch {
+    return d;
+  }
+};
+const autoStart = $<HTMLInputElement>('autoStart');
+autoStart.checked = pref('stemdeck.autoStart', '1') === '1';
+autoStart.onchange = () => {
+  try {
+    localStorage.setItem('stemdeck.autoStart', autoStart.checked ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+  if (autoStart.checked) {
+    running = true;
+    void pump();
+  }
+  refreshQueue();
+};
+
+/** Short description of the settings a song will be separated with. */
+function summary(s: Settings) {
+  const stems = s.twoStems ? `${s.twoStems}/rest` : s.skipStems.length ? `${MODELS[s.model].stems.filter((x) => !s.skipStems.includes(x)).join('+')}` : 'all stems';
+  const short = { htdemucs: 'HT Demucs', htdemucs_ft: 'Fine-tuned', htdemucs_6s: '6-stem' }[s.model];
+  return [short, stems, s.shifts > 1 ? `${s.shifts} shifts` : '', s.precision === 'full' ? 'fp32' : '']
+    .filter(Boolean)
+    .join(' · ');
+}
+const sameSettings = (a: Settings, b: Settings) => JSON.stringify(a) === JSON.stringify(b);
 
 function addFiles(files: Iterable<File>) {
   let added = 0;
   for (const file of files) {
     if (!/^audio\/|^video\//.test(file.type) && !/\.(mp3|wav|flac|ogg|oga|m4a|aac|opus|aiff?|webm|mp4)$/i.test(file.name)) continue;
-    const t: Track = { id: crypto.randomUUID(), file, status: 'queued', text: 'Waiting…', frac: 0, el: h('li') };
+    const t: Track = { id: crypto.randomUUID(), file, status: 'queued', text: 'Waiting', frac: 0, settings: structuredClone(settings.s), el: h('li') };
     tracks.push(t);
     $('queue').append(t.el);
     renderTrack(t);
     added++;
   }
   if (!added) toast('No audio files found in that selection.', true);
+  if (added && autoStart.checked) running = true;
   refreshQueue();
   void pump();
 }
@@ -79,7 +117,13 @@ function renderTrack(t: Track) {
     removeTrack(t);
   };
   const bar = h('div', { class: `bar${running && t.frac < 0 ? ' indet' : ''}` }, h('i', { style: `width:${Math.max(0, t.frac) * 100}%` }));
-  t.el.replaceChildren(h('div', { class: 't-name', title: t.file.name }, t.file.name), x, h('div', { class: 't-sub' }, subText(t)), running || t.status === 'queued' ? bar : '');
+  t.el.replaceChildren(
+    h('div', { class: 't-name', title: t.file.name }, t.file.name),
+    x,
+    h('div', { class: 't-sub' }, subText(t)),
+    t.status === 'done' ? '' : h('div', { class: 't-set' }, summary(t.settings)),
+    running || t.status === 'queued' ? bar : '',
+  );
   t.el.onclick = () => t.result && openTrack(t);
 }
 
@@ -91,6 +135,18 @@ function subText(t: Track) {
 
 function refreshQueue() {
   $('queueEmpty').hidden = tracks.length > 0;
+  const waiting = tracks.filter((t) => t.status === 'queued');
+  const btn = $<HTMLButtonElement>('queueBtn');
+  if (busy) {
+    btn.textContent = pauseAfter ? 'Will stop after this song (undo)' : 'Pause after this song';
+    btn.classList.toggle('primary', false);
+    btn.hidden = !waiting.length && !pauseAfter;
+  } else {
+    btn.hidden = !waiting.length;
+    btn.textContent = `Start${waiting.length > 1 ? ` (${waiting.length} songs)` : ''}`;
+    btn.classList.toggle('primary', true);
+  }
+  $('applyWaiting').hidden = !waiting.some((t) => !sameSettings(t.settings, settings.s));
   $('clearDone').hidden = !tracks.some((t) => ['done', 'error', 'cancelled'].includes(t.status));
   tracks.forEach(renderTrack);
 }
@@ -115,6 +171,21 @@ function removeTrack(t: Track) {
   refreshQueue();
 }
 
+$('queueBtn').onclick = () => {
+  if (busy) pauseAfter = !pauseAfter;
+  else {
+    running = true;
+    void pump();
+  }
+  refreshQueue();
+};
+$('applyWaiting').onclick = () => {
+  for (const t of tracks) if (t.status === 'queued') t.settings = structuredClone(settings.s);
+  refreshQueue();
+  toast('Waiting songs will use the current settings');
+};
+settings.onChange = () => refreshQueue();
+
 $('clearDone').onclick = () => {
   for (const t of [...tracks]) if (['done', 'error', 'cancelled'].includes(t.status) && t.result !== deck.current) removeTrack(t);
 };
@@ -123,14 +194,24 @@ deck.onRerun = () => {
   const t = tracks.find((x) => x.result === deck.current);
   if (!t) return;
   addFiles([t.file]);
-  toast('Queued again with the current settings');
+  toast(autoStart.checked ? 'Queued again with the current settings' : 'Queued with the current settings. Press Start when ready.');
 };
 
 async function pump() {
-  if (busy) return;
+  if (busy || !running) return;
+  if (pauseAfter) {
+    pauseAfter = false;
+    running = false;
+    refreshQueue();
+    return;
+  }
   const t = tracks.find((x) => x.status === 'queued');
-  if (!t) return;
+  if (!t) {
+    running = autoStart.checked;
+    return;
+  }
   busy = true;
+  refreshQueue();
   try {
     await processTrack(t);
   } finally {
@@ -151,7 +232,7 @@ async function decode(file: File): Promise<Stereo> {
 }
 
 async function processTrack(t: Track) {
-  const s: Settings = structuredClone(settings.s);
+  const s: Settings = t.settings;
   const set = (status: Status, text: string, frac = t.frac) => {
     if (t.status === 'cancelled') return;
     Object.assign(t, { status, text, frac });
