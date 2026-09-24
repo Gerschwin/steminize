@@ -3,6 +3,7 @@
 
 import * as ort from 'onnxruntime-web/webgpu';
 import { MODELS, neededFiles, type ModelFile, type ModelId, type Precision } from '../models.ts';
+import { fixFloat64 } from './fixfloat64.ts';
 import { CancelledError, SEGMENT, pickStems, separate, type Member, type Stereo } from './separate.ts';
 import type { Device } from '../settings.ts';
 
@@ -79,13 +80,15 @@ async function getSession(f: ModelFile, backend: 'webgpu' | 'wasm'): Promise<{ s
     sessions.delete(k);
     await old.release();
   }
-  const bytes = await requestModel(f.key);
-  if (!bytes) throw new Error(`Model ${f.key} is not downloaded`);
+  const raw = await requestModel(f.key);
+  if (!raw) throw new Error(`Model ${f.key} is not downloaded`);
+  // Some exports use float64 maths the browser engine lacks; convert to float32.
+  const bytes = fixFloat64(new Uint8Array(raw)).bytes;
   let s: ort.InferenceSession;
   let used = backend;
   let note: string | undefined;
   try {
-    s = await ort.InferenceSession.create(new Uint8Array(bytes), {
+    s = await ort.InferenceSession.create(bytes, {
       executionProviders: [backend],
       graphOptimizationLevel: 'all',
     });
@@ -93,7 +96,7 @@ async function getSession(f: ModelFile, backend: 'webgpu' | 'wasm'): Promise<{ s
     if (backend !== 'webgpu') throw e;
     note = `GPU failed (${(e as Error).message}); using CPU`;
     used = 'wasm';
-    s = await ort.InferenceSession.create(new Uint8Array(bytes), { executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
+    s = await ort.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
   }
   const key = `${used}`;
   if (key !== lastBackend || note) {

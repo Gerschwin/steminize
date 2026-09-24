@@ -96,19 +96,11 @@ src-tauri/             desktop wrapper (native save dialogs)
 
 The app loads community ONNX exports of the original weights (links in `src/models.ts`). If your network blocks Hugging Face, download the `.onnx` files yourself and use **Models → Import model file…**. The file names must match.
 
-## If a model fails with "Could not find an implementation for ConstantOfShape"
+## Browser-compatibility fix for models
 
-Some of the community ONNX exports contain float64 maths, which the browser version of ONNX Runtime can't run. Convert the files once on your computer:
+Some community ONNX exports use float64 maths in their iSTFT, which the browser version of ONNX Runtime can't run ("Could not find an implementation for ConstantOfShape(9)"). **The app fixes this automatically** when it loads a model (`src/engine/fixfloat64.ts` rewrites those parts to float32; this takes well under a second).
 
-```bash
-pip install onnx numpy onnxruntime
-# download the .onnx file(s) from the Hugging Face links in src/models.ts, then:
-python tools/fix_models.py htdemucs_fp16weights.onnx -o browser-models
-```
-
-The script converts float64 to float32. It then runs the original and converted models side by side and prints `parity: ... OK` if they give the same output. Import the converted files through **Models → Import model file…**. The file name stays the same, so the app picks it up.
-
-To share the app with others, upload the converted files to your own (free) Hugging Face model repo and point the URLs in `src/models.ts` at it, so users download browser-ready files automatically.
+`tools/fix_models.py` does the same conversion offline and checks the result against the original with onnxruntime. Use it if you want to host pre-converted files on your own Hugging Face repo.
 
 ## Honest limitations
 
