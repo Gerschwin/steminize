@@ -22,6 +22,7 @@ export interface Result {
 interface Lane {
   name: string;
   vol: number;
+  pan: number;
   mute: boolean;
   solo: boolean;
   el: HTMLElement;
@@ -138,15 +139,26 @@ export class Deck {
       const dl = h('button', { class: 'dl', type: 'button', title: `Save ${s.name}` });
       dl.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>';
       const vol = h('input', { type: 'range', min: '0', max: '1.5', step: '0.01', value: '1', title: 'Level' });
+      const pan = h('input', { type: 'range', min: '-1', max: '1', step: '0.05', value: '0', title: 'Pan (double-click to centre)' });
+      const panOut = h('output', {}, 'C');
       const label = s.name.startsWith('no_') ? `No ${s.name.slice(3)}` : s.name;
-      const ctl = h('div', { class: 'lane-ctl', style: `--c:${colour}` }, h('span', { class: 'name' }, label), mute, solo, dl, vol);
+      const ctl = h('div', { class: 'lane-ctl', style: `--c:${colour}` }, h('span', { class: 'name' }, label), mute, solo, dl,
+        h('label', { class: 'mini' }, h('span', {}, 'Vol'), vol),
+        h('label', { class: 'mini' }, h('span', {}, 'Pan'), pan, panOut));
       const wave = h('div', { class: 'wave' }, canvas);
       const el = h('div', { class: 'lane' }, ctl, wave);
       lanes.append(el);
-      const lane: Lane = { name: s.name, vol: 1, mute: false, solo: false, el, canvas, peaks: peaksOf(s.data) };
+      const lane: Lane = { name: s.name, vol: 1, pan: 0, mute: false, solo: false, el, canvas, peaks: peaksOf(s.data) };
       mute.onclick = () => this.setLane(lane, { mute: !lane.mute });
       solo.onclick = () => this.setLane(lane, { solo: !lane.solo });
       vol.oninput = () => this.setLane(lane, { vol: Number(vol.value) });
+      const setPan = (v: number) => {
+        pan.value = String(v);
+        panOut.textContent = v === 0 ? 'C' : `${v < 0 ? 'L' : 'R'}${Math.round(Math.abs(v) * 100)}`;
+        this.setLane(lane, { pan: v });
+      };
+      pan.oninput = () => setPan(Number(pan.value));
+      pan.ondblclick = () => setPan(0);
       dl.onclick = () => this.saveStem(i);
       wave.onclick = (e) => this.seekFrac(e.offsetX / wave.clientWidth);
       pressed(mute, false);
@@ -174,13 +186,17 @@ export class Deck {
     return this.lanes.map((l) => (anySolo ? (l.solo ? l.vol : 0) : l.mute ? 0 : l.vol));
   }
 
-  private setLane(l: Lane, patch: Partial<Pick<Lane, 'vol' | 'mute' | 'solo'>>) {
+  private pans() {
+    return this.lanes.map((l) => l.pan);
+  }
+
+  private setLane(l: Lane, patch: Partial<Pick<Lane, 'vol' | 'pan' | 'mute' | 'solo'>>) {
     Object.assign(l, patch);
     pressed(l.el.querySelector('.m')!, l.mute);
     pressed(l.el.querySelector('.s')!, l.solo);
     const g = this.gains();
     this.lanes.forEach((x, i) => x.el.classList.toggle('off', g[i] === 0));
-    this.player.setGains(g);
+    this.player.setGains(g, this.pans());
   }
 
   private setTempoPitch(tempo: number, pitch: number) {
@@ -401,7 +417,7 @@ export class Deck {
     btn.textContent = 'Rendering…';
     try {
       await this.encoder.run(
-        { type: 'mix', name, stems: this.r.stems.map((s) => s.data), gains: g, start, end, tempo: this.tempo, pitch: this.pitch, out: o },
+        { type: 'mix', name, stems: this.r.stems.map((s) => s.data), gains: g, pans: this.pans(), start, end, tempo: this.tempo, pitch: this.pitch, out: o },
         async (n, bytes) => void (await saveFile(n, bytes, mimeFor(o))),
       );
     } catch (e) {

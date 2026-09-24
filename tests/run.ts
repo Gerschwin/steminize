@@ -9,7 +9,7 @@ import { encodeFlac } from '../src/encode/flac.ts';
 import { encodeWav } from '../src/encode/wav.ts';
 import { encodeMp3 } from '../src/encode/mp3.ts';
 import { applyClip } from '../src/encode/pcm.ts';
-import { MixSource, renderMix } from '../src/player/mixcore.ts';
+import { MixSource, panMatrix, renderMix } from '../src/player/mixcore.ts';
 
 let failed = 0;
 const ok = (name: string, cond: boolean, detail = '') => {
@@ -126,6 +126,19 @@ for (const [len, overlap, shifts] of [
   const buf = new Float32Array(4000);
   src.extract(buf, 2000);
   ok('loop wraps to A', src.pos === 2000 && buf[2000] === a[0][1000]);
+}
+
+// ---- 5b. pan
+{
+  const a = signal(20_000, 21);
+  const c = renderMix([a], [1], 0, 20_000, 1, 0, [0]);
+  ok('pan centre keeps original stereo', maxErr(c[0], (i) => a[0][i]) === 0 && maxErr(c[1], (i) => a[1][i]) === 0);
+  const L = renderMix([a], [0.5], 0, 20_000, 1, 0, [-1]);
+  ok('pan hard left: silent right, mono sum left', L[1].every((v) => Math.abs(v) < 1e-7) && maxErr(L[0], (i) => 0.5 * Math.SQRT2 * (a[0][i] + a[1][i]) / 2) < 1e-6);
+  const R = renderMix([a], [1], 0, 20_000, 1, 0, [1]);
+  ok('pan hard right: silent left', R[0].every((v) => Math.abs(v) < 1e-7));
+  const [p, q, r2, t] = panMatrix(0.5);
+  ok('pan half right leans right', r2 + t > p + q, [p, q, r2, t].map((x) => x.toFixed(3)).join(' '));
 }
 
 // ---- 6. encoders, decoded by ffmpeg

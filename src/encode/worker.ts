@@ -12,6 +12,7 @@ export type EncodeReq =
       name: string;
       stems: Stereo[];
       gains: number[];
+      pans?: number[];
       start: number;
       end: number;
       tempo: number;
@@ -35,7 +36,7 @@ self.onmessage = (e: MessageEvent<EncodeReq>) => {
         post({ id: m.id, type: 'file', name: s.name, bytes }, [bytes.buffer as ArrayBuffer]);
       }
     } else {
-      const mix = renderMix(m.stems, m.gains, m.start, m.end, m.tempo, m.pitch);
+      const mix = renderMix(m.stems, m.gains, m.start, m.end, m.tempo, m.pitch, m.pans);
       const bytes = encodeAudio(mix, m.out);
       post({ id: m.id, type: 'file', name: m.name, bytes }, [bytes.buffer as ArrayBuffer]);
     }

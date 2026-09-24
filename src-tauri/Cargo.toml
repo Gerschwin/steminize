@@ -1,6 +1,6 @@
 [package]
 name = "stemdeck"
-version = "1.1.0"
+version = "1.2.0"
 description = "Stem separation that runs on your own machine"
 edition = "2021"
 license = "MIT"

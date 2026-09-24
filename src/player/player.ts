@@ -55,8 +55,8 @@ export class Player {
     this.state = { pos: 0, playing: false };
     void this.init();
   }
-  setGains(gains: number[]) {
-    this.send({ type: 'gains', gains });
+  setGains(gains: number[], pans?: number[]) {
+    this.send({ type: 'gains', gains, pans });
   }
   async play() {
     await this.unlock();

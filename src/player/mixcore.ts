@@ -7,7 +7,22 @@ export type Stereo = [Float32Array, Float32Array];
 
 const FEED = 1024;
 
-/** Sums the stems with per-stem gains into interleaved stereo, honouring the loop. */
+/**
+ * Pan law: 0 keeps the stem's original stereo image; moving towards ±1
+ * crossfades to the stem summed to mono and placed with a constant-power pan,
+ * so ±1 puts the whole stem in one ear at the same loudness.
+ * Returns [LfromL, LfromR, RfromL, RfromR].
+ */
+export function panMatrix(pan: number): [number, number, number, number] {
+  const p = Math.max(-1, Math.min(1, pan || 0));
+  const w = Math.abs(p);
+  const theta = ((p + 1) * Math.PI) / 4;
+  const gl = Math.SQRT2 * Math.cos(theta) * 0.5 * w;
+  const gr = Math.SQRT2 * Math.sin(theta) * 0.5 * w;
+  return [1 - w + gl, gl, gr, 1 - w + gr];
+}
+
+/** Sums the stems with per-stem gains and pans into interleaved stereo, honouring the loop. */
 export class MixSource {
   pos = 0;
   loopOn = false;
@@ -19,6 +34,8 @@ export class MixSource {
   resetPad() {
     this.padded = 0;
   }
+
+  pans: number[] = [];
 
   constructor(
     public stems: Stereo[],
@@ -52,9 +69,18 @@ export class MixSource {
         const g = this.gains[s] ?? 0;
         if (!g) continue;
         const [l, r] = this.stems[s];
-        for (let i = 0, j = written * 2, p = this.pos; i < n; i++, j += 2, p++) {
-          target[j] += g * l[p];
-          target[j + 1] += g * r[p];
+        const pan = this.pans[s] ?? 0;
+        if (!pan) {
+          for (let i = 0, j = written * 2, p = this.pos; i < n; i++, j += 2, p++) {
+            target[j] += g * l[p];
+            target[j + 1] += g * r[p];
+          }
+        } else {
+          const [a, b, c, d] = panMatrix(pan).map((k) => k * g);
+          for (let i = 0, j = written * 2, p = this.pos; i < n; i++, j += 2, p++) {
+            target[j] += a * l[p] + b * r[p];
+            target[j + 1] += c * l[p] + d * r[p];
+          }
         }
       }
       written += n;
@@ -131,10 +157,11 @@ export class Renderer {
 }
 
 /** Offline render of [start, end) with the current gains, tempo and pitch. */
-export function renderMix(stems: Stereo[], gains: number[], start: number, end: number, tempo: number, pitch: number): Stereo {
+export function renderMix(stems: Stereo[], gains: number[], start: number, end: number, tempo: number, pitch: number, pans: number[] = []): Stereo {
   start = Math.round(start);
   end = Math.round(end);
   const src = new MixSource(stems, gains, end);
+  src.pans = pans;
   src.padEnd = 32768;
   const r = new Renderer(src);
   r.setTempoPitch(tempo, pitch);

@@ -2,7 +2,7 @@ import { MixSource, Renderer, type Stereo } from './mixcore.ts';
 
 export type PlayerMsg =
   | { type: 'load'; stems: Stereo[]; gains: number[] }
-  | { type: 'gains'; gains: number[] }
+  | { type: 'gains'; gains: number[]; pans?: number[] }
   | { type: 'play' }
   | { type: 'pause' }
   | { type: 'seek'; pos: number }
@@ -43,7 +43,10 @@ class StemPlayer extends AudioWorkletProcessor {
       return;
     }
     if (!this.r) return;
-    if (m.type === 'gains') this.r.src.gains = m.gains;
+    if (m.type === 'gains') {
+      this.r.src.gains = m.gains;
+      if (m.pans) this.r.src.pans = m.pans;
+    }
     else if (m.type === 'play') {
       if (this.r.heard >= this.r.src.end - 128) this.r.seek(this.loop.on ? this.loop.start : 0);
       this.playing = true;
