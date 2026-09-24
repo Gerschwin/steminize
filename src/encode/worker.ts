@@ -2,6 +2,7 @@
 // Background worker for everything heavy that isn't the model: encoding
 // stems and mixes, saving songs to the library, and tempo/beat analysis.
 
+import { zipSync, unzipSync } from 'fflate';
 import { encodeAudio, type OutputOptions } from './index.ts';
 import { encodeFlac } from './flac.ts';
 import { renderMix, type Stereo } from '../player/mixcore.ts';
@@ -28,6 +29,10 @@ export type EncodeReq =
   /** Save stems (16-bit FLAC) + meta.json into the library folder `dir`. */
   | { type: 'lib-save'; id: number; dir: string; meta: string; stems: { name: string; data: Stereo; scale: number }[] }
   | { type: 'lib-meta'; id: number; dir: string; meta: string }
+  /** Zip the whole library (every song folder, as stored) for backup. */
+  | { type: 'lib-export'; id: number }
+  /** Unzip a backup, adding any song folders not already in the library. */
+  | { type: 'lib-import'; id: number; zip: Uint8Array }
   | { type: 'beats'; id: number; mono: Float32Array; harmonic?: Float32Array }
   | { type: 'keys'; id: number; harmonic: Float32Array };
 
@@ -40,10 +45,13 @@ export type EncodeRes =
 
 const post = (m: EncodeRes, t: Transferable[] = []) => (self as DedicatedWorkerGlobalScope).postMessage(m, t);
 
-async function libDir(name: string) {
+async function libRoot() {
   const root = await navigator.storage.getDirectory();
-  const lib = await root.getDirectoryHandle('library', { create: true });
-  return lib.getDirectoryHandle(name, { create: true });
+  return root.getDirectoryHandle('library', { create: true });
+}
+
+async function libDir(name: string) {
+  return (await libRoot()).getDirectoryHandle(name, { create: true });
 }
 
 async function writeFile(dir: FileSystemDirectoryHandle, name: string, bytes: Uint8Array) {
@@ -92,6 +100,52 @@ async function handle(m: EncodeReq) {
     post({ id: m.id, type: 'result', value: total });
   } else if (m.type === 'lib-meta') {
     await writeFile(await libDir(m.dir), 'meta.json', new TextEncoder().encode(m.meta));
+  } else if (m.type === 'lib-export') {
+    const lib = await libRoot();
+    const songs: [string, FileSystemDirectoryHandle][] = [];
+    for await (const [name, h] of (lib as any).entries() as AsyncIterable<[string, FileSystemHandle]>) if (h.kind === 'directory') songs.push([name, h as FileSystemDirectoryHandle]);
+    const files: Record<string, [Uint8Array, { level: 0 }]> = {};
+    for (let i = 0; i < songs.length; i++) {
+      const [name, dir] = songs[i];
+      for await (const [fname, fh] of (dir as any).entries() as AsyncIterable<[string, FileSystemHandle]>) {
+        if (fh.kind !== 'file') continue;
+        const file = await (fh as FileSystemFileHandle).getFile();
+        files[`${name}/${fname}`] = [new Uint8Array(await file.arrayBuffer()), { level: 0 }];
+      }
+      post({ id: m.id, type: 'progress', done: i + 1, total: songs.length });
+    }
+    const zipped = zipSync(files);
+    post({ id: m.id, type: 'result', value: zipped }, [zipped.buffer as ArrayBuffer]);
+  } else if (m.type === 'lib-import') {
+    const unzipped = unzipSync(m.zip);
+    const bySong = new Map<string, Record<string, Uint8Array>>();
+    for (const [path, bytes] of Object.entries(unzipped)) {
+      const slash = path.indexOf('/');
+      if (slash < 0) continue; // stray file at the zip root: not a song folder
+      const [song, fname] = [path.slice(0, slash), path.slice(slash + 1)];
+      if (!fname) continue;
+      (bySong.get(song) ?? (bySong.set(song, {}), bySong.get(song)!))[fname] = bytes;
+    }
+    const lib = await libRoot();
+    const existing = new Set<string>();
+    for await (const [name, h] of (lib as any).entries() as AsyncIterable<[string, FileSystemHandle]>) if (h.kind === 'directory') existing.add(name);
+    const entries = [...bySong.entries()];
+    let imported = 0;
+    let skipped = 0;
+    for (let i = 0; i < entries.length; i++) {
+      const [song, fileset] = entries[i];
+      if (!fileset['meta.json'] || existing.has(song)) {
+        skipped++;
+      } else {
+        const dir = await lib.getDirectoryHandle(song, { create: true });
+        for (const [fname, bytes] of Object.entries(fileset)) if (fname !== 'meta.json') await writeFile(dir, fname, bytes);
+        // meta.json last: a folder without it is an incomplete save and is ignored.
+        await writeFile(dir, 'meta.json', fileset['meta.json']);
+        imported++;
+      }
+      post({ id: m.id, type: 'progress', done: i + 1, total: entries.length });
+    }
+    post({ id: m.id, type: 'result', value: { imported, skipped } });
   } else if (m.type === 'keys') {
     post({ id: m.id, type: 'result', value: rankKeys(m.harmonic).slice(0, 6) });
   } else if (m.type === 'beats') {

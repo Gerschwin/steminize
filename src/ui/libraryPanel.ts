@@ -1,5 +1,6 @@
 import { background as encoder } from '../encode/client.ts';
-import { deleteSong, libraryAvailable, listSongs, loadStems, saveSong, writeMeta, type Analysis, type LibMeta } from '../library.ts';
+import { deleteSong, exportLibrary, importLibrary, libraryAvailable, listSongs, loadStems, saveSong, writeMeta, type Analysis, type LibMeta } from '../library.ts';
+import { saveFile } from '../platform.ts';
 import type { Deck, DeckState, Result } from './deck.ts';
 import type { KeyCandidate } from '../analysis/key.ts';
 import { $, fmtMB, fmtTime, h, toast } from './dom.ts';
@@ -49,6 +50,8 @@ export function initLibrary(deck: Deck) {
   };
   if (!libraryAvailable()) {
     $('libraryCard').hidden = true;
+  } else {
+    $('libBackupBar').hidden = false;
   }
 
   // ---- saving player state (debounced) ----
@@ -78,6 +81,9 @@ export function initLibrary(deck: Deck) {
     return { env: a.env, low: a.low };
   };
 
+  const exportBtn = $<HTMLButtonElement>('libExport');
+  const importInput = $<HTMLInputElement>('libImport');
+
   function render() {
     const songs = [...metas.values()].sort((a, b) => b.created - a.created);
     list.replaceChildren(...songs.map(item));
@@ -85,7 +91,42 @@ export function initLibrary(deck: Deck) {
     $('libInfo').textContent = songs.length
       ? `${songs.length} song${songs.length > 1 ? 's' : ''} · ${fmtMB(total)} on this computer`
       : "Separated songs are kept here so you don't have to wait again.";
+    exportBtn.disabled = !songs.length;
   }
+
+  exportBtn.onclick = async () => {
+    const label = exportBtn.textContent;
+    exportBtn.disabled = true;
+    try {
+      const zip = await exportLibrary((done, total) => (exportBtn.textContent = `Zipping… ${done}/${total}`));
+      const date = new Date().toISOString().slice(0, 10);
+      const saved = await saveFile(`stemdeck-library-${date}.zip`, zip, 'application/zip');
+      if (saved) toast(`Backed up ${metas.size} song${metas.size > 1 ? 's' : ''}.`);
+    } catch (e) {
+      toast(`Couldn't back up the library: ${(e as Error).message}`, true);
+    } finally {
+      exportBtn.textContent = label;
+      exportBtn.disabled = !metas.size;
+    }
+  };
+
+  importInput.onchange = async () => {
+    const file = importInput.files?.[0];
+    importInput.value = '';
+    if (!file) return;
+    const note = toast('Reading backup…', false, 600_000);
+    try {
+      const zip = new Uint8Array(await file.arrayBuffer());
+      const { imported, skipped } = await importLibrary(zip, (done, total) => (note.textContent = `Restoring… ${done}/${total}`));
+      for (const m of await listSongs()) metas.set(m.id, m);
+      render();
+      note.remove();
+      toast(imported ? `Added ${imported} song${imported > 1 ? 's' : ''}${skipped ? ` (${skipped} already in your library)` : ''}.` : `Nothing new to add${skipped ? ` (${skipped} already in your library)` : ''}.`);
+    } catch (e) {
+      note.remove();
+      toast(`Couldn't restore that backup: ${(e as Error).message}`, true);
+    }
+  };
 
   function item(m: LibMeta) {
     const date = new Date(m.created).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });

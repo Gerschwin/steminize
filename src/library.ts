@@ -102,3 +102,13 @@ export async function loadStems(meta: LibMeta): Promise<{ name: string; data: St
 export async function deleteSong(id: string) {
   await (await libRoot()).removeEntry(id, { recursive: true });
 }
+
+/** Zips the whole library (as stored: FLAC stems + meta.json per song) for backup. */
+export function exportLibrary(onProgress?: (done: number, total: number) => void): Promise<Uint8Array> {
+  return encoder.run<Uint8Array>({ type: 'lib-export' }, undefined, onProgress);
+}
+
+/** Restores songs from a backup zip. Songs already in the library (same id) are left alone. */
+export function importLibrary(zip: Uint8Array, onProgress?: (done: number, total: number) => void): Promise<{ imported: number; skipped: number }> {
+  return encoder.run<{ imported: number; skipped: number }>({ type: 'lib-import', zip }, undefined, onProgress);
+}

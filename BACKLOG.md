@@ -7,6 +7,7 @@ Parked: band collaboration "Session mode" (watch a synced folder, versions, comm
 Ideas not yet chosen: record yourself over the track, MIDI transcription, tuner.
 
 ## Done
+- [x] Library backup/restore: back up every song (stems + settings) as one zip, restore into any browser/install; songs already present are skipped, not duplicated (v1.9.0)
 - [x] Open multitrack / open folder (v1.7.0)
 - [x] Section markers, foot pedal control, key detection, waveform zoom (v1.6.0)
 - [x] Library: keep separated songs + settings between sessions (v1.5.0)
