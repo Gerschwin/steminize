@@ -8,11 +8,14 @@ import { Deck, type Result } from './ui/deck.ts';
 import { $, fmtDuration, fmtEta, fmtTime, h, toast } from './ui/dom.ts';
 import { ensureDownloaded, initModelsDialog, onModelsChanged } from './ui/modelsDialog.ts';
 import { SettingsPanel } from './ui/settingsPanel.ts';
+import { initLibrary } from './ui/libraryPanel.ts';
 
 // ---------------------------------------------------------------- setup
 registerServiceWorker();
 const settings = new SettingsPanel(loadSettings());
 const deck = new Deck(() => settings.s);
+const library = initLibrary(deck);
+library.onOpen = () => refreshQueue();
 const engine = new Engine();
 initModelsDialog();
 onModelsChanged.add(() => settings.render());
@@ -152,8 +155,9 @@ function refreshQueue() {
 }
 
 function openTrack(t: Track) {
-  deck.open(t.result!);
+  deck.open(t.result!, library.stateFor(t.result!));
   refreshQueue();
+  library.refresh();
   if (matchMedia('(max-width: 900px)').matches) $('deck').scrollIntoView({ behavior: 'smooth' });
 }
 
@@ -268,6 +272,7 @@ async function processTrack(t: Track) {
     t.result = { title: t.file.name, stems, settings: s, seconds, took };
     set('done', `Done in ${fmtDuration(took)} (${(took / seconds).toFixed(1)}× song length) · ${MODELS[s.model].label}${s.twoStems ? ` · ${s.twoStems} / rest` : ''}`, 1);
     if (!deck.current) openTrack(t);
+    void library.afterSeparation(t.result);
   } catch (e) {
     const err = e as Error;
     if (err.name === 'Cancelled' || t.status === 'cancelled') {

@@ -121,6 +121,10 @@ body.dragging .drop { border-color: var(--accent); }
 .switch input { accent-color: var(--accent); margin: 0; }
 .q-bar { display: flex; flex-wrap: wrap; gap: 6px; }
 .q-bar:has(> :not([hidden])) { margin-bottom: 8px; }
+.lib .track { cursor: pointer; }
+.lib .track:hover { border-color: var(--line); }
+.lib .t-sub { color: var(--muted); }
+.t-x.confirm { color: var(--bad); font-size: 12px; font-weight: 600; }
 .t-set { font-size: 11px; color: var(--muted); grid-column: 1; }
 .lanes-head { display: flex; justify-content: flex-end; margin-bottom: -8px; }
 .lanes:not(.show-pan) .mini.pan { display: none; }
@@ -198,7 +202,15 @@ details.more[open] summary { color: var(--text); }
 }
 .tools { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; }
 .tool { display: flex; align-items: center; gap: 8px; background: var(--panel-2); border-radius: 9px; padding: 8px 10px; }
-.tool.loop { flex-wrap: wrap; }
+.tool.loop, .tool.practice, .tool.beat { flex-wrap: wrap; grid-column: 1 / -1; }
+.tool .snap { margin-left: auto; }
+.tool select { width: auto; padding: 3px 6px; font-size: 12px; }
+.trainer-cfg { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 3px; flex-wrap: wrap; }
+.trainer-cfg input { width: 48px; padding: 2px 4px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); font-size: 12px; }
+.bpm { font-weight: 600; font-size: 13px; margin-right: 4px; }
+.tool #clickVol { flex: 0 1 110px; min-width: 60px; }
+.no-beats .needs-beats { opacity: 0.45; pointer-events: none; }
+.btn.tap-on { background: var(--accent); color: #fff; }
 .tool label { font-size: 12px; color: var(--muted); display: flex; gap: 6px; white-space: nowrap; }
 .tool input[type='range'] { flex: 1; min-width: 80px; }
 .tool.loop { grid-column: 1 / -1; }

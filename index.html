@@ -52,6 +52,15 @@
           <p class="muted empty" id="queueEmpty">Nothing queued yet.</p>
         </section>
 
+        <section class="card" id="libraryCard">
+          <div class="card-head">
+            <h2>Library</h2>
+            <label class="switch" title="Keep separated songs on this computer so they reopen instantly"><input type="checkbox" id="autoSave" /> Keep new songs</label>
+          </div>
+          <ul class="queue lib" id="libList"></ul>
+          <p class="muted small empty" id="libInfo">Separated songs are kept here so you don't have to wait again.</p>
+        </section>
+
         <section class="card settings" id="settings">
           <div class="card-head">
             <h2>Separation</h2>
@@ -168,6 +177,37 @@
               <button class="btn tiny ghost" id="setA" title="Loop start at playhead ([)">Set A</button>
               <button class="btn tiny ghost" id="setB" title="Loop end at playhead (])">Set B</button>
               <span class="muted small" id="loopInfo">Drag across the waveform to pick a section</span>
+              <label class="snap">Snap
+                <select id="snap"><option value="off">Off</option><option value="beat">Beat</option><option value="bar">Bar</option></select>
+              </label>
+            </div>
+            <div class="tool practice">
+              <button class="btn tiny toggle" id="trainerBtn" aria-pressed="false" title="Loop the section, speeding up after each pass">Speed trainer</button>
+              <span class="trainer-cfg">
+                <input type="number" id="trFrom" min="30" max="150" step="5" value="70" aria-label="Start speed" />% →
+                <input type="number" id="trTo" min="30" max="150" step="5" value="100" aria-label="Target speed" />%,
+                +<input type="number" id="trStep" min="1" max="25" step="1" value="5" aria-label="Step" />% every
+                <input type="number" id="trEvery" min="1" max="10" step="1" value="1" aria-label="Passes per step" /> pass(es)
+              </span>
+              <span class="muted small" id="trainerInfo"></span>
+            </div>
+            <div class="tool practice">
+              <label>Gap
+                <select id="gap"><option value="0">None</option><option value="1">1 s</option><option value="2">2 s</option><option value="3">3 s</option><option value="5">5 s</option></select>
+              </label>
+              <button class="btn tiny toggle needs-beats" id="countInBtn" aria-pressed="false" title="One bar of clicks before each loop pass and before playing">Count-in</button>
+              <button class="btn tiny toggle needs-beats" id="clickBtn" aria-pressed="false" title="Metronome click on the beat">Click</button>
+              <input type="range" id="clickVol" min="0.05" max="1" step="0.05" value="0.5" title="Click volume" class="needs-beats" />
+            </div>
+            <div class="tool beat">
+              <span id="bpmInfo" class="bpm">Tempo: not analysed</span>
+              <button class="btn tiny ghost needs-beats" id="halfBtn" title="Detected tempo is double the real one">½×</button>
+              <button class="btn tiny ghost needs-beats" id="dblBtn" title="Detected tempo is half the real one">2×</button>
+              <button class="btn tiny ghost needs-beats" id="tapBtn" title="Tap along to the beat 4+ times to correct the tempo">Tap</button>
+              <label>Beats/bar
+                <select id="perBar" class="needs-beats"><option>2</option><option>3</option><option selected>4</option><option>5</option><option>6</option><option>7</option></select>
+              </label>
+              <button class="btn tiny ghost needs-beats" id="shiftBar" title="Move the bar start one beat later">Bar start →</button>
             </div>
             <div class="tool">
               <label>Tempo <output id="tempoOut">100%</output></label>

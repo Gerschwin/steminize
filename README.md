@@ -10,6 +10,8 @@ It runs as a web app (installable on desktop and phone) and as a desktop app (Wi
 - **The Demucs command-line options:** two-stem/karaoke mode (`--two-stems`), shifts (`--shifts`), overlap (`--overlap`), clip mode (`--clip-mode`), and output as WAV 16/24/32-bit float, FLAC 16/24 or MP3 128–320 kbps.
 - **Batch queue:** drop in several songs; each shows progress and time left.
 - **Practice player:** mute, solo, set the level and pan (left–right) of each stem, plus a per-stem EQ with presets (Kick, Snare, Hi-hats, Bass on small speakers, Vocal clarity) and manual low-cut, high-cut and focus band; loop a section (drag across the waveform); change tempo (50–150%) and pitch (±12 semitones) without affecting the other.
+- **Library:** separated songs are kept on your computer (16-bit FLAC in the browser's private storage) with their mixer, EQ, loop and practice settings, so they reopen instantly.
+- **Practice tools:** tempo (BPM) and bar detection from the drum stem, with ½×/2×/tap correction; loop snapping to beats or bars; speed trainer (e.g. 70% → 100%, +5% per pass); gap between passes; one-bar count-in; metronome click that stays in step with slowed-down audio.
 - **Export:** single stems, all stems (to a folder, or as a ZIP), or "what you hear" as a mix with your levels, loop, tempo and pitch applied.
 - **Offline:** once a model has downloaded, the app works with no connection.
 - **GPU acceleration** through WebGPU where available, otherwise multi-threaded CPU.

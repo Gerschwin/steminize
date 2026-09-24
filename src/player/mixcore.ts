@@ -8,6 +8,23 @@ export type Stereo = [Float32Array, Float32Array];
 
 const FEED = 1024;
 
+/** A short click: 1.5 kHz on bar starts, 1 kHz on other beats. */
+export const CLICK_LEN = Math.round(0.04 * 44100);
+function makeClick(freq: number) {
+  const c = new Float32Array(CLICK_LEN);
+  for (let i = 0; i < CLICK_LEN; i++) c[i] = Math.sin((2 * Math.PI * freq * i) / 44100) * Math.exp(-i / 330) * 0.6;
+  return c;
+}
+export const CLICK_HI = makeClick(1500);
+export const CLICK_LO = makeClick(1000);
+
+export interface ClickTrack {
+  beats: number[]; // source frames
+  downbeat: number; // index of a bar start in beats
+  perBar: number;
+  vol: number;
+}
+
 /**
  * Pan law: 0 keeps the stem's original stereo image; moving towards ±1
  * crossfades to the stem summed to mono and placed with a constant-power pan,
@@ -37,6 +54,8 @@ export class MixSource {
   }
 
   pans: number[] = [];
+  /** Metronome mixed into the source, so it is stretched in step with the music. */
+  click: ClickTrack | null = null;
   private eqs: StemEq[] = [];
   private tmpL = new Float32Array(0);
   private tmpR = new Float32Array(0);
@@ -105,10 +124,34 @@ export class MixSource {
           }
         }
       }
+      if (this.click?.vol) this.addClicks(target, written, this.pos, n);
       written += n;
       this.pos += n;
     }
     return written;
+  }
+
+  private addClicks(target: Float32Array, offset: number, pos: number, n: number) {
+    const { beats, downbeat, perBar, vol } = this.click!;
+    // First beat whose click could still be sounding at `pos`.
+    let lo = 0;
+    let hi = beats.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (beats[mid] + CLICK_LEN <= pos) lo = mid + 1;
+      else hi = mid;
+    }
+    for (let b = lo; b < beats.length && beats[b] < pos + n; b++) {
+      const wave = (((b - downbeat) % perBar) + perBar) % perBar === 0 ? CLICK_HI : CLICK_LO;
+      const start = Math.max(pos, beats[b]);
+      const end = Math.min(pos + n, beats[b] + CLICK_LEN);
+      for (let p = start; p < end; p++) {
+        const v = vol * wave[p - beats[b]];
+        const j = (offset + p - pos) * 2;
+        target[j] += v;
+        target[j + 1] += v;
+      }
+    }
   }
 }
 

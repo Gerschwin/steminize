@@ -11,6 +11,9 @@ import { encodeMp3 } from '../src/encode/mp3.ts';
 import { applyClip } from '../src/encode/pcm.ts';
 import { MixSource, panMatrix, renderMix } from '../src/player/mixcore.ts';
 import { FLAT, PRESETS, responseDb } from '../src/player/eq.ts';
+import { DEFAULT_PRACTICE, Transport } from '../src/player/transport.ts';
+import { Renderer } from '../src/player/mixcore.ts';
+import { analyse } from '../src/analysis/beats.ts';
 
 let failed = 0;
 const ok = (name: string, cond: boolean, detail = '') => {
@@ -166,6 +169,102 @@ for (const [len, overlap, shifts] of [
   const k260 = gainDb(260, kick);
   const pred = responseDb(kick, [260])[0];
   ok('EQ curve matches measured response', Math.abs(pred - k260) < 0.5, `curve ${pred.toFixed(1)} vs measured ${k260.toFixed(1)} dB at 260 Hz`);
+}
+
+// ---- 5d. transport: loop gap, count-in, trainer, click
+{
+  const len = SR * 6;
+  const src: Stereo = [new Float32Array(len), new Float32Array(len)];
+  src[0][SR] = src[1][SR] = 0.9; // marker at the loop start (1.0 s)
+  const make = () => {
+    const ms = new MixSource([src], [1], len);
+    ms.padEnd = 32768;
+    return new Transport(new Renderer(ms));
+  };
+  const run = (t: Transport, seconds: number, onBlock?: (frame: number) => void) => {
+    const out = new Float32Array(Math.round(seconds * SR));
+    const L = new Float32Array(128);
+    const R = new Float32Array(128);
+    for (let f = 0; f < out.length; f += 128) {
+      t.render(L, R, 128);
+      out.set(L.subarray(0, Math.min(128, out.length - f)), f);
+      onBlock?.(f);
+    }
+    return out;
+  };
+  const markers = (x: Float32Array) => [...x.keys()].filter((i) => x[i] > 0.8).map((i) => +(i / SR).toFixed(3));
+  const clicks = (x: Float32Array) => {
+    const o: number[] = [];
+    for (let i = 0; i < x.length; i++) if (Math.abs(x[i]) > 0.05 && Math.abs(x[i]) < 0.8 && (!o.length || i - o[o.length - 1] > 2000)) o.push(i);
+    return o.map((i) => +(i / SR).toFixed(3));
+  };
+  const beats = Array.from({ length: 12 }, (_, k) => Math.round(k * SR * 0.5)); // 120 BPM
+
+  let t = make();
+  t.setLoop(true, SR, 2 * SR);
+  t.setPractice({ ...DEFAULT_PRACTICE, gap: 1 });
+  t.onPlay();
+  const g = markers(run(t, 5));
+  ok('loop gap: 1 s pass then 1 s silence', g.join() === '0,2,4', `loop starts at ${g.join(' ')} s`);
+
+  t = make();
+  t.setLoop(true, SR, 2 * SR);
+  t.setPractice({ ...DEFAULT_PRACTICE, countIn: true, beats, perBar: 4 });
+  t.onPlay();
+  const o1 = run(t, 5.5);
+  ok('count-in: 4 clicks at 120 BPM, loop starts on the next beat', clicks(o1).slice(0, 4).join() === '0,0.5,1,1.5' && markers(o1)[0] === 2, `clicks ${clicks(o1).join(' ')} | loop starts ${markers(o1).join(' ')}`);
+
+  t = make();
+  t.setLoop(true, SR, 2 * SR);
+  t.r.setTempoPitch(0.8, 0);
+  t.setPractice({ ...DEFAULT_PRACTICE, countIn: true, beats, perBar: 4 });
+  t.onPlay();
+  const o2 = clicks(run(t, 3));
+  ok('count-in follows slowed tempo (80% -> 0.625 s beats)', o2.slice(0, 4).join() === '0,0.625,1.25,1.875', o2.join(' '));
+
+  t = make();
+  t.setLoop(true, SR, 2 * SR);
+  t.setPractice({ ...DEFAULT_PRACTICE, trainer: { on: true, from: 0.7, to: 1, step: 0.1, every: 1 } });
+  t.onPlay();
+  const tempos: number[] = [];
+  let seen = 0;
+  run(t, 7, () => {
+    if (t.passes !== seen) {
+      seen = t.passes;
+      tempos.push(t.r.tempo);
+    }
+  });
+  ok('speed trainer: 70% +10% per pass, stops at 100%', tempos.slice(0, 4).join() === '0.8,0.9,1,1', tempos.join(' '));
+
+  t = make();
+  t.setPractice({ ...DEFAULT_PRACTICE, click: true, clickVol: 0.5, beats, downbeat: 0, perBar: 4 });
+  const c = clicks(run(t, 2.2));
+  ok('click track on the beats', c.join() === '0,0.5,1,1.5,2', c.join(' '));
+}
+
+// ---- 5e. beat detection on a synthetic drum track
+{
+  let s0 = 5;
+  const rnd = () => (s0 = (s0 * 16807) % 2147483647) / 2147483647 - 0.5;
+  const secs = 30;
+  const bpm = 118;
+  const x = new Float32Array(secs * SR);
+  const truth: number[] = [];
+  for (let k = 0, t = 0.4; t < secs - 1; k++, t += 60 / bpm) {
+    truth.push(t);
+    const i0 = Math.round(t * SR);
+    for (let i = 0; i < 0.12 * SR; i++) {
+      const tt = i / SR;
+      const kick = k % 4 === 0 ? 0.9 : k % 4 === 2 ? 0.6 : 0;
+      x[i0 + i] += kick * Math.sin(2 * Math.PI * (55 + 80 * Math.exp(-tt * 40)) * tt) * Math.exp(-tt * 18);
+      if (k % 2) x[i0 + i] += 0.5 * rnd() * Math.exp(-tt * 25);
+      x[i0 + i] += 0.15 * rnd() * Math.exp(-tt * 90);
+    }
+  }
+  const a = analyse(x);
+  const hits = truth.filter((b) => a.beats.some((d) => Math.abs(d - b) < 0.03)).length;
+  const bar = truth.some((b, i) => i % 4 === 0 && Math.abs(b - a.beats[a.downbeat]) < 0.03);
+  ok('beat detection: tempo, beats and bar start', Math.abs(a.bpm - bpm) < 0.5 && hits >= truth.length - 1 && bar, `${a.bpm} BPM, ${hits}/${truth.length} beats, bar ${bar}`);
 }
 
 // ---- 6. encoders, decoded by ffmpeg

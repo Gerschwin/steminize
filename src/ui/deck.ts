@@ -1,6 +1,9 @@
 import { Player } from '../player/player.ts';
 import type { Stereo } from '../player/mixcore.ts';
-import { Encoder } from '../encode/client.ts';
+import { encoder } from '../encode/client.ts';
+import type { Analysis } from '../library.ts';
+import { periodForBpm, retrack } from '../analysis/beats.ts';
+import type { Trainer } from '../player/transport.ts';
 import { extensionFor, mimeFor } from '../encode/meta.ts';
 import { stemColour, MODELS } from '../models.ts';
 import { openSink, safeName, saveFile } from '../platform.ts';
@@ -19,6 +22,42 @@ export interface Result {
   seconds: number;
   /** Wall-clock seconds the separation took. */
   took?: number;
+  /** Library folder, once saved. */
+  libId?: string;
+  analysis?: Analysis;
+  /** Onset envelopes, kept in memory for quick tempo corrections. */
+  onsets?: { env: Float32Array; low: Float32Array };
+}
+
+type Snap = 'off' | 'beat' | 'bar';
+interface PracticeUi {
+  gap: number;
+  countIn: boolean;
+  click: boolean;
+  clickVol: number;
+  perBar: number;
+  barShift: number;
+  snap: Snap;
+  trainer: Trainer;
+}
+const DEFAULT_PR: PracticeUi = {
+  gap: 0,
+  countIn: false,
+  click: false,
+  clickVol: 0.5,
+  perBar: 4,
+  barShift: 0,
+  snap: 'bar',
+  trainer: { on: false, from: 0.7, to: 1, step: 0.05, every: 1 },
+};
+
+/** Everything about how a song is set up in the player, saved per song. */
+export interface DeckState {
+  lanes: { vol: number; pan: number; mute: boolean; solo: boolean; eq?: EqParams }[];
+  loop: { on: boolean; a: number; b: number };
+  tempo: number;
+  pitch: number;
+  practice: PracticeUi;
 }
 
 interface Lane {
@@ -74,7 +113,16 @@ function waveLayer(peaks: Float32Array, w: number, hgt: number, colour: string, 
 
 export class Deck {
   player = new Player();
-  private encoder = new Encoder();
+  private encoder = encoder;
+  private pr: PracticeUi = structuredClone(DEFAULT_PR);
+  private taps: number[] = [];
+  private quiet = false; // suppress state-change events while restoring a song
+  /** Called (often) whenever the player setup changes; the caller debounces saving. */
+  onStateChange: (s: DeckState) => void = () => {};
+  /** Called when a tempo correction changes the song's analysis. */
+  onAnalysisChange: (r: Result) => void = () => {};
+  /** Provides onset envelopes for a song that doesn't have them in memory. */
+  needOnsets: (r: Result) => Promise<{ env: Float32Array; low: Float32Array }> = () => Promise.reject(new Error('unavailable'));
   private r: Result | null = null;
   private lanes: Lane[] = [];
   private overviewPeaks = new Float32Array(0);
@@ -89,6 +137,13 @@ export class Deck {
   constructor(private settings: () => Settings) {
     this.player.onState = (s) => {
       $('playBtn').classList.toggle('on', s.playing);
+      // The speed trainer changes tempo inside the player; mirror it here.
+      if (Math.abs(s.tempo - this.tempo) > 1e-6) {
+        this.tempo = s.tempo;
+        this.showTempoPitch();
+        this.emit();
+      }
+      this.updateTrainerInfo(s.passes, s.countingIn);
       this.dirty = true;
     };
     $('playBtn').onclick = () => this.toggle();
@@ -124,6 +179,7 @@ export class Deck {
     }
     showPan(panOn);
     panBtn.onclick = () => showPan(panBtn.getAttribute('aria-pressed') !== 'true');
+    this.initPractice();
     this.initOverview();
     this.initKeys();
     new ResizeObserver(() => this.invalidateLayers()).observe($('deck'));
@@ -138,10 +194,14 @@ export class Deck {
     return this.r;
   }
 
-  open(r: Result) {
+  open(r: Result, state?: DeckState) {
+    this.quiet = true;
     this.player.pause();
     this.r = r;
     this.loop = { on: false, a: 0, b: 0 };
+    this.pr = structuredClone(DEFAULT_PR);
+    this.tempo = 1;
+    this.pitch = 0;
     $('welcome').hidden = true;
     $('deck').hidden = false;
     $('trackTitle').textContent = r.title;
@@ -192,10 +252,217 @@ export class Deck {
       return lane;
     });
     this.player.load(r.stems.map((s) => s.data), this.gains());
-    this.setTempoPitch(this.tempo, this.pitch);
-    this.player.setLoop(false, 0, 0);
+    if (state) this.applyState(state);
+    this.setTempoPitch(this.tempo, this.pitch, false);
+    this.player.setLoop(this.loop.on, this.loop.a, this.loop.b);
     this.updateLoopUi();
+    this.syncPracticeUi();
+    this.setAnalysis(r.analysis);
     this.invalidateLayers();
+    this.quiet = false;
+  }
+
+  // ---------- saved state ----------
+  getState(): DeckState {
+    return {
+      lanes: this.lanes.map((l) => ({ vol: l.vol, pan: l.pan, mute: l.mute, solo: l.solo, eq: l.eq })),
+      loop: { ...this.loop },
+      tempo: this.tempo,
+      pitch: this.pitch,
+      practice: structuredClone({ ...this.pr, trainer: { ...this.pr.trainer, on: false } }),
+    };
+  }
+
+  private applyState(s: DeckState) {
+    this.pr = { ...structuredClone(DEFAULT_PR), ...s.practice, trainer: { ...DEFAULT_PR.trainer, ...s.practice?.trainer, on: false } };
+    this.tempo = s.tempo ?? 1;
+    this.pitch = s.pitch ?? 0;
+    this.loop = { ...this.loop, ...s.loop };
+    s.lanes?.forEach((st, i) => {
+      const l = this.lanes[i];
+      if (!l) return;
+      Object.assign(l, st);
+      (l.el.querySelectorAll('input[type=range]')[0] as HTMLInputElement).value = String(l.vol);
+      const pan = l.el.querySelectorAll('input[type=range]')[1] as HTMLInputElement;
+      pan.value = String(l.pan);
+      pan.dispatchEvent(new Event('input'));
+    });
+    for (const l of this.lanes) this.setLane(l, {});
+  }
+
+  private emit() {
+    if (this.r && !this.quiet) this.onStateChange(this.getState());
+  }
+
+  // ---------- tempo analysis & practice tools ----------
+  setAnalysis(a?: Analysis) {
+    if (this.r) this.r.analysis = a;
+    $('deck').classList.toggle('no-beats', !a?.beats.length);
+    this.updateBpmInfo();
+    this.sendPractice();
+    this.invalidateLayers();
+  }
+
+  private beatFrames() {
+    return (this.r?.analysis?.beats ?? []).map((s) => Math.round(s * SR));
+  }
+
+  private downbeat() {
+    const a = this.r?.analysis;
+    return a ? (((a.downbeat + this.pr.barShift) % this.pr.perBar) + this.pr.perBar) % this.pr.perBar : 0;
+  }
+
+  private sendPractice() {
+    const p = this.pr;
+    this.player.setPractice({
+      gap: p.gap,
+      countIn: p.countIn,
+      perBar: p.perBar,
+      beats: this.beatFrames(),
+      downbeat: this.downbeat(),
+      click: p.click,
+      clickVol: p.clickVol,
+      trainer: { ...p.trainer },
+    });
+  }
+
+  private updateBpmInfo(analysing = false) {
+    const a = this.r?.analysis;
+    const el = $('bpmInfo');
+    if (analysing) el.textContent = 'Tempo: analysing…';
+    else if (!a?.beats.length) el.textContent = this.r ? 'Tempo: analysing…' : 'Tempo: –';
+    else {
+      const now = Math.round(a.bpm * this.tempo);
+      el.textContent = `${Math.round(a.bpm)} BPM${this.tempo !== 1 ? ` (${now} at this speed)` : ''}`;
+    }
+  }
+
+  private updateTrainerInfo(passes: number, countingIn: boolean) {
+    const t = this.pr.trainer;
+    $('trainerInfo').textContent = t.on
+      ? `${countingIn ? 'Count-in… · ' : ''}Pass ${passes + 1} at ${Math.round(this.tempo * 100)}%${this.tempo >= t.to ? ' (target reached)' : ''}`
+      : countingIn
+        ? 'Count-in…'
+        : '';
+  }
+
+  private syncPracticeUi() {
+    const p = this.pr;
+    pressed($('trainerBtn'), p.trainer.on);
+    pressed($('countInBtn'), p.countIn);
+    pressed($('clickBtn'), p.click);
+    $<HTMLInputElement>('clickVol').value = String(p.clickVol);
+    $<HTMLSelectElement>('gap').value = String(p.gap);
+    $<HTMLSelectElement>('perBar').value = String(p.perBar);
+    $<HTMLSelectElement>('snap').value = p.snap;
+    $<HTMLInputElement>('trFrom').value = String(Math.round(p.trainer.from * 100));
+    $<HTMLInputElement>('trTo').value = String(Math.round(p.trainer.to * 100));
+    $<HTMLInputElement>('trStep').value = String(Math.round(p.trainer.step * 100));
+    $<HTMLInputElement>('trEvery').value = String(p.trainer.every);
+    this.updateTrainerInfo(0, false);
+    this.updateBpmInfo();
+  }
+
+  private practiceChanged() {
+    this.syncPracticeUi();
+    this.sendPractice();
+    this.invalidateLayers();
+    this.emit();
+  }
+
+  private initPractice() {
+    $('trainerBtn').onclick = () => {
+      const t = this.pr.trainer;
+      t.on = !t.on;
+      if (t.on) {
+        if (!this.loop.on) this.setLoop(true);
+        this.tempo = t.from; // the player also resets to this
+        this.showTempoPitch();
+      }
+      this.practiceChanged();
+    };
+    const num = (id: string, f: (v: number) => void) => ($<HTMLInputElement>(id).onchange = (e) => {
+      const v = Number((e.target as HTMLInputElement).value);
+      if (Number.isFinite(v) && v > 0) f(v);
+      this.practiceChanged();
+    });
+    num('trFrom', (v) => (this.pr.trainer.from = Math.min(1.5, Math.max(0.3, v / 100))));
+    num('trTo', (v) => (this.pr.trainer.to = Math.min(1.5, Math.max(0.3, v / 100))));
+    num('trStep', (v) => (this.pr.trainer.step = Math.min(0.25, v / 100)));
+    num('trEvery', (v) => (this.pr.trainer.every = Math.round(v)));
+    $('countInBtn').onclick = () => ((this.pr.countIn = !this.pr.countIn), this.practiceChanged());
+    $('clickBtn').onclick = () => ((this.pr.click = !this.pr.click), this.practiceChanged());
+    $<HTMLInputElement>('clickVol').oninput = (e) => ((this.pr.clickVol = Number((e.target as HTMLInputElement).value)), this.practiceChanged());
+    $<HTMLSelectElement>('gap').onchange = (e) => ((this.pr.gap = Number((e.target as HTMLSelectElement).value)), this.practiceChanged());
+    $<HTMLSelectElement>('snap').onchange = (e) => ((this.pr.snap = (e.target as HTMLSelectElement).value as Snap), this.practiceChanged());
+    $<HTMLSelectElement>('perBar').onchange = (e) => {
+      this.pr.perBar = Number((e.target as HTMLSelectElement).value);
+      this.pr.barShift = 0;
+      this.practiceChanged();
+    };
+    $('shiftBar').onclick = () => ((this.pr.barShift = (this.pr.barShift + 1) % this.pr.perBar), this.practiceChanged());
+    $('halfBtn').onclick = () => this.r?.analysis && void this.retempo(this.r.analysis.bpm / 2);
+    $('dblBtn').onclick = () => this.r?.analysis && void this.retempo(this.r.analysis.bpm * 2);
+    $('tapBtn').onclick = () => {
+      const now = performance.now();
+      if (this.taps.length && now - this.taps[this.taps.length - 1] > 2500) this.taps = [];
+      this.taps.push(now);
+      const btn = $('tapBtn');
+      btn.classList.add('tap-on');
+      setTimeout(() => btn.classList.remove('tap-on'), 90);
+      const n = this.taps.length;
+      if (n < 4) {
+        btn.textContent = `Tap (${4 - n} more)`;
+        return;
+      }
+      const bpm = (60000 * (n - 1)) / (this.taps[n - 1] - this.taps[0]);
+      btn.textContent = `Tap · ${Math.round(bpm)}`;
+      // Tapping is at the playback speed; the song's tempo is that divided by it.
+      clearTimeout((this as any).tapTimer);
+      (this as any).tapTimer = setTimeout(() => {
+        btn.textContent = 'Tap';
+        this.taps = [];
+        void this.retempo(bpm / this.tempo);
+      }, 1200);
+    };
+  }
+
+  /** Re-track beats at a corrected tempo. */
+  private async retempo(bpm: number) {
+    const r = this.r;
+    if (!r || bpm < 30 || bpm > 300) return;
+    this.updateBpmInfo(true);
+    try {
+      r.onsets ??= await this.needOnsets(r);
+      const a = retrack(r.onsets, periodForBpm(bpm), this.pr.perBar);
+      this.pr.barShift = 0;
+      this.setAnalysis({ bpm: a.bpm, beats: a.beats, downbeat: a.downbeat });
+      this.onAnalysisChange(r);
+      this.practiceChanged();
+    } catch (e) {
+      toast(`Couldn't re-analyse: ${(e as Error).message}`, true);
+      this.updateBpmInfo();
+    }
+  }
+
+  /** Snap a frame position to the nearest beat or bar start. */
+  private snap(pos: number) {
+    const beats = this.beatFrames();
+    if (this.pr.snap === 'off' || !beats.length) return pos;
+    const d = this.downbeat();
+    const grid = this.pr.snap === 'bar' ? beats.filter((_, i) => (i - d) % this.pr.perBar === 0) : beats;
+    let best = pos;
+    let dist = Infinity;
+    for (const b of grid) if (Math.abs(b - pos) < dist) [best, dist] = [b, Math.abs(b - pos)];
+    return best;
+  }
+
+  private snapLoop() {
+    const a = this.snap(this.loop.a);
+    let b = this.snap(this.loop.b);
+    if (b <= a) b = this.loop.b; // keep a sensible region if both snap to the same point
+    this.loop.a = a;
+    this.loop.b = b;
   }
 
   close() {
@@ -237,6 +504,7 @@ export class Deck {
 
   private setLane(l: Lane, patch: Partial<Pick<Lane, 'vol' | 'pan' | 'mute' | 'solo' | 'eq'>>) {
     Object.assign(l, patch);
+    this.emit();
     pressed(l.el.querySelector('.m')!, l.mute);
     pressed(l.el.querySelector('.s')!, l.solo);
     const g = this.gains();
@@ -247,14 +515,20 @@ export class Deck {
     $('panToggle').textContent = this.lanes.some((x) => x.pan) ? 'Pan (active)' : 'Pan';
   }
 
-  private setTempoPitch(tempo: number, pitch: number) {
+  private setTempoPitch(tempo: number, pitch: number, save = true) {
     this.tempo = tempo;
     this.pitch = pitch;
-    $<HTMLInputElement>('tempo').value = String(tempo);
-    $<HTMLInputElement>('pitch').value = String(pitch);
-    $('tempoOut').textContent = `${Math.round(tempo * 100)}%`;
-    $('pitchOut').textContent = `${pitch > 0 ? '+' : ''}${pitch} st`;
+    this.showTempoPitch();
     this.player.setTempoPitch(tempo, pitch);
+    if (save) this.emit();
+  }
+
+  private showTempoPitch() {
+    $<HTMLInputElement>('tempo').value = String(this.tempo);
+    $<HTMLInputElement>('pitch').value = String(this.pitch);
+    $('tempoOut').textContent = `${Math.round(this.tempo * 100)}%`;
+    $('pitchOut').textContent = `${this.pitch > 0 ? '+' : ''}${this.pitch} st`;
+    this.updateBpmInfo();
   }
 
   // ---------- transport & loop ----------
@@ -281,11 +555,16 @@ export class Deck {
     }
     this.loop.on = on;
     this.player.setLoop(on, this.loop.a, this.loop.b);
+    if (!on && this.pr.trainer.on) {
+      this.pr.trainer.on = false;
+      this.practiceChanged();
+    }
     this.updateLoopUi();
+    this.emit();
   }
 
   private setPoint(which: 'a' | 'b') {
-    this.loop[which] = this.player.state.pos;
+    this.loop[which] = this.snap(this.player.state.pos);
     if (this.loop.b <= this.loop.a) {
       if (which === 'a') this.loop.b = Math.min(this.length, this.loop.a + 8 * SR);
       else this.loop.a = Math.max(0, this.loop.b - 8 * SR);
@@ -323,6 +602,7 @@ export class Deck {
     wrap.addEventListener('pointerup', (e) => {
       if (!this.drag) return;
       if (this.drag.moved) {
+        this.snapLoop();
         this.setLoop(true);
         this.player.seek(this.loop.a);
       } else this.seekFrac(frac(e));
@@ -388,6 +668,7 @@ export class Deck {
       ];
     }
     this.drawStrip(ov, this.overviewLayers, pos, true);
+    this.drawBars(ov);
     const maxPeak = Math.max(1e-3, ...this.lanes.map((l) => Math.max(...l.peaks)));
     for (const l of this.lanes) {
       fitCanvas(l.canvas);
@@ -397,6 +678,22 @@ export class Deck {
       }
       this.drawStrip(l.canvas, l.layers, pos, true);
     }
+  }
+
+  /** Faint bar lines on the overview once the tempo is known. */
+  private drawBars(c: HTMLCanvasElement) {
+    const beats = this.beatFrames();
+    if (!beats.length) return;
+    const g = c.getContext('2d')!;
+    const w = c.width;
+    const len = this.length || 1;
+    const d = this.downbeat();
+    const bars = beats.filter((_, i) => (i - d) % this.pr.perBar === 0);
+    if (bars.length > 1 && ((bars[1] - bars[0]) / len) * w < 4) return;
+    g.fillStyle = getComputedStyle(document.body).color;
+    g.globalAlpha = 0.18;
+    for (const b of bars) g.fillRect(Math.round((b / len) * w), 0, Math.max(1, devicePixelRatio), c.height);
+    g.globalAlpha = 1;
   }
 
   // ---------- export ----------

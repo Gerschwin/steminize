@@ -2,7 +2,13 @@
 
 (nothing waiting)
 
+Ideas not yet chosen: named section markers, key detection, foot-pedal control, waveform zoom.
+
 ## Done
+- [x] Library: keep separated songs + settings between sessions (v1.5.0)
+- [x] Speed trainer (v1.5.0)
+- [x] Loop gap and count-in (v1.5.0)
+- [x] Tempo/beat detection, click track, snap to beats/bars (v1.5.0)
 - [x] Per-stem EQ behind an **EQ** button (lights up when active): presets (Kick, Snare, Hi-hats, Bass on small speakers, Vocal clarity, Flat) plus manual low-cut, high-cut and one sweepable focus band (boost/cut, max +12 dB). Applies to playback and Export mix. (v1.4.0)
 - [x] Hide the Pan slider behind a toggle, off by default. (v1.3.0)
 - [x] "Pause after current song" option. (v1.3.0)

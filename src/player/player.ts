@@ -1,12 +1,10 @@
 import workletUrl from './worklet.ts?worker&url';
-import type { PlayerMsg } from './worklet.ts';
+import type { PlayerMsg, PlayerReport } from './worklet.ts';
+import type { Practice } from './transport.ts';
 import type { Stereo } from './mixcore.ts';
 import type { EqParams } from './eq.ts';
 
-export interface PlayerState {
-  pos: number; // frames
-  playing: boolean;
-}
+export type PlayerState = PlayerReport;
 
 /** Main-thread handle on the AudioWorklet stem player. */
 export class Player {
@@ -15,8 +13,8 @@ export class Player {
   private master: GainNode | null = null;
   private ready: Promise<void> | null = null;
   private queued: PlayerMsg[] = [];
-  state: PlayerState = { pos: 0, playing: false };
-  onState: (s: PlayerState & { ended: boolean }) => void = () => {};
+  state: PlayerState = { pos: 0, playing: false, ended: false, passes: 0, tempo: 1, countingIn: false };
+  onState: (s: PlayerState) => void = () => {};
 
   private init() {
     if (this.ready) return this.ready;
@@ -27,7 +25,7 @@ export class Player {
       const master = ctx.createGain();
       node.connect(master).connect(ctx.destination);
       node.port.onmessage = (e) => {
-        this.state = { pos: e.data.pos, playing: e.data.playing };
+        this.state = e.data;
         this.onState(e.data);
       };
       this.ctx = ctx;
@@ -53,7 +51,7 @@ export class Player {
   load(stems: Stereo[], gains: number[]) {
     this.queued = this.queued.filter((m) => m.type !== 'load');
     this.send({ type: 'load', stems, gains });
-    this.state = { pos: 0, playing: false };
+    this.state = { ...this.state, pos: 0, playing: false, passes: 0 };
     void this.init();
   }
   setGains(gains: number[], pans?: number[], eqs?: (EqParams | undefined)[]) {
@@ -74,6 +72,9 @@ export class Player {
   }
   setTempoPitch(tempo: number, pitch: number) {
     this.send({ type: 'tempo', tempo, pitch });
+  }
+  setPractice(practice: Practice) {
+    this.send({ type: 'practice', practice });
   }
   setVolume(v: number) {
     if (this.master) this.master.gain.value = v;
