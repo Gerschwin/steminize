@@ -5,11 +5,13 @@
 import { background as encoder } from './encode/client.ts';
 import type { Stereo } from './engine/separate.ts';
 import type { Settings } from './settings.ts';
+import type { KeyResult } from './analysis/key.ts';
 
 export interface Analysis {
   bpm: number;
   beats: number[]; // seconds
   downbeat: number;
+  key?: KeyResult;
 }
 
 export interface LibMeta {

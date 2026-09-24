@@ -3,6 +3,7 @@ import type { Stereo } from '../player/mixcore.ts';
 import { encoder } from '../encode/client.ts';
 import type { Analysis } from '../library.ts';
 import { periodForBpm, retrack } from '../analysis/beats.ts';
+import { keyName } from '../analysis/key.ts';
 import type { Trainer } from '../player/transport.ts';
 import { extensionFor, mimeFor } from '../encode/meta.ts';
 import { stemColour, MODELS } from '../models.ts';
@@ -13,7 +14,6 @@ import { eqPanel, type EqPanel } from './eqPanel.ts';
 import { $, fitCanvas, fmtDuration, fmtTime, h, pressed, toast } from './dom.ts';
 
 const SR = 44100;
-const BUCKETS = 2000;
 
 export interface Result {
   title: string;
@@ -58,7 +58,15 @@ export interface DeckState {
   tempo: number;
   pitch: number;
   practice: PracticeUi;
+  markers?: Marker[];
 }
+
+interface Marker {
+  name: string;
+  pos: number; // frames
+}
+const MARKER_NAMES = ['Intro', 'Verse', 'Chorus', 'Verse 2', 'Chorus 2', 'Bridge', 'Solo', 'Chorus 3', 'Outro'];
+const FINE = 256; // samples per bucket in the fine peak arrays used for zoomed drawing
 
 interface Lane {
   name: string;
@@ -70,23 +78,46 @@ interface Lane {
   solo: boolean;
   el: HTMLElement;
   canvas: HTMLCanvasElement;
-  peaks: Float32Array;
+  peaks: Float32Array; // fine peaks (FINE samples per bucket)
+  data: Stereo;
   layers?: [HTMLCanvasElement, HTMLCanvasElement];
 }
 
-function peaksOf(chs: Float32Array[], buckets = BUCKETS) {
+/** Peak level per FINE-sample bucket, averaged across channels. */
+function peaksOf(chs: Float32Array[]) {
   const n = chs[0].length;
-  const out = new Float32Array(buckets);
-  const size = Math.max(1, Math.floor(n / buckets));
-  for (let b = 0; b < buckets; b++) {
+  const out = new Float32Array(Math.ceil(n / FINE));
+  for (let b = 0; b < out.length; b++) {
     let m = 0;
-    const end = Math.min(n, (b + 1) * size);
-    for (let i = b * size; i < end; i += 4) {
+    const end = Math.min(n, (b + 1) * FINE);
+    for (let i = b * FINE; i < end; i += 2) {
       let v = 0;
       for (const c of chs) v += Math.abs(c[i]);
       if (v > m) m = v;
     }
     out[b] = m / chs.length;
+  }
+  return out;
+}
+
+/** Peaks for frames [start, end) at `buckets` resolution: from the fine array, or raw samples when zoomed in far. */
+function peaksForView(fine: Float32Array, chs: Float32Array[], start: number, end: number, buckets: number) {
+  const out = new Float32Array(buckets);
+  const spb = (end - start) / buckets;
+  for (let b = 0; b < buckets; b++) {
+    const s = start + b * spb;
+    const e = start + (b + 1) * spb;
+    let m = 0;
+    if (spb >= FINE) {
+      for (let k = Math.floor(s / FINE); k < Math.min(fine.length, Math.ceil(e / FINE)); k++) m = Math.max(m, fine[k]);
+    } else {
+      for (let i = Math.floor(s); i < Math.min(chs[0].length, Math.ceil(e)); i++) {
+        let v = 0;
+        for (const c of chs) v += Math.abs(c[i]);
+        m = Math.max(m, v / chs.length);
+      }
+    }
+    out[b] = m;
   }
   return out;
 }
@@ -126,6 +157,11 @@ export class Deck {
   private r: Result | null = null;
   private lanes: Lane[] = [];
   private overviewPeaks = new Float32Array(0);
+  private overviewScale = 1;
+  private laneScale = 1;
+  private markers: Marker[] = [];
+  private view = { start: 0, end: 1 };
+  private pedal = false;
   private overviewLayers: [HTMLCanvasElement, HTMLCanvasElement] | null = null;
   private loop = { on: false, a: 0, b: 0 };
   private tempo = 1;
@@ -180,6 +216,7 @@ export class Deck {
     showPan(panOn);
     panBtn.onclick = () => showPan(panBtn.getAttribute('aria-pressed') !== 'true');
     this.initPractice();
+    this.initMarkersAndZoom();
     this.initOverview();
     this.initKeys();
     new ResizeObserver(() => this.invalidateLayers()).observe($('deck'));
@@ -211,6 +248,9 @@ export class Deck {
     $('timeTotal').textContent = fmtTime(r.seconds);
 
     this.overviewPeaks = peaksOf(r.stems.flatMap((s) => s.data));
+    this.overviewScale = 1 / Math.max(1e-3, ...this.overviewPeaks);
+    this.markers = [];
+    this.view = { start: 0, end: r.stems[0].data[0].length };
     // Normalise display to the loudest stem so quiet stems are still visible.
     const lanes = $('lanes');
     lanes.replaceChildren();
@@ -232,7 +272,7 @@ export class Deck {
       const wave = h('div', { class: 'wave' }, canvas);
       const el = h('div', { class: 'lane' }, ctl, wave);
       lanes.append(el);
-      const lane: Lane = { name: s.name, vol: 1, pan: 0, mute: false, solo: false, el, canvas, peaks: peaksOf(s.data) };
+      const lane: Lane = { name: s.name, vol: 1, pan: 0, mute: false, solo: false, el, canvas, peaks: peaksOf(s.data), data: s.data };
       eqBtn.onclick = () => this.toggleEq(lane, colour);
       pressed(eqBtn, false);
       mute.onclick = () => this.setLane(lane, { mute: !lane.mute });
@@ -247,6 +287,7 @@ export class Deck {
       pan.ondblclick = () => setPan(0);
       dl.onclick = () => this.saveStem(i);
       wave.onclick = (e) => this.seekFrac(e.offsetX / wave.clientWidth);
+      wave.addEventListener('wheel', (e) => this.onWheel(e, wave), { passive: false });
       pressed(mute, false);
       pressed(solo, false);
       return lane;
@@ -256,7 +297,10 @@ export class Deck {
     this.setTempoPitch(this.tempo, this.pitch, false);
     this.player.setLoop(this.loop.on, this.loop.a, this.loop.b);
     this.updateLoopUi();
+    this.laneScale = 1 / Math.max(1e-3, ...this.lanes.flatMap((l) => Math.max(...l.peaks)));
     this.syncPracticeUi();
+    this.renderMarkers();
+    this.setView(0, this.length);
     this.setAnalysis(r.analysis);
     this.invalidateLayers();
     this.quiet = false;
@@ -270,6 +314,7 @@ export class Deck {
       tempo: this.tempo,
       pitch: this.pitch,
       practice: structuredClone({ ...this.pr, trainer: { ...this.pr.trainer, on: false } }),
+      markers: this.markers.map((m) => ({ ...m })),
     };
   }
 
@@ -278,6 +323,7 @@ export class Deck {
     this.tempo = s.tempo ?? 1;
     this.pitch = s.pitch ?? 0;
     this.loop = { ...this.loop, ...s.loop };
+    this.markers = (s.markers ?? []).map((m) => ({ ...m })).sort((a, b) => a.pos - b.pos);
     s.lanes?.forEach((st, i) => {
       const l = this.lanes[i];
       if (!l) return;
@@ -327,6 +373,7 @@ export class Deck {
   }
 
   private updateBpmInfo(analysing = false) {
+    this.updateKeyInfo();
     const a = this.r?.analysis;
     const el = $('bpmInfo');
     if (analysing) el.textContent = 'Tempo: analysing…';
@@ -335,6 +382,16 @@ export class Deck {
       const now = Math.round(a.bpm * this.tempo);
       el.textContent = `${Math.round(a.bpm)} BPM${this.tempo !== 1 ? ` (${now} at this speed)` : ''}`;
     }
+  }
+
+  private updateKeyInfo() {
+    const k = this.r?.analysis?.key;
+    const el = $('keyInfo');
+    el.hidden = !k;
+    if (!k) return;
+    const unsure = k.confidence < 0.05 ? ' (unsure)' : '';
+    el.textContent = this.pitch ? `Key ${keyName(k)} → ${keyName(k, this.pitch)}${unsure}` : `Key ${keyName(k)}${unsure}`;
+    el.title = unsure ? 'The key profile was close between two keys (often a major key and its relative minor)' : 'Detected from the non-drum stems';
   }
 
   private updateTrainerInfo(passes: number, countingIn: boolean) {
@@ -436,7 +493,7 @@ export class Deck {
       r.onsets ??= await this.needOnsets(r);
       const a = retrack(r.onsets, periodForBpm(bpm), this.pr.perBar);
       this.pr.barShift = 0;
-      this.setAnalysis({ bpm: a.bpm, beats: a.beats, downbeat: a.downbeat });
+      this.setAnalysis({ ...r.analysis, bpm: a.bpm, beats: a.beats, downbeat: a.downbeat });
       this.onAnalysisChange(r);
       this.practiceChanged();
     } catch (e) {
@@ -543,7 +600,169 @@ export class Deck {
   }
 
   private seekFrac(f: number) {
-    this.player.seek(Math.max(0, Math.min(1, f)) * this.length);
+    this.player.seek(this.frameAt(Math.max(0, Math.min(1, f))));
+    this.dirty = true;
+  }
+
+  /** Frame at a fraction across the visible (possibly zoomed) waveform. */
+  private frameAt(f: number) {
+    return this.view.start + f * (this.view.end - this.view.start);
+  }
+
+  // ---------- zoom ----------
+  private setView(start: number, end: number) {
+    const len = this.length || 1;
+    const span = Math.min(len, Math.max(SR, end - start));
+    start = Math.max(0, Math.min(len - span, start));
+    this.view = { start, end: start + span };
+    const zoomed = span < len - 1;
+    const scroll = $<HTMLInputElement>('viewScroll');
+    scroll.hidden = !zoomed;
+    if (zoomed) scroll.value = String(Math.round((1000 * start) / Math.max(1, len - span)));
+    this.invalidateLayers();
+  }
+
+  private zoom(factor: number, centre = this.player.state.pos) {
+    const span = this.view.end - this.view.start;
+    const next = span / factor;
+    const rel = span ? (centre - this.view.start) / span : 0.5;
+    this.setView(centre - rel * next, centre - rel * next + next);
+  }
+
+  private onWheel(e: WheelEvent, el: HTMLElement) {
+    if (!this.r) return;
+    e.preventDefault();
+    const span = this.view.end - this.view.start;
+    if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+      const d = e.shiftKey ? e.deltaY : e.deltaX;
+      this.setView(this.view.start + (d / el.clientWidth) * span, this.view.end + (d / el.clientWidth) * span);
+    } else {
+      const f = Math.max(0, Math.min(1, e.offsetX / el.clientWidth));
+      this.zoom(Math.exp(-e.deltaY * 0.002), this.frameAt(f));
+    }
+  }
+
+  // ---------- markers & pedal ----------
+  private initMarkersAndZoom() {
+    $('zoomIn').onclick = () => this.zoom(2);
+    $('zoomOut').onclick = () => this.zoom(0.5);
+    $('zoomFit').onclick = () => this.setView(0, this.length);
+    $<HTMLInputElement>('viewScroll').oninput = (e) => {
+      const span = this.view.end - this.view.start;
+      const start = (Number((e.target as HTMLInputElement).value) / 1000) * (this.length - span);
+      this.setView(start, start + span);
+    };
+    $('overviewWrap').addEventListener('wheel', (e) => this.onWheel(e, $('overviewWrap')), { passive: false });
+    $('addMarker').onclick = () => this.addMarker();
+    const pedalBtn = $('pedalBtn');
+    try {
+      this.pedal = localStorage.getItem('stemdeck.pedal') === '1';
+    } catch {
+      /* ignore */
+    }
+    pressed(pedalBtn, this.pedal);
+    pedalBtn.onclick = () => {
+      this.pedal = !this.pedal;
+      pressed(pedalBtn, this.pedal);
+      try {
+        localStorage.setItem('stemdeck.pedal', this.pedal ? '1' : '0');
+      } catch {
+        /* ignore */
+      }
+      toast(this.pedal ? 'Foot pedal mode: right/down = play/pause, left/up = restart section' : 'Arrow keys skip 5 s again');
+    };
+  }
+
+  private addMarker() {
+    if (!this.r) return;
+    const pos = Math.round(this.snap(this.player.state.pos));
+    if (this.markers.some((m) => Math.abs(m.pos - pos) < SR / 4)) {
+      toast('There is already a marker here');
+      return;
+    }
+    const used = new Set(this.markers.map((m) => m.name));
+    const name = MARKER_NAMES.find((n) => !used.has(n)) ?? `Section ${this.markers.length + 1}`;
+    this.markers.push({ name, pos });
+    this.markers.sort((a, b) => a.pos - b.pos);
+    this.markersChanged();
+  }
+
+  private markersChanged() {
+    this.renderMarkers();
+    this.invalidateLayers();
+    this.emit();
+  }
+
+  /** Index of the section the playhead is in (last marker at or before it). */
+  private sectionAt(pos: number) {
+    let idx = -1;
+    this.markers.forEach((m, i) => {
+      if (m.pos <= pos + SR / 20) idx = i;
+    });
+    return idx;
+  }
+
+  private renderMarkers() {
+    const here = this.sectionAt(this.player.state.pos);
+    $('markers').replaceChildren(
+      ...this.markers.map((m, i) => {
+        const go = h('button', { class: 'mk-go', type: 'button', title: `Jump to ${m.name} (${fmtTime(m.pos / SR)}). Double-click to rename` }, m.name);
+        const loop = h('button', { class: 'mk-loop', type: 'button', title: 'Loop this section' }, '⟳');
+        const del = h('button', { class: 'mk-del', type: 'button', title: 'Remove marker' }, '×');
+        go.onclick = () => {
+          this.player.seek(m.pos);
+          this.dirty = true;
+        };
+        // Rename: swap the button for a text box.
+        go.ondblclick = () => {
+          const input = h('input', { type: 'text', value: m.name, maxLength: 30, class: 'mk-edit', 'aria-label': 'Marker name' } as any);
+          let done = false;
+          const finish = (save: boolean) => {
+            if (done) return;
+            done = true;
+            const name = input.value.trim();
+            if (save && name) m.name = name;
+            this.markersChanged();
+          };
+          input.onkeydown = (e) => {
+            e.stopPropagation();
+            if (e.key === 'Enter') finish(true);
+            if (e.key === 'Escape') finish(false);
+          };
+          input.onblur = () => finish(true);
+          go.replaceWith(input);
+          input.focus();
+          input.select();
+        };
+        loop.onclick = () => {
+          this.loop.a = m.pos;
+          this.loop.b = this.markers[i + 1]?.pos ?? this.length;
+          this.setLoop(true);
+          this.player.seek(this.loop.a);
+        };
+        del.onclick = () => {
+          this.markers.splice(i, 1);
+          this.markersChanged();
+        };
+        return h('span', { class: `marker-chip${i === here ? ' here' : ''}` }, go, loop, del);
+      }),
+    );
+  }
+
+  /** Back to the start of the loop, or of the current section (or the previous one if just past it), and play. */
+  private restart() {
+    if (!this.r) return;
+    const pos = this.player.state.pos;
+    let to = 0;
+    if (this.loop.on) to = this.loop.a;
+    else {
+      const i = this.sectionAt(pos);
+      if (i >= 0) to = pos - this.markers[i].pos < SR && i > 0 ? this.markers[i - 1].pos : this.markers[i].pos;
+    }
+    // Pause first so starting again gives the count-in, if it's on.
+    this.player.pause();
+    this.player.seek(to);
+    void this.player.play();
     this.dirty = true;
   }
 
@@ -584,6 +803,7 @@ export class Deck {
   private initOverview() {
     const wrap = $('overviewWrap');
     const frac = (e: PointerEvent) => Math.max(0, Math.min(1, (e.clientX - wrap.getBoundingClientRect().left) / wrap.clientWidth));
+    // (fractions are of the visible range; frameAt() converts)
     wrap.addEventListener('pointerdown', (e) => {
       wrap.setPointerCapture(e.pointerId);
       this.drag = { x0: frac(e), moved: false };
@@ -594,8 +814,8 @@ export class Deck {
       if (Math.abs(f - this.drag.x0) * wrap.clientWidth > 6) this.drag.moved = true;
       if (this.drag.moved) {
         const [a, b] = [this.drag.x0, f].sort((x, y) => x - y);
-        this.loop.a = Math.round(a * this.length);
-        this.loop.b = Math.round(b * this.length);
+        this.loop.a = Math.round(this.frameAt(a));
+        this.loop.b = Math.round(this.frameAt(b));
         this.dirty = true;
       }
     });
@@ -612,9 +832,15 @@ export class Deck {
 
   private initKeys() {
     window.addEventListener('keydown', (e) => {
-      if (!this.r || e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.metaKey || e.ctrlKey) return;
+      if (!this.r || e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || (e.target as HTMLElement)?.isContentEditable || e.metaKey || e.ctrlKey || e.altKey) return;
       const pos = this.player.state.pos;
-      if (e.code === 'Space') this.toggle();
+      const k = e.key;
+      if (e.code === 'Space' || k === 'PageDown' || k === 'MediaPlayPause' || (this.pedal && ['ArrowRight', 'ArrowDown', 'Enter'].includes(k))) this.toggle();
+      else if (k === 'PageUp' || k === 'Home' || (this.pedal && ['ArrowLeft', 'ArrowUp'].includes(k))) this.restart();
+      else if (k === 'm' || k === 'M') this.addMarker();
+      else if (k === '+' || k === '=') this.zoom(2);
+      else if (k === '-' || k === '_') this.zoom(0.5);
+      else if (k === '0') this.setView(0, this.length);
       else if (e.key === 'ArrowLeft') this.player.seek(pos - 5 * SR);
       else if (e.key === 'ArrowRight') this.player.seek(Math.min(this.length - SR, pos + 5 * SR));
       else if (e.key === 'l' || e.key === 'L') this.setLoop(!this.loop.on);
@@ -637,11 +863,11 @@ export class Deck {
     const g = fitCanvas(canvas);
     const { width: w, height: hh } = canvas;
     g.clearRect(0, 0, w, hh);
-    const len = this.length || 1;
-    const px = (pos / len) * w;
+    const x = (f: number) => ((f - this.view.start) / (this.view.end - this.view.start)) * w;
+    const px = Math.max(-2, Math.min(w + 2, x(pos)));
     if (showLoop && this.loop.b > this.loop.a) {
       g.fillStyle = this.loop.on ? 'rgba(139,124,246,0.18)' : 'rgba(139,124,246,0.08)';
-      g.fillRect((this.loop.a / len) * w, 0, ((this.loop.b - this.loop.a) / len) * w, hh);
+      g.fillRect(x(this.loop.a), 0, x(this.loop.b) - x(this.loop.a), hh);
     }
     g.drawImage(layers[0], 0, 0);
     g.save();
@@ -650,31 +876,68 @@ export class Deck {
     g.clip();
     g.drawImage(layers[1], 0, 0);
     g.restore();
+    // Section markers
+    g.fillStyle = '#f59e0b';
+    for (const m of this.markers) {
+      const mx = x(m.pos);
+      if (mx < -1 || mx > w + 1) continue;
+      g.fillRect(Math.round(mx), 0, Math.max(1, devicePixelRatio), hh);
+    }
     g.fillStyle = getComputedStyle(document.body).color;
     g.fillRect(Math.round(px), 0, Math.max(1, devicePixelRatio), hh);
+  }
+
+  /** Marker names on the overview. */
+  private drawMarkerLabels(c: HTMLCanvasElement) {
+    if (!this.markers.length) return;
+    const g = c.getContext('2d')!;
+    const w = c.width;
+    const dpr = devicePixelRatio || 1;
+    g.font = `600 ${10 * dpr}px system-ui, sans-serif`;
+    g.textBaseline = 'top';
+    for (const m of this.markers) {
+      const mx = ((m.pos - this.view.start) / (this.view.end - this.view.start)) * w;
+      if (mx < -40 * dpr || mx > w) continue;
+      const tw = g.measureText(m.name).width + 6 * dpr;
+      g.fillStyle = '#f59e0b';
+      g.fillRect(mx, 0, tw, 13 * dpr);
+      g.fillStyle = '#111';
+      g.fillText(m.name, mx + 3 * dpr, 1.5 * dpr);
+    }
   }
 
   private draw() {
     this.dirty = false;
     const pos = this.player.state.pos;
     $('timeNow').textContent = fmtTime(pos / SR);
+    // Keep the playhead in view while zoomed in.
+    const span = this.view.end - this.view.start;
+    if (this.player.state.playing && span < this.length - 1 && (pos > this.view.end || pos < this.view.start)) this.setView(pos - span * 0.1, pos + span * 0.9);
+    const here = this.sectionAt(pos);
+    if (here !== (this as any).lastHere) {
+      (this as any).lastHere = here;
+      this.renderMarkers();
+    }
     const ov = $<HTMLCanvasElement>('overview');
     fitCanvas(ov);
+    const buckets = (w: number) => Math.max(1, Math.round(w / Math.max(2, Math.round(w / 700) + 1)));
     if (!this.overviewLayers || this.overviewLayers[0].width !== ov.width || this.overviewLayers[0].height !== ov.height) {
-      const scale = 1 / Math.max(1e-3, Math.max(...this.overviewPeaks));
+      const all = this.r!.stems.flatMap((s) => s.data);
+      const p = peaksForView(this.overviewPeaks, all, this.view.start, this.view.end, buckets(ov.width));
       this.overviewLayers = [
-        waveLayer(this.overviewPeaks, ov.width, ov.height, 'rgba(139,147,165,0.55)', scale),
-        waveLayer(this.overviewPeaks, ov.width, ov.height, '#8b7cf6', scale),
+        waveLayer(p, ov.width, ov.height, 'rgba(139,147,165,0.55)', this.overviewScale),
+        waveLayer(p, ov.width, ov.height, '#8b7cf6', this.overviewScale),
       ];
     }
     this.drawStrip(ov, this.overviewLayers, pos, true);
     this.drawBars(ov);
-    const maxPeak = Math.max(1e-3, ...this.lanes.map((l) => Math.max(...l.peaks)));
+    this.drawMarkerLabels(ov);
     for (const l of this.lanes) {
       fitCanvas(l.canvas);
       if (!l.layers || l.layers[0].width !== l.canvas.width || l.layers[0].height !== l.canvas.height) {
         const c = stemColour(l.name);
-        l.layers = [waveLayer(l.peaks, l.canvas.width, l.canvas.height, c + '66', 1 / maxPeak), waveLayer(l.peaks, l.canvas.width, l.canvas.height, c, 1 / maxPeak)];
+        const p = peaksForView(l.peaks, l.data, this.view.start, this.view.end, buckets(l.canvas.width));
+        l.layers = [waveLayer(p, l.canvas.width, l.canvas.height, c + '66', this.laneScale), waveLayer(p, l.canvas.width, l.canvas.height, c, this.laneScale)];
       }
       this.drawStrip(l.canvas, l.layers, pos, true);
     }
@@ -686,13 +949,20 @@ export class Deck {
     if (!beats.length) return;
     const g = c.getContext('2d')!;
     const w = c.width;
-    const len = this.length || 1;
+    const span = this.view.end - this.view.start || 1;
+    const x = (f: number) => Math.round(((f - this.view.start) / span) * w);
     const d = this.downbeat();
     const bars = beats.filter((_, i) => (i - d) % this.pr.perBar === 0);
-    if (bars.length > 1 && ((bars[1] - bars[0]) / len) * w < 4) return;
     g.fillStyle = getComputedStyle(document.body).color;
-    g.globalAlpha = 0.18;
-    for (const b of bars) g.fillRect(Math.round((b / len) * w), 0, Math.max(1, devicePixelRatio), c.height);
+    // Zoomed in far enough: show every beat faintly, bars stronger.
+    if (beats.length > 1 && ((beats[1] - beats[0]) / span) * w >= 8) {
+      g.globalAlpha = 0.08;
+      for (const b of beats) if (b >= this.view.start && b <= this.view.end) g.fillRect(x(b), 0, Math.max(1, devicePixelRatio), c.height);
+    }
+    if (bars.length > 1 && ((bars[1] - bars[0]) / span) * w >= 4) {
+      g.globalAlpha = 0.2;
+      for (const b of bars) if (b >= this.view.start && b <= this.view.end) g.fillRect(x(b), 0, Math.max(1, devicePixelRatio), c.height);
+    }
     g.globalAlpha = 1;
   }
 

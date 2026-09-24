@@ -14,6 +14,7 @@ import { FLAT, PRESETS, responseDb } from '../src/player/eq.ts';
 import { DEFAULT_PRACTICE, Transport } from '../src/player/transport.ts';
 import { Renderer } from '../src/player/mixcore.ts';
 import { analyse } from '../src/analysis/beats.ts';
+import { detectKey, keyName } from '../src/analysis/key.ts';
 
 let failed = 0;
 const ok = (name: string, cond: boolean, detail = '') => {
@@ -265,6 +266,32 @@ for (const [len, overlap, shifts] of [
   const hits = truth.filter((b) => a.beats.some((d) => Math.abs(d - b) < 0.03)).length;
   const bar = truth.some((b, i) => i % 4 === 0 && Math.abs(b - a.beats[a.downbeat]) < 0.03);
   ok('beat detection: tempo, beats and bar start', Math.abs(a.bpm - bpm) < 0.5 && hits >= truth.length - 1 && bar, `${a.bpm} BPM, ${hits}/${truth.length} beats, bar ${bar}`);
+}
+
+// ---- 5f. key detection on synthetic chord progressions
+{
+  const NOTE: Record<string, number> = { C: 0, 'C#': 1, D: 2, Eb: 3, E: 4, F: 5, 'F#': 6, G: 7, Ab: 8, A: 9, Bb: 10, B: 11 };
+  const song = (chords: string[]) => {
+    const secs = 2;
+    const x = new Float32Array(chords.length * secs * SR);
+    chords.forEach((ch, ci) => {
+      const minor = ch.endsWith('m');
+      const root = NOTE[minor ? ch.slice(0, -1) : ch];
+      for (const n of [root + 48, root + 60, root + 60 + (minor ? 3 : 4), root + 67]) {
+        const f = (440 * 2 ** ((n + 12 - 69) / 12)) / 2;
+        for (let i = 0; i < secs * SR; i++) {
+          let v = 0;
+          for (let hh = 1; hh <= 6; hh++) v += Math.sin((2 * Math.PI * f * hh * i) / SR) / hh;
+          x[ci * secs * SR + i] += 0.05 * v;
+        }
+      }
+    });
+    return x;
+  };
+  const a = keyName(detectKey(song(['Am', 'Dm', 'E', 'Am', 'F', 'G', 'E', 'Am']))!);
+  const e = keyName(detectKey(song(['Eb', 'Ab', 'Bb', 'Eb', 'Cm', 'Ab', 'Bb', 'Eb']))!);
+  ok('key detection (A minor, E♭ major)', a === 'A minor' && e === 'E♭ major', `${a}, ${e}`);
+  ok('key name after pitch shift', keyName({ tonic: 4, mode: 'major' }, -2) === 'D major' && keyName({ tonic: 9, mode: 'minor' }, 3) === 'C minor');
 }
 
 // ---- 6. encoders, decoded by ffmpeg

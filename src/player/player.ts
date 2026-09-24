@@ -65,7 +65,9 @@ export class Player {
     this.send({ type: 'pause' });
   }
   seek(pos: number) {
-    this.send({ type: 'seek', pos: Math.max(0, Math.round(pos)) });
+    const p = Math.max(0, Math.round(pos));
+    this.state = { ...this.state, pos: p }; // update now; the player confirms shortly
+    this.send({ type: 'seek', pos: p });
   }
   setLoop(on: boolean, start: number, end: number) {
     this.send({ type: 'loop', on, start: Math.round(start), end: Math.round(end) });

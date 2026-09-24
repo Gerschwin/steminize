@@ -208,6 +208,7 @@ details.more[open] summary { color: var(--text); }
 .trainer-cfg { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 3px; flex-wrap: wrap; }
 .trainer-cfg input { width: 48px; padding: 2px 4px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); font-size: 12px; }
 .bpm { font-weight: 600; font-size: 13px; margin-right: 4px; }
+.bpm.key { padding-left: 10px; border-left: 1px solid var(--line); }
 .tool #clickVol { flex: 0 1 110px; min-width: 60px; }
 .no-beats .needs-beats { opacity: 0.45; pointer-events: none; }
 .btn.tap-on { background: var(--accent); color: #fff; }
@@ -246,6 +247,20 @@ details.more[open] summary { color: var(--text); }
   .lane .wave { min-height: 40px; }
 }
 .shortcuts { margin: 0; }
+.shortcuts-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.ov-col { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+#viewScroll { height: 14px; }
+.markers-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: -6px; }
+.zoom { display: inline-flex; gap: 2px; }
+.markers { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
+.marker-chip { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 99px; background: var(--panel-2); font-size: 12px; overflow: hidden; }
+.marker-chip.here { border-color: var(--accent); }
+.marker-chip button { border: 0; background: transparent; cursor: pointer; padding: 3px 8px; font-size: 12px; }
+.marker-chip .mk-go { font-weight: 600; }
+.marker-chip .mk-edit { width: 110px; border: 0; outline: 1px solid var(--accent); background: var(--panel); font-size: 12px; padding: 3px 8px; }
+.marker-chip .mk-loop, .marker-chip .mk-del { padding: 3px 6px; color: var(--muted); }
+.marker-chip .mk-loop:hover, .marker-chip .mk-del:hover { color: var(--text); }
+@media (hover: none) { .shortcuts { display: none; } }
 @media (hover: none) { .shortcuts { display: none; } }
 
 /* ---------- dialog & toasts ---------- */

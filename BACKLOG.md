@@ -2,9 +2,10 @@
 
 (nothing waiting)
 
-Ideas not yet chosen: named section markers, key detection, foot-pedal control, waveform zoom.
+Ideas not yet chosen: record yourself over the track, MIDI transcription, tuner.
 
 ## Done
+- [x] Section markers, foot pedal control, key detection, waveform zoom (v1.6.0)
 - [x] Library: keep separated songs + settings between sessions (v1.5.0)
 - [x] Speed trainer (v1.5.0)
 - [x] Loop gap and count-in (v1.5.0)

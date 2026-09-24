@@ -11,20 +11,26 @@ const pref = (k: string, d: string) => {
   }
 };
 
-/** Mono signal for tempo analysis: the drum stem if there is one, else everything but vocals. */
-function analysisSource(stems: Result['stems']): Float32Array {
-  const drums = stems.find((s) => s.name === 'drums');
-  const use = drums ? [drums] : stems.filter((s) => s.name !== 'vocals').length ? stems.filter((s) => s.name !== 'vocals') : stems;
+function monoOf(use: Result['stems']): Float32Array {
   const n = use[0].data[0].length;
   const mono = new Float32Array(n);
   for (const s of use) for (let i = 0; i < n; i++) mono[i] += (s.data[0][i] + s.data[1][i]) / 2;
   return mono;
 }
 
+/** Tempo: the drum stem if there is one, else everything but vocals. Key: everything but drums. */
+function analysisSources(stems: Result['stems']) {
+  const drums = stems.find((s) => s.name === 'drums');
+  const noVox = stems.filter((s) => s.name !== 'vocals');
+  const rhythm = monoOf(drums ? [drums] : noVox.length ? noVox : stems);
+  const tonal = stems.filter((s) => s.name !== 'drums');
+  return { rhythm, harmonic: monoOf(tonal.length ? tonal : stems) };
+}
+
 type Onsets = { env: Float32Array; low: Float32Array };
 async function analyse(r: Result): Promise<Analysis & Onsets> {
-  const mono = analysisSource(r.stems);
-  const req = { type: 'beats' as const, mono };
+  const { rhythm, harmonic } = analysisSources(r.stems);
+  const req = { type: 'beats' as const, mono: rhythm, harmonic };
   return encoder.run<Analysis & Onsets>(req);
 }
 
@@ -105,6 +111,17 @@ export function initLibrary(deck: Deck) {
         const r: Result = { title: m.title, stems, settings: m.settings, seconds: m.seconds, took: m.took, libId: m.id, analysis: m.analysis };
         deck.open(r, m.state as DeckState | undefined);
         onOpen(r);
+        // Songs saved before key detection existed: work it out now, keep any tempo corrections.
+        if (m.analysis && !m.analysis.key) {
+          void analyse(r).then((a) => {
+            if (!a.key || !r.analysis) return;
+            r.analysis = { ...r.analysis, key: a.key };
+            r.onsets ??= { env: a.env, low: a.low };
+            m.analysis = r.analysis;
+            if (deck.current === r) deck.setAnalysis(r.analysis);
+            writeMeta(m).catch(() => {});
+          });
+        }
       } catch (err) {
         toast(`Couldn't open ${m.title}: ${(err as Error).message}`, true);
       }
@@ -119,7 +136,7 @@ export function initLibrary(deck: Deck) {
   async function afterSeparation(r: Result) {
     try {
       const a = await analyse(r);
-      r.analysis = { bpm: a.bpm, beats: a.beats, downbeat: a.downbeat };
+      r.analysis = { bpm: a.bpm, beats: a.beats, downbeat: a.downbeat, key: a.key };
       r.onsets = { env: a.env, low: a.low };
       if (deck.current === r) deck.setAnalysis(r.analysis);
     } catch (e) {

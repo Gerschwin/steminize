@@ -7,6 +7,7 @@ import { encodeFlac } from './flac.ts';
 import { renderMix, type Stereo } from '../player/mixcore.ts';
 import type { EqParams } from '../player/eq.ts';
 import { analyse } from '../analysis/beats.ts';
+import { detectKey } from '../analysis/key.ts';
 
 export type EncodeReq =
   | { type: 'stems'; id: number; stems: { name: string; data: Stereo }[]; out: OutputOptions }
@@ -27,7 +28,7 @@ export type EncodeReq =
   /** Save stems (16-bit FLAC) + meta.json into the library folder `dir`. */
   | { type: 'lib-save'; id: number; dir: string; meta: string; stems: { name: string; data: Stereo; scale: number }[] }
   | { type: 'lib-meta'; id: number; dir: string; meta: string }
-  | { type: 'beats'; id: number; mono: Float32Array };
+  | { type: 'beats'; id: number; mono: Float32Array; harmonic?: Float32Array };
 
 export type EncodeRes =
   | { id: number; type: 'file'; name: string; bytes: Uint8Array }
@@ -92,7 +93,8 @@ async function handle(m: EncodeReq) {
     await writeFile(await libDir(m.dir), 'meta.json', new TextEncoder().encode(m.meta));
   } else if (m.type === 'beats') {
     const a = analyse(m.mono);
-    post({ id: m.id, type: 'result', value: { bpm: a.bpm, beats: a.beats, downbeat: a.downbeat, env: a.env, low: a.low } }, [
+    const key = m.harmonic ? detectKey(m.harmonic) : undefined;
+    post({ id: m.id, type: 'result', value: { bpm: a.bpm, beats: a.beats, downbeat: a.downbeat, key, env: a.env, low: a.low } }, [
       a.env.buffer as ArrayBuffer,
       a.low.buffer as ArrayBuffer,
     ]);

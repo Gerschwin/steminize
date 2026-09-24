@@ -168,7 +168,20 @@
               <svg viewBox="0 0 24 24" class="i-pause"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
             </button>
             <div class="time"><span id="timeNow">0:00</span><span class="muted"> / <span id="timeTotal">0:00</span></span></div>
-            <div class="overview" id="overviewWrap"><canvas id="overview"></canvas></div>
+            <div class="ov-col">
+              <div class="overview" id="overviewWrap"><canvas id="overview"></canvas></div>
+              <input type="range" id="viewScroll" min="0" max="1000" value="0" hidden aria-label="Scroll the zoomed waveform" />
+            </div>
+          </div>
+
+          <div class="markers-bar">
+            <div class="zoom">
+              <button class="btn tiny ghost" id="zoomOut" title="Zoom out (−)">−</button>
+              <button class="btn tiny ghost" id="zoomIn" title="Zoom in (+). Or scroll over the waveform">+</button>
+              <button class="btn tiny ghost" id="zoomFit" title="Whole song (0)">Fit</button>
+            </div>
+            <div class="markers" id="markers"></div>
+            <button class="btn tiny ghost" id="addMarker" title="Add a section marker at the playhead (M)">+ Marker</button>
           </div>
 
           <div class="tools">
@@ -201,6 +214,7 @@
             </div>
             <div class="tool beat">
               <span id="bpmInfo" class="bpm">Tempo: not analysed</span>
+              <span id="keyInfo" class="bpm key" hidden></span>
               <button class="btn tiny ghost needs-beats" id="halfBtn" title="Detected tempo is double the real one">½×</button>
               <button class="btn tiny ghost needs-beats" id="dblBtn" title="Detected tempo is half the real one">2×</button>
               <button class="btn tiny ghost needs-beats" id="tapBtn" title="Tap along to the beat 4+ times to correct the tempo">Tap</button>
@@ -229,7 +243,10 @@
             <button class="btn tiny ghost toggle" id="panToggle" aria-pressed="false" title="Show left–right pan sliders">Pan</button>
           </div>
           <div class="lanes" id="lanes"></div>
-          <p class="muted small shortcuts">Space play/pause · ← → skip 5 s · L loop · [ ] set loop points · 1–6 mute stems</p>
+          <div class="shortcuts-row">
+            <p class="muted small shortcuts">Space / PageDown play · PageUp restart section · M marker · + − 0 zoom · ← → skip 5 s · L loop · [ ] loop points · 1–6 mute</p>
+            <button class="btn tiny ghost toggle" id="pedalBtn" aria-pressed="false" title="For page-turner pedals that send arrow keys: right/down = play/pause, left/up = restart section">Foot pedal mode</button>
+          </div>
         </div>
       </section>
     </main>
