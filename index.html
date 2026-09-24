@@ -214,7 +214,7 @@
             </div>
             <div class="tool beat">
               <span id="bpmInfo" class="bpm">Tempo: not analysed</span>
-              <span id="keyInfo" class="bpm key" hidden></span>
+              <button id="keyInfo" class="bpm key" type="button" hidden></button>
               <button class="btn tiny ghost needs-beats" id="halfBtn" title="Detected tempo is double the real one">½×</button>
               <button class="btn tiny ghost needs-beats" id="dblBtn" title="Detected tempo is half the real one">2×</button>
               <button class="btn tiny ghost needs-beats" id="tapBtn" title="Tap along to the beat 4+ times to correct the tempo">Tap</button>
@@ -222,6 +222,22 @@
                 <select id="perBar" class="needs-beats"><option>2</option><option>3</option><option selected>4</option><option>5</option><option>6</option><option>7</option></select>
               </label>
               <button class="btn tiny ghost needs-beats" id="shiftBar" title="Move the bar start one beat later">Bar start →</button>
+            </div>
+            <div class="tool key-panel" id="keyPanel" hidden>
+              <div class="kp-row">
+                <span class="muted small" id="keyWhere"></span>
+                <div class="kp-list" id="keyList"></div>
+              </div>
+              <div class="kp-row">
+                <button class="btn tiny ghost" id="keySection" hidden>Check this section only</button>
+                <button class="btn tiny ghost" id="keyWhole" hidden>Check whole song</button>
+                <span class="kp-set">Set key
+                  <select id="keyTonic"></select>
+                  <select id="keyMode"><option value="major">major</option><option value="minor">minor</option></select>
+                  <button class="btn tiny" id="keySet">Set</button>
+                </span>
+                <button class="btn tiny ghost" id="keyClose">Close</button>
+              </div>
             </div>
             <div class="tool">
               <label>Tempo <output id="tempoOut">100%</output></label>

@@ -1,6 +1,7 @@
 import { background as encoder } from '../encode/client.ts';
 import { deleteSong, libraryAvailable, listSongs, loadStems, saveSong, writeMeta, type Analysis, type LibMeta } from '../library.ts';
 import type { Deck, DeckState, Result } from './deck.ts';
+import type { KeyCandidate } from '../analysis/key.ts';
 import { $, fmtMB, fmtTime, h, toast } from './dom.ts';
 
 const pref = (k: string, d: string) => {
@@ -66,6 +67,11 @@ export function initLibrary(deck: Deck) {
       meta.analysis = r.analysis;
       writeMeta(meta).catch(() => {});
     }
+  };
+  deck.rankKeys = (r, start, end) => {
+    const { harmonic } = analysisSources(r.stems);
+    const seg = start != null && end != null ? harmonic.slice(Math.max(0, Math.round(start)), Math.round(end)) : harmonic;
+    return encoder.run<KeyCandidate[]>({ type: 'keys', harmonic: seg });
   };
   deck.needOnsets = async (r) => {
     const a = await analyse(r);

@@ -9,6 +9,14 @@ export interface KeyResult {
   mode: 'major' | 'minor';
   /** Correlation margin over the runner-up (0-1). Below ~0.05 is a guess. */
   confidence: number;
+  /** Set by the user rather than detected. */
+  manual?: boolean;
+}
+
+export interface KeyCandidate {
+  tonic: number;
+  mode: 'major' | 'minor';
+  score: number; // correlation, -1..1
 }
 
 const MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
@@ -72,15 +80,21 @@ function pearson(a: ArrayLike<number>, b: ArrayLike<number>) {
   return n / Math.sqrt(da * db || 1);
 }
 
-export function detectKey(mono: Float32Array): KeyResult | undefined {
+/** All 24 keys ranked by how well they fit the audio. */
+export function rankKeys(mono: Float32Array): KeyCandidate[] {
   const c = chroma(mono);
-  if (c.every((v) => v === 0)) return undefined;
-  const scores: { tonic: number; mode: 'major' | 'minor'; r: number }[] = [];
+  if (c.every((v) => v === 0)) return [];
+  const scores: KeyCandidate[] = [];
   for (let t = 0; t < 12; t++) {
     const rot = (p: number[]) => Array.from({ length: 12 }, (_, i) => p[(i - t + 12) % 12]);
-    scores.push({ tonic: t, mode: 'major', r: pearson(c, rot(MAJOR)) });
-    scores.push({ tonic: t, mode: 'minor', r: pearson(c, rot(MINOR)) });
+    scores.push({ tonic: t, mode: 'major', score: pearson(c, rot(MAJOR)) });
+    scores.push({ tonic: t, mode: 'minor', score: pearson(c, rot(MINOR)) });
   }
-  scores.sort((a, b) => b.r - a.r);
-  return { tonic: scores[0].tonic, mode: scores[0].mode, confidence: Math.round((scores[0].r - scores[1].r) * 1000) / 1000 };
+  return scores.sort((a, b) => b.score - a.score);
+}
+
+export function detectKey(mono: Float32Array): KeyResult | undefined {
+  const s = rankKeys(mono);
+  if (!s.length) return undefined;
+  return { tonic: s[0].tonic, mode: s[0].mode, confidence: Math.round((s[0].score - s[1].score) * 1000) / 1000 };
 }

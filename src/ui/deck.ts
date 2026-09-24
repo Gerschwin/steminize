@@ -3,7 +3,7 @@ import type { Stereo } from '../player/mixcore.ts';
 import { encoder } from '../encode/client.ts';
 import type { Analysis } from '../library.ts';
 import { periodForBpm, retrack } from '../analysis/beats.ts';
-import { keyName } from '../analysis/key.ts';
+import { keyName, type KeyCandidate, type KeyResult } from '../analysis/key.ts';
 import type { Trainer } from '../player/transport.ts';
 import { extensionFor, mimeFor } from '../encode/meta.ts';
 import { stemColour, MODELS } from '../models.ts';
@@ -152,6 +152,8 @@ export class Deck {
   onStateChange: (s: DeckState) => void = () => {};
   /** Called when a tempo correction changes the song's analysis. */
   onAnalysisChange: (r: Result) => void = () => {};
+  /** Ranks keys for the song, or for a range of frames. */
+  rankKeys: (r: Result, start?: number, end?: number) => Promise<KeyCandidate[]> = () => Promise.resolve([]);
   /** Provides onset envelopes for a song that doesn't have them in memory. */
   needOnsets: (r: Result) => Promise<{ env: Float32Array; low: Float32Array }> = () => Promise.reject(new Error('unavailable'));
   private r: Result | null = null;
@@ -217,6 +219,7 @@ export class Deck {
     panBtn.onclick = () => showPan(panBtn.getAttribute('aria-pressed') !== 'true');
     this.initPractice();
     this.initMarkersAndZoom();
+    this.initKeyPanel();
     this.initOverview();
     this.initKeys();
     new ResizeObserver(() => this.invalidateLayers()).observe($('deck'));
@@ -388,10 +391,95 @@ export class Deck {
     const k = this.r?.analysis?.key;
     const el = $('keyInfo');
     el.hidden = !k;
-    if (!k) return;
-    const unsure = k.confidence < 0.05 ? ' (unsure)' : '';
-    el.textContent = this.pitch ? `Key ${keyName(k)} → ${keyName(k, this.pitch)}${unsure}` : `Key ${keyName(k)}${unsure}`;
-    el.title = unsure ? 'The key profile was close between two keys (often a major key and its relative minor)' : 'Detected from the non-drum stems';
+    if (!k) {
+      $('keyPanel').hidden = true;
+      return;
+    }
+    const unsure = !k.manual && k.confidence < 0.05 ? ' (unsure)' : '';
+    const set = k.manual ? ' ✓' : '';
+    el.textContent = (this.pitch ? `Key ${keyName(k)} → ${keyName(k, this.pitch)}` : `Key ${keyName(k)}`) + unsure + set;
+    el.title = 'Click to recheck or change the key';
+  }
+
+  // ---------- key panel ----------
+  private initKeyPanel() {
+    const panel = $('keyPanel');
+    const tonic = $<HTMLSelectElement>('keyTonic');
+    const mode = $<HTMLSelectElement>('keyMode');
+    const names = ['C', 'C♯ / D♭', 'D', 'E♭', 'E', 'F', 'F♯ / G♭', 'G', 'A♭', 'A', 'B♭', 'B'];
+    tonic.replaceChildren(...names.map((n, i) => h('option', { value: String(i) }, n)));
+    $('keyInfo').onclick = () => {
+      panel.hidden = !panel.hidden;
+      if (!panel.hidden) void this.showKeyCandidates();
+    };
+    $('keyClose').onclick = () => (panel.hidden = true);
+    $('keySection').onclick = () => {
+      const r = this.range();
+      void this.showKeyCandidates(r?.[0], r?.[1]);
+    };
+    $('keyWhole').onclick = () => void this.showKeyCandidates();
+    $('keySet').onclick = () => this.setKey({ tonic: Number(tonic.value), mode: mode.value as 'major' | 'minor', confidence: 1, manual: true });
+  }
+
+  /** The loop if one is on, otherwise the current marked section. */
+  private range(): [number, number, string] | undefined {
+    if (this.loop.on && this.loop.b > this.loop.a) return [this.loop.a, this.loop.b, 'the loop'];
+    const i = this.sectionAt(this.player.state.pos);
+    if (i >= 0) return [this.markers[i].pos, this.markers[i + 1]?.pos ?? this.length, `“${this.markers[i].name}”`];
+    return undefined;
+  }
+
+  private async showKeyCandidates(start?: number, end?: number) {
+    const r = this.r;
+    if (!r) return;
+    const list = $('keyList');
+    const where = start != null ? (this.range()?.[2] ?? 'this part') : 'the whole song';
+    $('keyWhere').textContent = `Checking ${where}…`;
+    list.replaceChildren();
+    this.keyPartial = start != null;
+    this.refreshKeySectionBtn();
+    $('keyWhole').hidden = start == null;
+    const cur = r.analysis?.key;
+    if (cur) {
+      $<HTMLSelectElement>('keyTonic').value = String(cur.tonic);
+      $<HTMLSelectElement>('keyMode').value = cur.mode;
+    }
+    try {
+      const c = await this.rankKeys(r, start, end);
+      if (this.r !== r) return;
+      const top = c[0]?.score ?? 1;
+      $('keyWhere').textContent = `Best matches for ${where}:`;
+      list.replaceChildren(
+        ...c.slice(0, 5).map((k) => {
+          const pct = Math.max(0, Math.round((k.score / top) * 100));
+          const isCur = cur && cur.tonic === k.tonic && cur.mode === k.mode;
+          const b = h('button', { class: `eq-chip${isCur ? ' cur' : ''}`, type: 'button', title: `Fit ${pct}% of the best match` }, `${keyName(k)} · ${pct}%`);
+          b.onclick = () => this.setKey({ tonic: k.tonic, mode: k.mode, confidence: Math.round((k.score - (c[1]?.score ?? 0)) * 1000) / 1000, manual: true });
+          return b;
+        }),
+      );
+    } catch (e) {
+      $('keyWhere').textContent = `Couldn't check the key: ${(e as Error).message}`;
+    }
+  }
+
+  private keyPartial = false;
+  /** Show "Check <loop/section> only" when there is one (kept current as loops and markers change). */
+  private refreshKeySectionBtn() {
+    const btn = $('keySection');
+    const rng = this.range();
+    btn.hidden = !rng || this.keyPartial;
+    if (rng) btn.textContent = `Check ${rng[2]} only`;
+  }
+
+  private setKey(k: KeyResult) {
+    const r = this.r;
+    if (!r?.analysis) return;
+    r.analysis = { ...r.analysis, key: k };
+    this.updateKeyInfo();
+    this.onAnalysisChange(r);
+    for (const b of $('keyList').querySelectorAll('button')) b.classList.toggle('cur', b.textContent?.startsWith(keyName(k) + ' ') ?? false);
+    toast(`Key set to ${keyName(k)}`);
   }
 
   private updateTrainerInfo(passes: number, countingIn: boolean) {
@@ -703,6 +791,7 @@ export class Deck {
   }
 
   private renderMarkers() {
+    if (!$('keyPanel').hidden) this.refreshKeySectionBtn();
     const here = this.sectionAt(this.player.state.pos);
     $('markers').replaceChildren(
       ...this.markers.map((m, i) => {
@@ -792,6 +881,7 @@ export class Deck {
   }
 
   private updateLoopUi() {
+    if (!$('keyPanel').hidden) this.refreshKeySectionBtn();
     pressed($('loopBtn'), this.loop.on);
     $('loopInfo').textContent =
       this.loop.b > this.loop.a
