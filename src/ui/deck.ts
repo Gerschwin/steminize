@@ -222,6 +222,7 @@ export class Deck {
     this.initPractice();
     this.initMarkersAndZoom();
     this.initKeyPanel();
+    this.initDrawer();
     this.initOverview();
     this.initKeys();
     new ResizeObserver(() => this.invalidateLayers()).observe($('deck'));
@@ -276,7 +277,7 @@ export class Deck {
       const panOut = h('output', {}, 'C');
       const label = s.name.startsWith('no_') ? `No ${s.name.slice(3)}` : s.name;
       const ctl = h('div', { class: 'lane-ctl', style: `--c:${colour}` }, h('span', { class: 'name', title: label }, label), mute, solo, eqBtn, dl,
-        h('label', { class: 'mini' }, h('span', {}, 'Vol'), vol),
+        h('label', { class: 'mini vol' }, h('span', {}, 'Vol'), vol),
         h('label', { class: 'mini pan' }, h('span', {}, 'Pan'), pan, panOut));
       const wave = h('div', { class: 'wave' }, canvas);
       const el = h('div', { class: 'lane' }, ctl, wave);
@@ -383,6 +384,7 @@ export class Deck {
 
   private updateBpmInfo(analysing = false) {
     this.updateKeyInfo();
+    this.updateDrawerSummary();
     const a = this.r?.analysis;
     const el = $('bpmInfo');
     if (analysing) el.textContent = 'Tempo: analysing…';
@@ -405,6 +407,7 @@ export class Deck {
     const set = k.manual ? ' ✓' : '';
     el.textContent = (this.pitch ? `Key ${keyName(k)} → ${keyName(k, this.pitch)}` : `Key ${keyName(k)}`) + unsure + set;
     el.title = 'Click to recheck or change the key';
+    this.updateDrawerSummary();
   }
 
   // ---------- key panel ----------
@@ -512,6 +515,46 @@ export class Deck {
     $<HTMLInputElement>('trEvery').value = String(p.trainer.every);
     this.updateTrainerInfo(0, false);
     this.updateBpmInfo();
+    this.updateDrawerSummary();
+  }
+
+  // ---------- collapsible "Practice" / "Tempo & key" drawer ----------
+  private initDrawer() {
+    const tabs = [...document.querySelectorAll<HTMLButtonElement>('.dtab')];
+    const open = (name: string | null) => {
+      for (const t of tabs) t.setAttribute('aria-expanded', String(t.dataset.tab === name));
+      for (const p of document.querySelectorAll<HTMLElement>('.dpane')) p.hidden = p.dataset.pane !== name;
+      try {
+        localStorage.setItem('stemdeck.drawer', name ?? '');
+      } catch {
+        /* ignore */
+      }
+    };
+    for (const t of tabs) t.onclick = () => open(t.getAttribute('aria-expanded') === 'true' ? null : t.dataset.tab!);
+    let saved = '';
+    try {
+      saved = localStorage.getItem('stemdeck.drawer') ?? '';
+    } catch {
+      /* ignore */
+    }
+    open(saved || null);
+  }
+
+  /** One-line summaries on the drawer tabs, so closed panels still show what's on. */
+  private updateDrawerSummary() {
+    const p = this.pr;
+    const bits = [
+      p.trainer.on ? `Trainer ${Math.round(p.trainer.from * 100)}→${Math.round(p.trainer.to * 100)}%` : '',
+      p.gap ? `Gap ${p.gap} s` : '',
+      p.countIn ? 'Count-in' : '',
+      p.click ? 'Click' : '',
+    ].filter(Boolean);
+    const sp = $('sumPractice');
+    sp.textContent = bits.length ? bits.join(' · ') : 'off';
+    sp.classList.toggle('on', bits.length > 0);
+    const a = this.r?.analysis;
+    const k = a?.key;
+    $('sumBeat').textContent = a?.beats.length ? [`${Math.round(a.bpm)} BPM`, k ? keyName(k, this.pitch) : ''].filter(Boolean).join(' · ') : 'analysing…';
   }
 
   private practiceChanged() {

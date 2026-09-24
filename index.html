@@ -29,6 +29,11 @@
 
     <main class="layout">
       <aside class="side">
+        <nav class="side-tabs" role="tablist">
+          <button class="stab" type="button" role="tab" data-side="songs" aria-selected="true">Songs</button>
+          <button class="stab" type="button" role="tab" data-side="settings" aria-selected="false">Settings</button>
+        </nav>
+        <div class="side-pane" data-sidepane="songs">
         <label class="drop" id="drop">
           <input type="file" id="fileInput" accept="audio/*,.mp3,.wav,.flac,.ogg,.m4a,.aac,.opus,.aiff,.aif" multiple hidden />
           <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M12 3v12m0-12 4 4m-4-4-4 4M4 15v3a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -40,8 +45,9 @@
           <label class="btn tiny ghost" title="Open several audio files as one song, one lane each (no separation)">Open multitrack…<input type="file" id="multiFiles" accept="audio/*,.mp3,.wav,.flac,.ogg,.m4a,.aac,.opus,.aiff,.aif" multiple hidden /></label>
           <label class="btn tiny ghost" title="Open every audio file in a folder as one song">Open folder…<input type="file" id="multiFolder" webkitdirectory multiple hidden /></label>
         </div>
+        <p class="use-sum muted small">New songs use <b id="useSum"></b> · <button class="linkish" type="button" id="changeSettings">change</button></p>
 
-        <section class="card">
+        <section class="card" id="queueCard" hidden>
           <div class="card-head">
             <h2>Queue</h2>
             <div class="q-actions">
@@ -65,7 +71,8 @@
           <ul class="queue lib" id="libList"></ul>
           <p class="muted small empty" id="libInfo">Separated songs are kept here so you don't have to wait again.</p>
         </section>
-
+        </div>
+        <div class="side-pane" data-sidepane="settings" hidden>
         <section class="card settings" id="settings">
           <div class="card-head">
             <h2>Separation</h2>
@@ -140,6 +147,7 @@
           </details>
           <p class="estimate" id="estimate"></p>
         </section>
+        </div>
       </aside>
 
       <section class="stage">
@@ -199,51 +207,6 @@
                 <select id="snap"><option value="off">Off</option><option value="beat">Beat</option><option value="bar">Bar</option></select>
               </label>
             </div>
-            <div class="tool practice">
-              <button class="btn tiny toggle" id="trainerBtn" aria-pressed="false" title="Loop the section, speeding up after each pass">Speed trainer</button>
-              <span class="trainer-cfg">
-                <input type="number" id="trFrom" min="30" max="150" step="5" value="70" aria-label="Start speed" />% →
-                <input type="number" id="trTo" min="30" max="150" step="5" value="100" aria-label="Target speed" />%,
-                +<input type="number" id="trStep" min="1" max="25" step="1" value="5" aria-label="Step" />% every
-                <input type="number" id="trEvery" min="1" max="10" step="1" value="1" aria-label="Passes per step" /> pass(es)
-              </span>
-              <span class="muted small" id="trainerInfo"></span>
-            </div>
-            <div class="tool practice">
-              <label>Gap
-                <select id="gap"><option value="0">None</option><option value="1">1 s</option><option value="2">2 s</option><option value="3">3 s</option><option value="5">5 s</option></select>
-              </label>
-              <button class="btn tiny toggle needs-beats" id="countInBtn" aria-pressed="false" title="One bar of clicks before each loop pass and before playing">Count-in</button>
-              <button class="btn tiny toggle needs-beats" id="clickBtn" aria-pressed="false" title="Metronome click on the beat">Click</button>
-              <input type="range" id="clickVol" min="0.05" max="1" step="0.05" value="0.5" title="Click volume" class="needs-beats" />
-            </div>
-            <div class="tool beat">
-              <span id="bpmInfo" class="bpm">Tempo: not analysed</span>
-              <button id="keyInfo" class="bpm key" type="button" hidden></button>
-              <button class="btn tiny ghost needs-beats" id="halfBtn" title="Detected tempo is double the real one">½×</button>
-              <button class="btn tiny ghost needs-beats" id="dblBtn" title="Detected tempo is half the real one">2×</button>
-              <button class="btn tiny ghost needs-beats" id="tapBtn" title="Tap along to the beat 4+ times to correct the tempo">Tap</button>
-              <label>Beats/bar
-                <select id="perBar" class="needs-beats"><option>2</option><option>3</option><option selected>4</option><option>5</option><option>6</option><option>7</option></select>
-              </label>
-              <button class="btn tiny ghost needs-beats" id="shiftBar" title="Move the bar start one beat later">Bar start →</button>
-            </div>
-            <div class="tool key-panel" id="keyPanel" hidden>
-              <div class="kp-row">
-                <span class="muted small" id="keyWhere"></span>
-                <div class="kp-list" id="keyList"></div>
-              </div>
-              <div class="kp-row">
-                <button class="btn tiny ghost" id="keySection" hidden>Check this section only</button>
-                <button class="btn tiny ghost" id="keyWhole" hidden>Check whole song</button>
-                <span class="kp-set">Set key
-                  <select id="keyTonic"></select>
-                  <select id="keyMode"><option value="major">major</option><option value="minor">minor</option></select>
-                  <button class="btn tiny" id="keySet">Set</button>
-                </span>
-                <button class="btn tiny ghost" id="keyClose">Close</button>
-              </div>
-            </div>
             <div class="tool">
               <label>Tempo <output id="tempoOut">100%</output></label>
               <input type="range" id="tempo" min="0.5" max="1.5" step="0.01" value="1" />
@@ -257,12 +220,65 @@
             <div class="tool">
               <label>Volume</label>
               <input type="range" id="volume" min="0" max="1" step="0.01" value="0.9" />
+              <button class="btn tiny ghost toggle" id="panToggle" aria-pressed="false" title="Show left–right pan sliders on each track">Pan</button>
+            </div>
+            <div class="drawer">
+              <div class="drawer-tabs">
+                <button class="dtab" type="button" data-tab="practice" aria-expanded="false"><span class="chev">▸</span> Practice <span class="dsum" id="sumPractice"></span></button>
+                <button class="dtab" type="button" data-tab="beat" aria-expanded="false"><span class="chev">▸</span> Tempo &amp; key <span class="dsum" id="sumBeat"></span></button>
+              </div>
+              <div class="dpane" data-pane="practice" hidden>
+                <div class="tool practice">
+                  <button class="btn tiny toggle" id="trainerBtn" aria-pressed="false" title="Loop the section, speeding up after each pass">Speed trainer</button>
+                  <span class="trainer-cfg">
+                    <input type="number" id="trFrom" min="30" max="150" step="5" value="70" aria-label="Start speed" />% →
+                    <input type="number" id="trTo" min="30" max="150" step="5" value="100" aria-label="Target speed" />%,
+                    +<input type="number" id="trStep" min="1" max="25" step="1" value="5" aria-label="Step" />% every
+                    <input type="number" id="trEvery" min="1" max="10" step="1" value="1" aria-label="Passes per step" /> pass(es)
+                  </span>
+                  <span class="muted small" id="trainerInfo"></span>
+                </div>
+                <div class="tool practice">
+                  <label>Gap
+                    <select id="gap"><option value="0">None</option><option value="1">1 s</option><option value="2">2 s</option><option value="3">3 s</option><option value="5">5 s</option></select>
+                  </label>
+                  <button class="btn tiny toggle needs-beats" id="countInBtn" aria-pressed="false" title="One bar of clicks before each loop pass and before playing">Count-in</button>
+                  <button class="btn tiny toggle needs-beats" id="clickBtn" aria-pressed="false" title="Metronome click on the beat">Click</button>
+                  <input type="range" id="clickVol" min="0.05" max="1" step="0.05" value="0.5" title="Click volume" class="needs-beats" />
+                </div>
+              </div>
+              <div class="dpane" data-pane="beat" hidden>
+                <div class="tool beat">
+                  <span id="bpmInfo" class="bpm">Tempo: not analysed</span>
+                  <button id="keyInfo" class="bpm key" type="button" hidden></button>
+                  <button class="btn tiny ghost needs-beats" id="halfBtn" title="Detected tempo is double the real one">½×</button>
+                  <button class="btn tiny ghost needs-beats" id="dblBtn" title="Detected tempo is half the real one">2×</button>
+                  <button class="btn tiny ghost needs-beats" id="tapBtn" title="Tap along to the beat 4+ times to correct the tempo">Tap</button>
+                  <label>Beats/bar
+                    <select id="perBar" class="needs-beats"><option>2</option><option>3</option><option selected>4</option><option>5</option><option>6</option><option>7</option></select>
+                  </label>
+                  <button class="btn tiny ghost needs-beats" id="shiftBar" title="Move the bar start one beat later">Bar start →</button>
+                </div>
+                <div class="tool key-panel" id="keyPanel" hidden>
+                  <div class="kp-row">
+                    <span class="muted small" id="keyWhere"></span>
+                    <div class="kp-list" id="keyList"></div>
+                  </div>
+                  <div class="kp-row">
+                    <button class="btn tiny ghost" id="keySection" hidden>Check this section only</button>
+                    <button class="btn tiny ghost" id="keyWhole" hidden>Check whole song</button>
+                    <span class="kp-set">Set key
+                      <select id="keyTonic"></select>
+                      <select id="keyMode"><option value="major">major</option><option value="minor">minor</option></select>
+                      <button class="btn tiny" id="keySet">Set</button>
+                    </span>
+                    <button class="btn tiny ghost" id="keyClose">Close</button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div class="lanes-head">
-            <button class="btn tiny ghost toggle" id="panToggle" aria-pressed="false" title="Show left–right pan sliders">Pan</button>
-          </div>
           <div class="lanes" id="lanes"></div>
           <div class="shortcuts-row">
             <p class="muted small shortcuts">Space / PageDown play · PageUp restart section · M marker · + − 0 zoom · ← → skip 5 s · L loop · [ ] loop points · 1–6 mute</p>

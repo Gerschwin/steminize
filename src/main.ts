@@ -106,6 +106,7 @@ function addFiles(files: Iterable<File>) {
   }
   if (!added) toast('No audio files found in that selection.', true);
   if (added && autoStart.checked) running = true;
+  if (added) showSide('songs');
   refreshQueue();
   void pump();
 }
@@ -138,6 +139,7 @@ function subText(t: Track) {
 
 function refreshQueue() {
   $('queueEmpty').hidden = tracks.length > 0;
+  $('queueCard').hidden = tracks.length === 0;
   const waiting = tracks.filter((t) => t.status === 'queued');
   const btn = $<HTMLButtonElement>('queueBtn');
   if (busy) {
@@ -188,7 +190,23 @@ $('applyWaiting').onclick = () => {
   refreshQueue();
   toast('Waiting songs will use the current settings');
 };
-settings.onChange = () => refreshQueue();
+settings.onChange = () => {
+  refreshQueue();
+  updateUseSummary();
+};
+
+// ---------------------------------------------------------------- sidebar tabs
+function showSide(name: string) {
+  for (const t of document.querySelectorAll<HTMLElement>('.stab')) t.setAttribute('aria-selected', String(t.dataset.side === name));
+  for (const p of document.querySelectorAll<HTMLElement>('.side-pane')) p.hidden = p.dataset.sidepane !== name;
+}
+for (const t of document.querySelectorAll<HTMLElement>('.stab')) t.onclick = () => showSide(t.dataset.side!);
+$('changeSettings').onclick = () => showSide('settings');
+function updateUseSummary() {
+  const s = settings.s;
+  $('useSum').textContent = `${summary(s)} · ${s.format.toUpperCase()}`;
+}
+updateUseSummary();
 
 $('clearDone').onclick = () => {
   for (const t of [...tracks]) if (['done', 'error', 'cancelled'].includes(t.status) && t.result !== deck.current) removeTrack(t);
