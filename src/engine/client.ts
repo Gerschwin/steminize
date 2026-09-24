@@ -11,11 +11,16 @@ type Pending = {
 };
 
 export class Engine {
-  private worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
+  private worker!: Worker;
   private jobs = new Map<string, Pending>();
   onBackend: (b: { backend: string; threads: number; note?: string }) => void = () => {};
 
   constructor() {
+    this.start();
+  }
+
+  private start() {
+    this.worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
     this.worker.onmessage = async (e: MessageEvent<WorkerOut>) => {
       const m = e.data;
       if (m.type === 'need-model') {
@@ -49,7 +54,21 @@ export class Engine {
     });
   }
 
+  /**
+   * Stop a job immediately. A model run can't be interrupted part-way, so
+   * rather than waiting for it, throw the worker away and start a fresh one
+   * (the next job reloads the model, which takes a few seconds).
+   */
   cancel(id: string) {
-    this.worker.postMessage({ type: 'cancel', id });
+    const job = this.jobs.get(id);
+    if (!job) return;
+    this.worker.terminate();
+    this.jobs.delete(id);
+    const err = new Error('Cancelled');
+    err.name = 'Cancelled';
+    job.reject(err);
+    for (const j of this.jobs.values()) j.reject(new Error('Interrupted'));
+    this.jobs.clear();
+    this.start();
   }
 }
