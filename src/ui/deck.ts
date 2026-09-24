@@ -65,7 +65,6 @@ interface Marker {
   name: string;
   pos: number; // frames
 }
-const MARKER_NAMES = ['Intro', 'Verse', 'Chorus', 'Verse 2', 'Chorus 2', 'Bridge', 'Solo', 'Chorus 3', 'Outro'];
 const FINE = 256; // samples per bucket in the fine peak arrays used for zoomed drawing
 
 interface Lane {
@@ -768,8 +767,11 @@ export class Deck {
       toast('There is already a marker here');
       return;
     }
+    // Numbered by default; rename with ✎ to "Verse", "Solo", etc.
     const used = new Set(this.markers.map((m) => m.name));
-    const name = MARKER_NAMES.find((n) => !used.has(n)) ?? `Section ${this.markers.length + 1}`;
+    let n = 1;
+    while (used.has(String(n))) n++;
+    const name = String(n);
     this.markers.push({ name, pos });
     this.markers.sort((a, b) => a.pos - b.pos);
     this.markersChanged();
@@ -795,15 +797,22 @@ export class Deck {
     const here = this.sectionAt(this.player.state.pos);
     $('markers').replaceChildren(
       ...this.markers.map((m, i) => {
-        const go = h('button', { class: 'mk-go', type: 'button', title: `Jump to ${m.name} (${fmtTime(m.pos / SR)}). Double-click to rename` }, m.name);
+        const go = h('button', { class: 'mk-go', type: 'button', title: `Jump to ${m.name} (${fmtTime(m.pos / SR)})` }, m.name);
+        const ren = h('button', { class: 'mk-ren', type: 'button', title: 'Rename' }, '✎');
         const loop = h('button', { class: 'mk-loop', type: 'button', title: 'Loop this section' }, '⟳');
         const del = h('button', { class: 'mk-del', type: 'button', title: 'Remove marker' }, '×');
+        // Single click jumps, but waits a moment so a double-click (rename) doesn't jump first.
+        let clickTimer = 0;
         go.onclick = () => {
-          this.player.seek(m.pos);
-          this.dirty = true;
+          clearTimeout(clickTimer);
+          clickTimer = window.setTimeout(() => {
+            this.player.seek(m.pos);
+            this.dirty = true;
+          }, 250);
         };
         // Rename: swap the button for a text box.
-        go.ondblclick = () => {
+        const rename = () => {
+          clearTimeout(clickTimer);
           const input = h('input', { type: 'text', value: m.name, maxLength: 30, class: 'mk-edit', 'aria-label': 'Marker name' } as any);
           let done = false;
           const finish = (save: boolean) => {
@@ -823,6 +832,8 @@ export class Deck {
           input.focus();
           input.select();
         };
+        go.ondblclick = rename;
+        ren.onclick = rename;
         loop.onclick = () => {
           this.loop.a = m.pos;
           this.loop.b = this.markers[i + 1]?.pos ?? this.length;
@@ -833,7 +844,7 @@ export class Deck {
           this.markers.splice(i, 1);
           this.markersChanged();
         };
-        return h('span', { class: `marker-chip${i === here ? ' here' : ''}` }, go, loop, del);
+        return h('span', { class: `marker-chip${i === here ? ' here' : ''}` }, go, ren, loop, del);
       }),
     );
   }

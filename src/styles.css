@@ -206,7 +206,7 @@ details.more[open] summary { color: var(--text); }
 .tool .snap { margin-left: auto; }
 .tool select { width: auto; padding: 3px 6px; font-size: 12px; }
 .trainer-cfg { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 3px; flex-wrap: wrap; }
-.trainer-cfg input { width: 48px; padding: 2px 4px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); font-size: 12px; }
+.trainer-cfg input { width: 58px; padding: 2px 4px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); font-size: 12px; }
 .bpm { font-weight: 600; font-size: 13px; margin-right: 4px; }
 .bpm.key { padding: 2px 10px; border: 0; border-left: 1px solid var(--line); background: transparent; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
 .key-panel { flex-direction: column; align-items: stretch; gap: 8px; grid-column: 1 / -1; }
@@ -218,7 +218,7 @@ details.more[open] summary { color: var(--text); }
 .tool #clickVol { flex: 0 1 110px; min-width: 60px; }
 .no-beats .needs-beats { opacity: 0.45; pointer-events: none; }
 .btn.tap-on { background: var(--accent); color: #fff; }
-.tool label { font-size: 12px; color: var(--muted); display: flex; gap: 6px; white-space: nowrap; }
+.tool label { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .tool input[type='range'] { flex: 1; min-width: 80px; }
 .tool.loop { grid-column: 1 / -1; }
 .lanes { display: flex; flex-direction: column; gap: 6px; }
@@ -256,6 +256,7 @@ details.more[open] summary { color: var(--text); }
 .shortcuts-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .ov-col { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 #viewScroll { height: 14px; }
+#viewScroll[hidden] { display: block !important; visibility: hidden; } /* keep its space so nothing jumps when zooming */
 .markers-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: -6px; }
 .zoom { display: inline-flex; gap: 2px; }
 .markers { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
@@ -264,9 +265,25 @@ details.more[open] summary { color: var(--text); }
 .marker-chip button { border: 0; background: transparent; cursor: pointer; padding: 3px 8px; font-size: 12px; }
 .marker-chip .mk-go { font-weight: 600; }
 .marker-chip .mk-edit { width: 110px; border: 0; outline: 1px solid var(--accent); background: var(--panel); font-size: 12px; padding: 3px 8px; }
-.marker-chip .mk-loop, .marker-chip .mk-del { padding: 3px 6px; color: var(--muted); }
-.marker-chip .mk-loop:hover, .marker-chip .mk-del:hover { color: var(--text); }
+.marker-chip .mk-loop, .marker-chip .mk-del, .marker-chip .mk-ren { padding: 3px 6px; color: var(--muted); }
+.marker-chip .mk-loop:hover, .marker-chip .mk-del:hover, .marker-chip .mk-ren:hover { color: var(--text); }
 @media (hover: none) { .shortcuts { display: none; } }
+
+/* One control height across the player's tool rows, so labels, buttons, dropdowns and boxes line up. */
+.tool, .markers-bar { --h: 30px; }
+.tool .btn, .markers-bar .btn, .tool select, .tool input[type='number'], .marker-chip, .bpm.key {
+  height: var(--h);
+  box-sizing: border-box;
+}
+.tool .btn, .markers-bar .btn { padding: 0 12px; font-size: 13px; line-height: 1; }
+.tool select { padding: 0 8px; }
+.tool input[type='number'] { padding: 0 6px; }
+.tool .btn.toggle#loopBtn { font-size: 13px; }
+.trainer-cfg { gap: 4px; }
+.bpm { display: inline-flex; align-items: center; line-height: 1; }
+.marker-chip button, .marker-chip .mk-edit { height: 100%; display: inline-flex; align-items: center; }
+.zoom .btn { width: 32px; padding: 0; }
+.zoom .btn#zoomFit { width: auto; padding: 0 10px; }
 @media (hover: none) { .shortcuts { display: none; } }
 
 /* ---------- dialog & toasts ---------- */
