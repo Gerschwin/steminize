@@ -62,6 +62,11 @@ async function chooseBackend(pref: Device): Promise<'webgpu' | 'wasm'> {
   return (await hasWebGPU()) ? 'webgpu' : 'wasm';
 }
 
+// Graph optimisation must stay off: ONNX Runtime's constant folding expands
+// these Demucs exports from ~1.2 GB to ~4.3 GB peak, past the 4 GB WASM limit
+// ("std::bad_alloc"). Measured cost of leaving it off: ~30% slower.
+const SESSION_OPTS: ort.InferenceSession.SessionOptions = { graphOptimizationLevel: 'disabled' };
+
 // ---- session cache (keep several on big machines, one on small ones)
 const sessions = new Map<string, ort.InferenceSession>();
 const maxSessions = ((navigator as any).deviceMemory ?? 4) >= 8 ? 4 : 1;
@@ -88,15 +93,12 @@ async function getSession(f: ModelFile, backend: 'webgpu' | 'wasm'): Promise<{ s
   let used = backend;
   let note: string | undefined;
   try {
-    s = await ort.InferenceSession.create(bytes, {
-      executionProviders: [backend],
-      graphOptimizationLevel: 'all',
-    });
+    s = await ort.InferenceSession.create(bytes, { executionProviders: [backend], ...SESSION_OPTS });
   } catch (e) {
     if (backend !== 'webgpu') throw e;
     note = `GPU failed (${(e as Error).message}); using CPU`;
     used = 'wasm';
-    s = await ort.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
+    s = await ort.InferenceSession.create(bytes, { executionProviders: ['wasm'], ...SESSION_OPTS });
   }
   const key = `${used}`;
   if (key !== lastBackend || note) {

@@ -98,12 +98,15 @@ The app loads community ONNX exports of the original weights (links in `src/mode
 
 ## Browser-compatibility fix for models
 
-Some community ONNX exports use float64 maths in their iSTFT, which the browser version of ONNX Runtime can't run ("Could not find an implementation for ConstantOfShape(9)"). **The app fixes this automatically** when it loads a model (`src/engine/fixfloat64.ts` rewrites those parts to float32; this takes well under a second).
+Some community ONNX exports use float64 maths in their iSTFT, which the browser version of ONNX Runtime can't run ("Could not find an implementation for ConstantOfShape(9)"). **The app fixes this automatically** when it loads a model. It also turns off ONNX Runtime's graph optimisation, which would otherwise push peak memory for these models from about 1.2 GB to 4.3 GB, past the browser's 4 GB limit (`std::bad_alloc`).
+
+The float64 conversion happens (`src/engine/fixfloat64.ts` rewrites those parts to float32; this takes well under a second).
 
 `tools/fix_models.py` does the same conversion offline and checks the result against the original with onnxruntime. Use it if you want to host pre-converted files on your own Hugging Face repo.
 
 ## Honest limitations
 
+- **CPU speed, measured:** with a model of the same architecture, one 7.8 s segment took about 13 s on 2 CPU threads in Chrome. A 4-minute song is about 42 segments, so roughly 9 minutes on 2 threads; expect several minutes on a typical 8-thread laptop, and 4× that for Fine-tuned.
 - **Speed is hardware-bound.** WebGPU on a recent GPU is quick. CPU-only (older machines, Linux desktop app, many phones) is much slower, and fine-tuned mode is about 4× slower again. Try one song first.
 - **The Linux desktop app runs on CPU only**, because its webview (WebKitGTK) has no WebGPU. On Linux, Chrome or Edge running the web app is faster.
 - **Memory:** a 4-minute song needs roughly 1–2 GB of RAM during separation. Very long files or 6-stem mode on phones can run out. Use the compact model and shorter files there.
