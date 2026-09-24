@@ -199,6 +199,10 @@
             </div>
             <div class="markers" id="markers"></div>
             <button class="btn tiny ghost" id="addMarker" title="Add a section marker at the playhead (M)">+ Marker</button>
+            <span class="x-toggles">
+              <button class="btn tiny ghost toggle" id="chordsBtn" type="button" aria-pressed="false" title="Show the chords (detected, editable)">Chords</button>
+              <button class="btn tiny ghost toggle" id="notesBtn" type="button" aria-pressed="false" title="Show which notes are sounding, freeze the sound, make MIDI">Notes</button>
+            </span>
           </div>
 
           <div class="tools">
@@ -283,9 +287,10 @@
             </div>
           </div>
 
+          <div class="lanes xlanes" id="xlanes"></div>
           <div class="lanes" id="lanes"></div>
           <div class="shortcuts-row">
-            <p class="muted small shortcuts">Space / PageDown play · PageUp restart section · M marker · + − 0 zoom · ← → skip 5 s · L loop · [ ] loop points · 1–6 mute</p>
+            <p class="muted small shortcuts">Space / PageDown play · PageUp restart section · M marker · + − 0 zoom · ← → skip 5 s · L loop · [ ] loop points · F freeze · 1–6 mute</p>
             <button class="btn tiny ghost toggle" id="pedalBtn" aria-pressed="false" title="For page-turner pedals that send arrow keys: right/down = play/pause, left/up = restart section">Foot pedal mode</button>
           </div>
         </div>

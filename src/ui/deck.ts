@@ -12,6 +12,10 @@ import type { Settings } from '../settings.ts';
 import { isFlat, type EqParams } from '../player/eq.ts';
 import { eqPanel, type EqPanel } from './eqPanel.ts';
 import { $, fitCanvas, fmtDuration, fmtTime, h, pressed, toast } from './dom.ts';
+import { Transcribe, type TxHost, type TxState } from './transcribePanel.ts';
+import type { Chord } from '../analysis/chords.ts';
+import type { NoteEvent } from '../analysis/basicPitch.ts';
+import type { Cqt } from '../analysis/cqt.ts';
 
 const SR = 44100;
 
@@ -29,6 +33,11 @@ export interface Result {
   analysis?: Analysis;
   /** Onset envelopes, kept in memory for quick tempo corrections. */
   onsets?: { env: Float32Array; low: Float32Array };
+  /** Detected (and corrected) chords; MIDI notes per part ("mix" = what you heard). */
+  chords?: Chord[];
+  midi?: Record<string, NoteEvent[]>;
+  /** Note energy per stem for the note view (memory only). */
+  cqt?: Map<string, { c: Cqt; peak: number }>;
 }
 
 type Snap = 'off' | 'beat' | 'bar';
@@ -61,6 +70,8 @@ export interface DeckState {
   pitch: number;
   practice: PracticeUi;
   markers?: Marker[];
+  /** Note view, chords and MIDI. */
+  tx?: TxState;
 }
 
 interface Marker {
@@ -173,6 +184,7 @@ export class Deck {
   private dirty = true;
   private drag: { x0: number; moved: boolean } | null = null;
   onRerun: () => void = () => {};
+  private tx: Transcribe;
 
   constructor(private settings: () => Settings) {
     this.player.onState = (s) => {
@@ -225,6 +237,33 @@ export class Deck {
     this.initDrawer();
     this.initOverview();
     this.initKeys();
+    const host: TxHost = {
+      player: this.player,
+      song: () => this.r,
+      view: () => this.view,
+      gains: () => this.gains(),
+      pans: () => this.pans(),
+      eqs: () => this.eqs(),
+      lanes: () => this.lanes.map((l) => ({ name: l.name, colour: l.colour })),
+      pitch: () => this.pitch,
+      loop: () => this.loop,
+      markers: () => this.markers,
+      beats: () => this.r?.analysis?.beats ?? [],
+      downbeat: () => this.downbeat(),
+      perBar: () => this.pr.perBar,
+      bpm: () => this.r?.analysis?.bpm,
+      key: () => this.r?.analysis?.key,
+      keyLabel: () => {
+        const k = this.r?.analysis?.key;
+        return k ? keyName(k, this.pitch) : undefined;
+      },
+      seekFrac: (f) => this.seekFrac(f),
+      wheel: (e, el) => this.onWheel(e, el),
+      changed: () => this.emit(),
+      redraw: () => (this.dirty = true),
+      baseName: () => this.baseName(),
+    };
+    this.tx = new Transcribe(host);
     new ResizeObserver(() => this.invalidateLayers()).observe($('deck'));
     const frame = () => {
       if (this.dirty && this.r) this.draw();
@@ -312,6 +351,7 @@ export class Deck {
     this.renderMarkers();
     this.setView(0, this.length);
     this.setAnalysis(r.analysis);
+    this.tx.open(r, state?.tx);
     this.invalidateLayers();
     this.quiet = false;
   }
@@ -325,6 +365,7 @@ export class Deck {
       pitch: this.pitch,
       practice: structuredClone({ ...this.pr, trainer: { ...this.pr.trainer, on: false } }),
       markers: this.markers.map((m) => ({ ...m })),
+      tx: this.tx.getState(),
     };
   }
 
@@ -698,6 +739,7 @@ export class Deck {
 
   private setLane(l: Lane, patch: Partial<Pick<Lane, 'vol' | 'pan' | 'mute' | 'solo' | 'eq'>>) {
     Object.assign(l, patch);
+    this.dirty = true;
     this.emit();
     pressed(l.el.querySelector('.m')!, l.mute);
     pressed(l.el.querySelector('.s')!, l.solo);
@@ -714,6 +756,7 @@ export class Deck {
     this.pitch = pitch;
     this.showTempoPitch();
     this.player.setTempoPitch(tempo, pitch);
+    this.dirty = true;
     if (save) this.emit();
   }
 
@@ -995,6 +1038,7 @@ export class Deck {
       else if (e.key === 'ArrowLeft') this.player.seek(pos - 5 * SR);
       else if (e.key === 'ArrowRight') this.player.seek(Math.min(this.length - SR, pos + 5 * SR));
       else if (e.key === 'l' || e.key === 'L') this.setLoop(!this.loop.on);
+      else if (e.key === 'f' || e.key === 'F') this.tx.toggleFreeze();
       else if (e.key === '[') this.setPoint('a');
       else if (e.key === ']') this.setPoint('b');
       else if (/^[1-6]$/.test(e.key) && this.lanes[+e.key - 1]) this.setLane(this.lanes[+e.key - 1], { mute: !this.lanes[+e.key - 1].mute });
@@ -1092,6 +1136,7 @@ export class Deck {
       }
       this.drawStrip(l.canvas, l.layers, pos, true);
     }
+    this.tx.draw(pos);
   }
 
   /** Faint bar lines on the overview once the tempo is known. */

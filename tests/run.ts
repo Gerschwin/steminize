@@ -15,6 +15,11 @@ import { DEFAULT_PRACTICE, Transport } from '../src/player/transport.ts';
 import { Renderer } from '../src/player/mixcore.ts';
 import { analyse } from '../src/analysis/beats.ts';
 import { detectKey, keyName } from '../src/analysis/key.ts';
+import { BINS, CQT_FPS, NOTE_LO, cqt } from '../src/analysis/cqt.ts';
+import { chordName, chordSheet, detectChords, mergeSame, prefersSharps } from '../src/analysis/chords.ts';
+import { BP_PITCHES, BP_WINDOW, bpNotes, bpUnwrap, bpWindows, singleLine } from '../src/analysis/basicPitch.ts';
+import { decimate2 } from '../src/analysis/resample.ts';
+import { writeMidi } from '../src/encode/midi.ts';
 
 let failed = 0;
 const ok = (name: string, cond: boolean, detail = '') => {
@@ -266,6 +271,105 @@ for (const [len, overlap, shifts] of [
   const hits = truth.filter((b) => a.beats.some((d) => Math.abs(d - b) < 0.03)).length;
   const bar = truth.some((b, i) => i % 4 === 0 && Math.abs(b - a.beats[a.downbeat]) < 0.03);
   ok('beat detection: tempo, beats and bar start', Math.abs(a.bpm - bpm) < 0.5 && hits >= truth.length - 1 && bar, `${a.bpm} BPM, ${hits}/${truth.length} beats, bar ${bar}`);
+}
+
+// ---- 5g. note view: one bin per semitone
+{
+  const peakNote = (midi: number) => {
+    const f = 440 * 2 ** ((midi - 69) / 12);
+    const x = new Float32Array(SR * 2).map((_, i) => 0.5 * Math.sin((2 * Math.PI * f * i) / SR));
+    const c = cqt(x);
+    const row = c.data.subarray(Math.round(CQT_FPS) * BINS, (Math.round(CQT_FPS) + 1) * BINS);
+    let best = 0;
+    for (let b = 0; b < BINS; b++) if (row[b] > row[best]) best = b;
+    const next = Math.max(row[best - 1] ?? 0, row[best + 1] ?? 0);
+    return { note: best + NOTE_LO, sep: 10 * Math.log10(row[best] / next) };
+  };
+  const r = [28, 45, 69, 93].map(peakNote);
+  ok('note view finds pure tones (E1, A2, A4, A6)', r.every((x, i) => x.note === [28, 45, 69, 93][i] && x.sep > 10), r.map((x) => `${x.note} ${x.sep.toFixed(0)} dB`).join(', '));
+  const hi = cqt(new Float32Array(SR * 2).map((_, i) => 0.5 * Math.sin((2 * Math.PI * 15000 * i) / SR)));
+  ok('note view ignores a 15 kHz tone (no aliasing)', Math.max(...hi.data) < 0.0625 * 1e-4);
+}
+
+// ---- 5h. chord detection on a synthetic band (keys + bass + melody)
+{
+  const NOTE: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11, Bb: 10, Eb: 3, Ab: 8, 'F#': 6, 'C#': 1 };
+  const beat = 60 / 110;
+  const band = (prog: string[]) => {
+    const n = Math.ceil((prog.length * 4 * beat + 1) * SR);
+    const harm = new Float32Array(n);
+    const bass = new Float32Array(n);
+    const tone = (x: Float32Array, midi: number, s: number, e: number, amp: number) => {
+      const f = 440 * 2 ** ((midi - 69) / 12);
+      for (let i = Math.floor(s * SR); i < Math.min(n, e * SR); i++) {
+        const t = i / SR - s;
+        let v = 0;
+        for (let hh = 1; hh <= 5; hh++) v += Math.sin(2 * Math.PI * f * hh * t) / hh;
+        x[i] += amp * v * Math.exp(-t * 1.5) * Math.min(1, t * 200);
+      }
+    };
+    prog.forEach((ch, ci) => {
+      const minor = ch.endsWith('m');
+      const root = NOTE[minor ? ch.slice(0, -1) : ch];
+      const t0 = ci * 4 * beat;
+      for (const iv of [0, minor ? 3 : 4, 7]) tone(harm, 60 + root + iv - (root > 6 ? 12 : 0), t0, t0 + 4 * beat, 0.07);
+      for (let b = 0; b < 4; b++) tone(bass, 36 + root + (b === 3 ? 7 : 0), t0 + b * beat, t0 + (b + 0.9) * beat, 0.25);
+    });
+    const beats = Array.from({ length: prog.length * 4 }, (_, i) => i * beat);
+    return { harm, bass, beats };
+  };
+  const prog = ['C', 'G', 'Am', 'F', 'Dm', 'E', 'Am', 'Am'];
+  const b = band(prog);
+  const ch = detectChords(cqt(b.harm), b.beats, cqt(b.bass), { downbeat: 0, perBar: 4 });
+  const names = ch.filter((c) => c.root >= 0).map((c) => chordName(c));
+  ok('chords: C G Am F Dm E Am (with bass stem)', names.join(' ') === 'C G Am F Dm E Am', names.join(' '));
+  const mix = b.harm.map((v, i) => v + b.bass[i]);
+  const m2 = detectChords(cqt(mix), b.beats, undefined, { downbeat: 0, perBar: 4 })
+    .filter((c) => c.root >= 0)
+    .map((c) => chordName(c));
+  ok('chords: same from the full mix', m2.join(' ') === 'C G Am F Dm E Am', m2.join(' '));
+  ok(
+    'chord names: shift, sharps, slash',
+    chordName({ root: 1, q: 'm' }, 0, true) === 'C♯m' && chordName({ root: 0, q: '' }, 2) === 'D' && chordName({ root: 0, q: '', bass: 4 }) === 'C/E' && prefersSharps({ tonic: 4, mode: 'minor' }) && !prefersSharps({ tonic: 5, mode: 'major' }),
+  );
+  const merged = mergeSame([
+    { start: 0, end: 1, root: 0, q: '' },
+    { start: 1, end: 2, root: 0, q: '' },
+    { start: 2, end: 3, root: 7, q: '' },
+  ]);
+  ok('chords: neighbours merge after an edit', merged.length === 2 && merged[0].end === 2);
+  const sheet = chordSheet({ title: 'T', chords: ch, beats: b.beats, downbeat: 0, perBar: 4, markers: [{ name: 'Verse', time: 0 }] });
+  ok('chord chart: one chord per bar, in sections', sheet.includes('[Verse]') && sheet.includes('| C       | G       | Am      | F       |'), sheet.split('\n')[3]);
+}
+
+// ---- 5i. audio to MIDI: windowing and note extraction (the model itself is checked in the browser)
+{
+  const audio = new Float32Array(22050 * 5);
+  const w = bpWindows(audio);
+  ok('Basic Pitch windows', w.length === 4 && w.every((x) => x.length === BP_WINDOW));
+  // Two fake windows of activations: one note (A4) from frame 20 to 60 of the joined output.
+  const parts = [0, 1].map(() => new Float32Array(172 * BP_PITCHES));
+  const set = (arr: Float32Array[], t: number, p: number, v: number) => (arr[Math.floor(t / 142)][((t % 142) + 15) * BP_PITCHES + p] = v);
+  const frames = parts.map((x) => x.slice());
+  const onsets = parts.map((x) => x.slice());
+  for (let t = 20; t < 60; t++) set(frames, t, 69 - 21, 0.8);
+  set(onsets, 20, 69 - 21, 0.9);
+  const n = bpUnwrap(frames, BP_PITCHES, 22050 * 3);
+  const o = bpUnwrap(onsets, BP_PITCHES, 22050 * 3);
+  const notes = bpNotes(n.data, o.data, n.frames);
+  ok('Basic Pitch note extraction', notes.length === 1 && notes[0].pitch === 69 && Math.abs(notes[0].start - (20 * 256) / 22050) < 0.01 && Math.abs(notes[0].end - (60 * 256) / 22050) < 0.01, JSON.stringify(notes));
+  const line = singleLine([
+    { start: 0, end: 1, pitch: 60, amp: 0.8 },
+    { start: 0.05, end: 0.9, pitch: 72, amp: 0.4 },
+    { start: 1, end: 2, pitch: 62, amp: 0.5 },
+  ]);
+  ok('one note at a time drops overlapping harmonics', line.map((x) => x.pitch).join() === '60,62');
+  const dec = decimate2(new Float32Array(44100).map((_, i) => Math.sin((2 * Math.PI * 440 * i) / 44100)));
+  const peak = Math.max(...dec.subarray(1000, 20000));
+  ok('resampler keeps a 440 Hz tone', dec.length === 22050 && Math.abs(peak - 1) < 0.01, peak.toFixed(4));
+  const mid = writeMidi([{ name: 'Bass', notes: [{ start: 0, end: 0.5, pitch: 40, amp: 1 }] }], 120);
+  const txt = String.fromCharCode(...mid.subarray(0, 4));
+  ok('MIDI file header', txt === 'MThd' && mid[9] === 1 && mid[11] === 2 && mid[mid.length - 3] === 0xff && mid[mid.length - 2] === 0x2f);
 }
 
 // ---- 5f. key detection on synthetic chord progressions
