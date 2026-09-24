@@ -5,7 +5,7 @@ import { extensionFor, mimeFor } from '../encode/meta.ts';
 import { stemColour, MODELS } from '../models.ts';
 import { openSink, safeName, saveFile } from '../platform.ts';
 import type { Settings } from '../settings.ts';
-import { $, fitCanvas, fmtTime, h, pressed, toast } from './dom.ts';
+import { $, fitCanvas, fmtDuration, fmtTime, h, pressed, toast } from './dom.ts';
 
 const SR = 44100;
 const BUCKETS = 2000;
@@ -15,6 +15,8 @@ export interface Result {
   stems: { name: string; data: Stereo }[];
   settings: Settings;
   seconds: number;
+  /** Wall-clock seconds the separation took. */
+  took?: number;
 }
 
 interface Lane {
@@ -120,7 +122,7 @@ export class Deck {
     $('deck').hidden = false;
     $('trackTitle').textContent = r.title;
     const s = r.settings;
-    const extras = [MODELS[s.model].label, s.shifts > 1 ? `${s.shifts} shifts` : '', s.precision === 'full' ? 'full precision' : ''];
+    const extras = [r.took ? `separated in ${fmtDuration(r.took)}` : '', MODELS[s.model].label, s.shifts > 1 ? `${s.shifts} shifts` : '', s.precision === 'full' ? 'full precision' : ''];
     $('trackMeta').textContent = [fmtTime(r.seconds), ...extras].filter(Boolean).join(' · ');
     $('timeTotal').textContent = fmtTime(r.seconds);
 

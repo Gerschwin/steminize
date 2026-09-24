@@ -5,7 +5,7 @@ import { MODELS, neededFiles } from './models.ts';
 import { isTauri } from './platform.ts';
 import { loadSettings, type Settings } from './settings.ts';
 import { Deck, type Result } from './ui/deck.ts';
-import { $, fmtEta, fmtTime, h, toast } from './ui/dom.ts';
+import { $, fmtDuration, fmtEta, fmtTime, h, toast } from './ui/dom.ts';
 import { ensureDownloaded, initModelsDialog, onModelsChanged } from './ui/modelsDialog.ts';
 import { SettingsPanel } from './ui/settingsPanel.ts';
 
@@ -47,6 +47,7 @@ interface Track {
   status: Status;
   text: string;
   frac: number; // -1 = indeterminate
+  started?: number; // performance.now() when separation began
   result?: Result;
   el: HTMLLIElement;
 }
@@ -78,8 +79,14 @@ function renderTrack(t: Track) {
     removeTrack(t);
   };
   const bar = h('div', { class: `bar${running && t.frac < 0 ? ' indet' : ''}` }, h('i', { style: `width:${Math.max(0, t.frac) * 100}%` }));
-  t.el.replaceChildren(h('div', { class: 't-name', title: t.file.name }, t.file.name), x, h('div', { class: 't-sub' }, t.text), running || t.status === 'queued' ? bar : '');
+  t.el.replaceChildren(h('div', { class: 't-name', title: t.file.name }, t.file.name), x, h('div', { class: 't-sub' }, subText(t)), running || t.status === 'queued' ? bar : '');
   t.el.onclick = () => t.result && openTrack(t);
+}
+
+const isRunning = (t: Track) => ['downloading', 'decoding', 'separating'].includes(t.status);
+function subText(t: Track) {
+  const elapsed = isRunning(t) && t.started ? ` · ${fmtDuration((performance.now() - t.started) / 1000)} elapsed` : '';
+  return t.text + elapsed;
 }
 
 function refreshQueue() {
@@ -161,6 +168,7 @@ async function processTrack(t: Track) {
     const mix = await decode(t.file);
     check();
     const seconds = mix[0].length / 44100;
+    t.started = performance.now();
     set('separating', `Starting · ${fmtTime(seconds)} of audio`, -1);
 
     let t0 = 0;
@@ -174,8 +182,10 @@ async function processTrack(t: Track) {
         set('separating', [`${Math.round((100 * p.done) / p.total)}%`, fmtEta(eta)].filter(Boolean).join(' · '), p.done / p.total);
       },
     );
-    t.result = { title: t.file.name, stems, settings: s, seconds };
-    set('done', `Done · ${MODELS[s.model].label}${s.twoStems ? ` · ${s.twoStems} / rest` : ''}`, 1);
+    const took = (performance.now() - t.started) / 1000;
+    t.started = undefined;
+    t.result = { title: t.file.name, stems, settings: s, seconds, took };
+    set('done', `Done in ${fmtDuration(took)} (${(took / seconds).toFixed(1)}× song length) · ${MODELS[s.model].label}${s.twoStems ? ` · ${s.twoStems} / rest` : ''}`, 1);
     if (!deck.current) openTrack(t);
   } catch (e) {
     const err = e as Error;
@@ -220,6 +230,15 @@ window.addEventListener('drop', (e) => {
   if (e.dataTransfer?.files.length) addFiles(e.dataTransfer.files);
 });
 refreshQueue();
+
+// Tick the "elapsed" time on running tracks once a second.
+setInterval(() => {
+  // Only touch the text, so a click on the cancel button isn't lost to a re-render.
+  for (const t of tracks) if (t.started && isRunning(t)) t.el.querySelector('.t-sub')!.textContent = subText(t);
+}, 1000);
+
+$('appVersion').textContent = `v${__APP_VERSION__}`;
+$('appVersion').title = `Stemdeck ${__APP_VERSION__}, built ${__BUILD_DATE__}`;
 
 // ---------------------------------------------------------------- PWA bits
 let installEvt: any = null;

@@ -36,6 +36,14 @@ export function fmtEta(sec: number) {
   return `${Math.round(sec / 60)} min left`;
 }
 
+/** 45s, 3m 12s, 1h 04m */
+export function fmtDuration(sec: number) {
+  sec = Math.max(0, Math.round(sec));
+  if (sec < 60) return `${sec}s`;
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ${String(sec % 60).padStart(2, '0')}s`;
+  return `${Math.floor(sec / 3600)}h ${String(Math.floor((sec % 3600) / 60)).padStart(2, '0')}m`;
+}
+
 export const fmtMB = (b: number) => (b >= 1e9 ? `${(b / 1024 ** 3).toFixed(2)} GB` : `${Math.round(b / 1024 ** 2)} MB`);
 
 export const pressed = (el: Element, on: boolean) => el.setAttribute('aria-pressed', String(on));
