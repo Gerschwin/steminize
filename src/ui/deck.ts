@@ -24,6 +24,8 @@ export interface Result {
   took?: number;
   /** Library folder, once saved. */
   libId?: string;
+  /** Opened from existing track files rather than separated. */
+  kind?: 'separated' | 'multitrack';
   analysis?: Analysis;
   /** Onset envelopes, kept in memory for quick tempo corrections. */
   onsets?: { env: Float32Array; low: Float32Array };
@@ -69,6 +71,7 @@ const FINE = 256; // samples per bucket in the fine peak arrays used for zoomed 
 
 interface Lane {
   name: string;
+  colour: string;
   vol: number;
   pan: number;
   eq?: EqParams;
@@ -245,7 +248,11 @@ export class Deck {
     $('deck').hidden = false;
     $('trackTitle').textContent = r.title;
     const s = r.settings;
-    const extras = [r.took ? `separated in ${fmtDuration(r.took)}` : '', MODELS[s.model].label, s.shifts > 1 ? `${s.shifts} shifts` : '', s.precision === 'full' ? 'full precision' : ''];
+    const extras =
+      r.kind === 'multitrack'
+        ? [`multitrack · ${r.stems.length} tracks`]
+        : [r.took ? `separated in ${fmtDuration(r.took)}` : '', MODELS[s.model].label, s.shifts > 1 ? `${s.shifts} shifts` : '', s.precision === 'full' ? 'full precision' : ''];
+    $('rerunBtn').hidden = r.kind === 'multitrack';
     $('trackMeta').textContent = [fmtTime(r.seconds), ...extras].filter(Boolean).join(' · ');
     $('timeTotal').textContent = fmtTime(r.seconds);
 
@@ -257,7 +264,7 @@ export class Deck {
     const lanes = $('lanes');
     lanes.replaceChildren();
     this.lanes = r.stems.map((s, i) => {
-      const colour = stemColour(s.name);
+      const colour = stemColour(s.name, i);
       const canvas = h('canvas');
       const mute = h('button', { class: 'ms m', type: 'button', title: `Mute (${i + 1})` }, 'M');
       const solo = h('button', { class: 'ms s', type: 'button', title: 'Solo' }, 'S');
@@ -268,13 +275,13 @@ export class Deck {
       const pan = h('input', { type: 'range', min: '-1', max: '1', step: '0.05', value: '0', title: 'Pan (double-click to centre)' });
       const panOut = h('output', {}, 'C');
       const label = s.name.startsWith('no_') ? `No ${s.name.slice(3)}` : s.name;
-      const ctl = h('div', { class: 'lane-ctl', style: `--c:${colour}` }, h('span', { class: 'name' }, label), mute, solo, eqBtn, dl,
+      const ctl = h('div', { class: 'lane-ctl', style: `--c:${colour}` }, h('span', { class: 'name', title: label }, label), mute, solo, eqBtn, dl,
         h('label', { class: 'mini' }, h('span', {}, 'Vol'), vol),
         h('label', { class: 'mini pan' }, h('span', {}, 'Pan'), pan, panOut));
       const wave = h('div', { class: 'wave' }, canvas);
       const el = h('div', { class: 'lane' }, ctl, wave);
       lanes.append(el);
-      const lane: Lane = { name: s.name, vol: 1, pan: 0, mute: false, solo: false, el, canvas, peaks: peaksOf(s.data), data: s.data };
+      const lane: Lane = { name: s.name, colour, vol: 1, pan: 0, mute: false, solo: false, el, canvas, peaks: peaksOf(s.data), data: s.data };
       eqBtn.onclick = () => this.toggleEq(lane, colour);
       pressed(eqBtn, false);
       mute.onclick = () => this.setLane(lane, { mute: !lane.mute });
@@ -1036,7 +1043,7 @@ export class Deck {
     for (const l of this.lanes) {
       fitCanvas(l.canvas);
       if (!l.layers || l.layers[0].width !== l.canvas.width || l.layers[0].height !== l.canvas.height) {
-        const c = stemColour(l.name);
+        const c = l.colour;
         const p = peaksForView(l.peaks, l.data, this.view.start, this.view.end, buckets(l.canvas.width));
         l.layers = [waveLayer(p, l.canvas.width, l.canvas.height, c + '66', this.laneScale), waveLayer(p, l.canvas.width, l.canvas.height, c, this.laneScale)];
       }

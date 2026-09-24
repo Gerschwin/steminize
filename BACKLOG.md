@@ -2,9 +2,12 @@
 
 (nothing waiting)
 
+Parked: band collaboration "Session mode" (watch a synced folder, versions, comments). Revisit if the band actually shares parts via a folder + Open multitrack for a month.
+
 Ideas not yet chosen: record yourself over the track, MIDI transcription, tuner.
 
 ## Done
+- [x] Open multitrack / open folder (v1.7.0)
 - [x] Section markers, foot pedal control, key detection, waveform zoom (v1.6.0)
 - [x] Library: keep separated songs + settings between sessions (v1.5.0)
 - [x] Speed trainer (v1.5.0)

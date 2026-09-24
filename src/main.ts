@@ -297,6 +297,73 @@ function friendlyError(e: Error) {
   return m;
 }
 
+// ---------------------------------------------------------------- open multitrack (no separation)
+const AUDIO_EXT = /\.(mp3|wav|flac|ogg|oga|m4a|aac|opus|aiff?|webm)$/i;
+
+/** Strip a shared prefix like "My Song - " so lanes are just "Bass", "Drums"… */
+function trackNames(files: File[]) {
+  const base = files.map((f) => f.name.replace(/\.[^.]+$/, ''));
+  if (base.length < 2) return { names: base, prefix: '' };
+  let prefix = base[0];
+  for (const b of base) while (prefix && !b.startsWith(prefix)) prefix = prefix.slice(0, -1);
+  // Only cut at a separator, so "Bass" and "Bassoon" don't lose "Bass".
+  prefix = prefix.match(/^(.*[\s_\-–.])/)?.[1] ?? '';
+  return { names: base.map((b) => b.slice(prefix.length).trim() || b), prefix: prefix.replace(/[\s_\-–.]+$/, '') };
+}
+
+async function openMultitrack(list: FileList | File[]) {
+  const files = [...list].filter((f) => AUDIO_EXT.test(f.name) || f.type.startsWith('audio/')).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  if (!files.length) {
+    toast('No audio files found there.', true);
+    return;
+  }
+  const folder = (files[0] as File & { webkitRelativePath?: string }).webkitRelativePath?.split('/')[0];
+  const { names, prefix } = trackNames(files);
+  const note = toast(`Loading ${files.length} track${files.length > 1 ? 's' : ''}…`, false, 600_000);
+  try {
+    const decoded: Stereo[] = [];
+    for (const [i, f] of files.entries()) {
+      note.textContent = `Loading track ${i + 1} of ${files.length}: ${f.name}`;
+      decoded.push(await decode(f));
+    }
+    // Everything starts at 0; shorter tracks are padded with silence to the longest.
+    const len = Math.max(...decoded.map((d) => d[0].length));
+    const stems = decoded.map((d, i) => {
+      const pad = (c: Float32Array) => {
+        if (c.length === len) return c;
+        const o = new Float32Array(len);
+        o.set(c);
+        return o;
+      };
+      return { name: names[i], data: [pad(d[0]), pad(d[1])] as Stereo };
+    });
+    const lengths = decoded.map((d) => d[0].length);
+    const r: Result = {
+      title: folder || prefix || (files.length === 1 ? files[0].name : `Multitrack (${files.length} tracks)`),
+      stems,
+      settings: structuredClone(settings.s),
+      seconds: len / 44100,
+      kind: 'multitrack',
+    };
+    deck.open(r);
+    refreshQueue();
+    if (Math.max(...lengths) - Math.min(...lengths) > 44100 * 2)
+      toast('Tracks have different lengths. They are lined up from the start, so export every part from the same point (e.g. bar 1).', false, 9000);
+    void library.afterSeparation(r);
+  } catch (e) {
+    toast(`Couldn't open those files: ${friendlyError(e as Error)}`, true);
+  } finally {
+    note.remove();
+  }
+}
+for (const id of ['multiFiles', 'multiFolder']) {
+  const el = $<HTMLInputElement>(id);
+  el.onchange = () => {
+    if (el.files?.length) void openMultitrack(el.files);
+    el.value = '';
+  };
+}
+
 // ---------------------------------------------------------------- file input & drag/drop
 const input = $<HTMLInputElement>('fileInput');
 input.onchange = () => {

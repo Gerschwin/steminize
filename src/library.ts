@@ -21,6 +21,7 @@ export interface LibMeta {
   took?: number;
   created: number;
   settings: Settings;
+  kind?: 'separated' | 'multitrack';
   stems: { name: string; scale: number }[];
   bytes: number;
   analysis?: Analysis;
@@ -51,10 +52,22 @@ export async function listSongs(): Promise<LibMeta[]> {
   return out.sort((a, b) => b.created - a.created);
 }
 
+/** Track names become file names in the library, so keep them safe and unique. */
+function safeStemNames<T extends { name: string }>(stems: T[]): T[] {
+  const seen = new Map<string, number>();
+  return stems.map((s) => {
+    let name = s.name.replace(/[\\/:*?"<>|]+/g, '_').trim() || 'track';
+    const n = (seen.get(name.toLowerCase()) ?? 0) + 1;
+    seen.set(name.toLowerCase(), n);
+    if (n > 1) name = `${name} (${n})`;
+    return { ...s, name };
+  });
+}
+
 export async function saveSong(meta: Omit<LibMeta, 'bytes' | 'stems' | 'id'>, stems: { name: string; data: Stereo }[], onProgress?: (done: number, total: number) => void): Promise<LibMeta> {
   const id = `${new Date(meta.created).toISOString().slice(0, 10)}-${Math.random().toString(36).slice(2, 8)}`;
   // 16-bit storage: scale down any stem that peaks above full scale, and undo it on load.
-  const withScale = stems.map((s) => {
+  const withScale = safeStemNames(stems).map((s) => {
     let peak = 0;
     for (const c of s.data) for (let i = 0; i < c.length; i++) peak = Math.max(peak, Math.abs(c[i]));
     return { ...s, scale: peak > 0.999 ? 0.999 / peak : 1 };

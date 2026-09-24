@@ -89,7 +89,7 @@ export function initLibrary(deck: Deck) {
 
   function item(m: LibMeta) {
     const date = new Date(m.created).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
-    const stems = m.settings?.twoStems ? `${m.settings.twoStems}/rest` : `${m.stems.length} stems`;
+    const stems = m.kind === 'multitrack' ? `${m.stems.length} tracks` : m.settings?.twoStems ? `${m.settings.twoStems}/rest` : `${m.stems.length} stems`;
     const sub = h('div', { class: 't-sub' }, [fmtTime(m.seconds), stems, m.analysis ? `${Math.round(m.analysis.bpm)} BPM` : '', fmtMB(m.bytes), date].filter(Boolean).join(' · '));
     const x = h('button', { class: 't-x', type: 'button', title: 'Delete from library' }, '×');
     const li = h('li', { class: `track done${deck.current?.libId === m.id ? ' active' : ''}` }, h('div', { class: 't-name', title: m.title }, m.title), x, sub);
@@ -114,7 +114,7 @@ export function initLibrary(deck: Deck) {
       sub.textContent = 'Opening…';
       try {
         const stems = await loadStems(m);
-        const r: Result = { title: m.title, stems, settings: m.settings, seconds: m.seconds, took: m.took, libId: m.id, analysis: m.analysis };
+        const r: Result = { title: m.title, stems, settings: m.settings, seconds: m.seconds, took: m.took, libId: m.id, analysis: m.analysis, kind: m.kind };
         deck.open(r, m.state as DeckState | undefined);
         onOpen(r);
         // Songs saved before key detection existed: work it out now, keep any tempo corrections.
@@ -152,7 +152,7 @@ export function initLibrary(deck: Deck) {
     try {
       navigator.storage.persist?.().catch(() => {});
       const meta = await saveSong(
-        { title: r.title, seconds: r.seconds, took: r.took, created: Date.now(), settings: r.settings, analysis: r.analysis, state: deck.current === r ? deck.getState() : undefined },
+        { title: r.title, seconds: r.seconds, took: r.took, created: Date.now(), settings: r.settings, kind: r.kind, analysis: r.analysis, state: deck.current === r ? deck.getState() : undefined },
         r.stems,
       );
       metas.set(meta.id, meta);

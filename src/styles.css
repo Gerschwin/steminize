@@ -108,6 +108,9 @@ output { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 60
   background: color-mix(in srgb, var(--accent) 6%, var(--panel));
   transition: background 0.15s, border-color 0.15s;
 }
+.multi { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: -8px; }
+.multi .muted { grid-column: 1 / -1; }
+.multi .btn { justify-content: center; }
 .drop svg { color: var(--accent-2); margin-bottom: 4px; }
 .drop span { color: var(--muted); font-size: 12px; }
 .drop:hover, .drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--panel)); }

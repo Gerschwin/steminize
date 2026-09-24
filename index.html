@@ -35,6 +35,11 @@
           <strong>Drop songs here</strong>
           <span>or click to choose files · MP3, WAV, FLAC, M4A, OGG</span>
         </label>
+        <div class="multi">
+          <span class="muted small">Already have separate tracks?</span>
+          <label class="btn tiny ghost" title="Open several audio files as one song, one lane each (no separation)">Open multitrack…<input type="file" id="multiFiles" accept="audio/*,.mp3,.wav,.flac,.ogg,.m4a,.aac,.opus,.aiff,.aif" multiple hidden /></label>
+          <label class="btn tiny ghost" title="Open every audio file in a folder as one song">Open folder…<input type="file" id="multiFolder" webkitdirectory multiple hidden /></label>
+        </div>
 
         <section class="card">
           <div class="card-head">

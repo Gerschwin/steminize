@@ -78,7 +78,18 @@ export const STEM_COLOURS: Record<string, string> = {
   guitar: '#facc15',
   piano: '#38bdf8',
 };
-export const stemColour = (name: string) => STEM_COLOURS[name.replace(/^no_/, '')] ?? '#94a3b8';
+const EXTRA_COLOURS = ['#60a5fa', '#f87171', '#c084fc', '#2dd4bf', '#fbbf24', '#a3e635', '#f472b6', '#22d3ee'];
+/** Colour for a stem or track; guesses from common track names (e.g. "Kick", "Lead vox", "Bass DI"). */
+export const stemColour = (name: string, index = 0) => {
+  const n = name.replace(/^no_/, '').toLowerCase();
+  if (STEM_COLOURS[n]) return STEM_COLOURS[n];
+  if (/vox|vocal|voice|sing|bv/.test(n)) return STEM_COLOURS.vocals;
+  if (/drum|kick|snare|hat|tom|overhead|perc|cymbal/.test(n)) return STEM_COLOURS.drums;
+  if (/bass/.test(n)) return STEM_COLOURS.bass;
+  if (/gtr|guitar/.test(n)) return STEM_COLOURS.guitar;
+  if (/piano|keys|synth|organ|rhodes/.test(n)) return STEM_COLOURS.piano;
+  return EXTRA_COLOURS[index % EXTRA_COLOURS.length];
+};
 
 /** Which files a job needs. Specialist bags only load the members that own the wanted stems. */
 export function neededFiles(model: ModelId, precision: Precision, twoStems: string, skip: string[]): ModelFile[] {
