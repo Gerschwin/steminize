@@ -9,7 +9,7 @@ It runs as a web app (installable on desktop and phone) and as a desktop app (Wi
 - **Models:** HT Demucs (fast), HT Demucs Fine-tuned (best, about 4× slower) and HT Demucs 6-stem (adds guitar and piano). Each comes in a compact (fp16) or full (fp32) download.
 - **The Demucs command-line options:** two-stem/karaoke mode (`--two-stems`), shifts (`--shifts`), overlap (`--overlap`), clip mode (`--clip-mode`), and output as WAV 16/24/32-bit float, FLAC 16/24 or MP3 128–320 kbps.
 - **Batch queue:** drop in several songs; each shows progress and time left.
-- **Practice player:** mute, solo, set the level and pan (left–right) of each stem; loop a section (drag across the waveform); change tempo (50–150%) and pitch (±12 semitones) without affecting the other.
+- **Practice player:** mute, solo, set the level and pan (left–right) of each stem, plus a per-stem EQ with presets (Kick, Snare, Hi-hats, Bass on small speakers, Vocal clarity) and manual low-cut, high-cut and focus band; loop a section (drag across the waveform); change tempo (50–150%) and pitch (±12 semitones) without affecting the other.
 - **Export:** single stems, all stems (to a folder, or as a ZIP), or "what you hear" as a mix with your levels, loop, tempo and pitch applied.
 - **Offline:** once a model has downloaded, the app works with no connection.
 - **GPU acceleration** through WebGPU where available, otherwise multi-threaded CPU.

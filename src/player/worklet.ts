@@ -1,8 +1,9 @@
 import { MixSource, Renderer, type Stereo } from './mixcore.ts';
+import type { EqParams } from './eq.ts';
 
 export type PlayerMsg =
   | { type: 'load'; stems: Stereo[]; gains: number[] }
-  | { type: 'gains'; gains: number[]; pans?: number[] }
+  | { type: 'gains'; gains: number[]; pans?: number[]; eqs?: (EqParams | undefined)[] }
   | { type: 'play' }
   | { type: 'pause' }
   | { type: 'seek'; pos: number }
@@ -46,6 +47,7 @@ class StemPlayer extends AudioWorkletProcessor {
     if (m.type === 'gains') {
       this.r.src.gains = m.gains;
       if (m.pans) this.r.src.pans = m.pans;
+      if (m.eqs) this.r.src.setEqs(m.eqs);
     }
     else if (m.type === 'play') {
       if (this.r.heard >= this.r.src.end - 128) this.r.seek(this.loop.on ? this.loop.start : 0);

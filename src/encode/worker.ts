@@ -3,6 +3,7 @@
 
 import { encodeAudio, type OutputOptions } from './index.ts';
 import { renderMix, type Stereo } from '../player/mixcore.ts';
+import type { EqParams } from '../player/eq.ts';
 
 export type EncodeReq =
   | { type: 'stems'; id: number; stems: { name: string; data: Stereo }[]; out: OutputOptions }
@@ -13,6 +14,7 @@ export type EncodeReq =
       stems: Stereo[];
       gains: number[];
       pans?: number[];
+      eqs?: (EqParams | undefined)[];
       start: number;
       end: number;
       tempo: number;
@@ -36,7 +38,7 @@ self.onmessage = (e: MessageEvent<EncodeReq>) => {
         post({ id: m.id, type: 'file', name: s.name, bytes }, [bytes.buffer as ArrayBuffer]);
       }
     } else {
-      const mix = renderMix(m.stems, m.gains, m.start, m.end, m.tempo, m.pitch, m.pans);
+      const mix = renderMix(m.stems, m.gains, m.start, m.end, m.tempo, m.pitch, m.pans, m.eqs);
       const bytes = encodeAudio(mix, m.out);
       post({ id: m.id, type: 'file', name: m.name, bytes }, [bytes.buffer as ArrayBuffer]);
     }

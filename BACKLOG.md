@@ -1,9 +1,9 @@
 # Batched changes (not yet built)
 
-## Player
-- [ ] Per-stem EQ behind an **EQ** button (lights up when active): presets (Kick, Snare, Hi-hats, Bass on small speakers, Vocal clarity, Flat) plus manual low-cut, high-cut and one sweepable focus band (boost/cut, max +12 dB). Applies to playback and Export mix.
+(nothing waiting)
 
 ## Done
+- [x] Per-stem EQ behind an **EQ** button (lights up when active): presets (Kick, Snare, Hi-hats, Bass on small speakers, Vocal clarity, Flat) plus manual low-cut, high-cut and one sweepable focus band (boost/cut, max +12 dB). Applies to playback and Export mix. (v1.4.0)
 - [x] Hide the Pan slider behind a toggle, off by default. (v1.3.0)
 - [x] "Pause after current song" option. (v1.3.0)
 - [x] Re-run uses the settings at the moment you click it (same mechanism as above). (v1.3.0)

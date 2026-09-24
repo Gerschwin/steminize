@@ -1,6 +1,7 @@
 import workletUrl from './worklet.ts?worker&url';
 import type { PlayerMsg } from './worklet.ts';
 import type { Stereo } from './mixcore.ts';
+import type { EqParams } from './eq.ts';
 
 export interface PlayerState {
   pos: number; // frames
@@ -55,8 +56,8 @@ export class Player {
     this.state = { pos: 0, playing: false };
     void this.init();
   }
-  setGains(gains: number[], pans?: number[]) {
-    this.send({ type: 'gains', gains, pans });
+  setGains(gains: number[], pans?: number[], eqs?: (EqParams | undefined)[]) {
+    this.send({ type: 'gains', gains, pans, eqs });
   }
   async play() {
     await this.unlock();

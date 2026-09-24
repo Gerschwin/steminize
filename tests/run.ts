@@ -10,6 +10,7 @@ import { encodeWav } from '../src/encode/wav.ts';
 import { encodeMp3 } from '../src/encode/mp3.ts';
 import { applyClip } from '../src/encode/pcm.ts';
 import { MixSource, panMatrix, renderMix } from '../src/player/mixcore.ts';
+import { FLAT, PRESETS, responseDb } from '../src/player/eq.ts';
 
 let failed = 0;
 const ok = (name: string, cond: boolean, detail = '') => {
@@ -139,6 +140,32 @@ for (const [len, overlap, shifts] of [
   ok('pan hard right: silent left', R[0].every((v) => Math.abs(v) < 1e-7));
   const [p, q, r2, t] = panMatrix(0.5);
   ok('pan half right leans right', r2 + t > p + q, [p, q, r2, t].map((x) => x.toFixed(3)).join(' '));
+}
+
+// ---- 5c. EQ
+{
+  const n = SR * 2;
+  const tone = (f: number): Stereo => {
+    const l = new Float32Array(n).map((_, i) => 0.5 * Math.sin((2 * Math.PI * f * i) / SR));
+    return [l, l.slice()];
+  };
+  const rms = (x: Float32Array) => Math.sqrt(x.subarray(SR).reduce((a, v) => a + v * v, 0) / (n - SR)); // skip settling
+  const gainDb = (f: number, eq: typeof FLAT) => 20 * Math.log10(rms(renderMix([tone(f)], [1], 0, n, 1, 0, [], [eq])[0]) / rms(tone(f)[0]));
+  const a = signal(20_000, 31);
+  const flat = renderMix([a], [1], 0, 20_000, 1, 0, [], [FLAT]);
+  ok('EQ flat is bit-exact passthrough', maxErr(flat[0], (i) => a[0][i]) === 0);
+  const kick = PRESETS.find((p) => p.name === 'Kick')!.eq;
+  const hats = PRESETS.find((p) => p.name === 'Hi-hats')!.eq;
+  const k50 = gainDb(50, kick), k5k = gainDb(5000, kick);
+  ok('EQ Kick keeps 50 Hz, removes 5 kHz', Math.abs(k50) < 6 && k5k < -40, `50 Hz ${k50.toFixed(1)} dB, 5 kHz ${k5k.toFixed(1)} dB`);
+  const h100 = gainDb(100, hats), h10k = gainDb(10000, hats);
+  ok('EQ Hi-hats removes 100 Hz, keeps 10 kHz', h100 < -60 && Math.abs(h10k) < 1, `100 Hz ${h100.toFixed(1)} dB, 10 kHz ${h10k.toFixed(1)} dB`);
+  const boost = { ...FLAT, freq: 1000, gain: 12, q: 1 };
+  const b1k = gainDb(1000, boost);
+  ok('EQ focus +12 dB at 1 kHz', Math.abs(b1k - 12) < 0.3, `${b1k.toFixed(2)} dB`);
+  const k260 = gainDb(260, kick);
+  const pred = responseDb(kick, [260])[0];
+  ok('EQ curve matches measured response', Math.abs(pred - k260) < 0.5, `curve ${pred.toFixed(1)} vs measured ${k260.toFixed(1)} dB at 260 Hz`);
 }
 
 // ---- 6. encoders, decoded by ffmpeg

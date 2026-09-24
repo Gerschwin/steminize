@@ -1,6 +1,6 @@
 {
   "name": "stemdeck",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Stem separation (Demucs) that runs entirely on your device",
   "scripts": {
     "dev": "vite",

@@ -2,6 +2,7 @@
 // AudioWorklet player and the offline "export mix" renderer.
 
 import { SoundTouch } from 'soundtouchjs';
+import { StemEq, type EqParams } from './eq.ts';
 
 export type Stereo = [Float32Array, Float32Array];
 
@@ -36,6 +37,18 @@ export class MixSource {
   }
 
   pans: number[] = [];
+  private eqs: StemEq[] = [];
+  private tmpL = new Float32Array(0);
+  private tmpR = new Float32Array(0);
+
+  setEqs(params: (EqParams | undefined)[]) {
+    params.forEach((p, i) => (this.eqs[i] ??= new StemEq()).set(p));
+  }
+
+  /** Clear filter memory (after a seek, so old audio doesn't ring on). */
+  resetEqs() {
+    for (const e of this.eqs) e?.reset();
+  }
 
   constructor(
     public stems: Stereo[],
@@ -68,16 +81,25 @@ export class MixSource {
       for (let s = 0; s < this.stems.length; s++) {
         const g = this.gains[s] ?? 0;
         if (!g) continue;
-        const [l, r] = this.stems[s];
+        let [l, r] = this.stems[s];
+        let p0 = this.pos;
+        const eq = this.eqs[s];
+        if (eq?.active) {
+          if (this.tmpL.length < n) [this.tmpL, this.tmpR] = [new Float32Array(n), new Float32Array(n)];
+          this.tmpL.set(l.subarray(p0, p0 + n));
+          this.tmpR.set(r.subarray(p0, p0 + n));
+          eq.process(this.tmpL, this.tmpR, n);
+          [l, r, p0] = [this.tmpL, this.tmpR, 0];
+        }
         const pan = this.pans[s] ?? 0;
         if (!pan) {
-          for (let i = 0, j = written * 2, p = this.pos; i < n; i++, j += 2, p++) {
+          for (let i = 0, j = written * 2, p = p0; i < n; i++, j += 2, p++) {
             target[j] += g * l[p];
             target[j + 1] += g * r[p];
           }
         } else {
           const [a, b, c, d] = panMatrix(pan).map((k) => k * g);
-          for (let i = 0, j = written * 2, p = this.pos; i < n; i++, j += 2, p++) {
+          for (let i = 0, j = written * 2, p = p0; i < n; i++, j += 2, p++) {
             target[j] += a * l[p] + b * r[p];
             target[j + 1] += c * l[p] + d * r[p];
           }
@@ -110,6 +132,7 @@ export class Renderer {
     this.src.pos = Math.max(0, Math.min(Math.round(pos), this.src.end));
     this.heard = this.src.pos;
     this.src.resetPad();
+    this.src.resetEqs();
     this.st.clear();
     this.st.inputBuffer.clear();
     this.st.outputBuffer.clear();
@@ -157,11 +180,21 @@ export class Renderer {
 }
 
 /** Offline render of [start, end) with the current gains, tempo and pitch. */
-export function renderMix(stems: Stereo[], gains: number[], start: number, end: number, tempo: number, pitch: number, pans: number[] = []): Stereo {
+export function renderMix(
+  stems: Stereo[],
+  gains: number[],
+  start: number,
+  end: number,
+  tempo: number,
+  pitch: number,
+  pans: number[] = [],
+  eqs: (EqParams | undefined)[] = [],
+): Stereo {
   start = Math.round(start);
   end = Math.round(end);
   const src = new MixSource(stems, gains, end);
   src.pans = pans;
+  src.setEqs(eqs);
   src.padEnd = 32768;
   const r = new Renderer(src);
   r.setTempoPitch(tempo, pitch);

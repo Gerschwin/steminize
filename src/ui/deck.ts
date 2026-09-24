@@ -5,6 +5,8 @@ import { extensionFor, mimeFor } from '../encode/meta.ts';
 import { stemColour, MODELS } from '../models.ts';
 import { openSink, safeName, saveFile } from '../platform.ts';
 import type { Settings } from '../settings.ts';
+import { isFlat, type EqParams } from '../player/eq.ts';
+import { eqPanel, type EqPanel } from './eqPanel.ts';
 import { $, fitCanvas, fmtDuration, fmtTime, h, pressed, toast } from './dom.ts';
 
 const SR = 44100;
@@ -23,6 +25,8 @@ interface Lane {
   name: string;
   vol: number;
   pan: number;
+  eq?: EqParams;
+  eqPanel?: EqPanel;
   mute: boolean;
   solo: boolean;
   el: HTMLElement;
@@ -155,19 +159,22 @@ export class Deck {
       const canvas = h('canvas');
       const mute = h('button', { class: 'ms m', type: 'button', title: `Mute (${i + 1})` }, 'M');
       const solo = h('button', { class: 'ms s', type: 'button', title: 'Solo' }, 'S');
+      const eqBtn = h('button', { class: 'ms eq', type: 'button', title: 'EQ: presets, low/high cut and a focus band' }, 'EQ');
       const dl = h('button', { class: 'dl', type: 'button', title: `Save ${s.name}` });
       dl.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>';
       const vol = h('input', { type: 'range', min: '0', max: '1.5', step: '0.01', value: '1', title: 'Level' });
       const pan = h('input', { type: 'range', min: '-1', max: '1', step: '0.05', value: '0', title: 'Pan (double-click to centre)' });
       const panOut = h('output', {}, 'C');
       const label = s.name.startsWith('no_') ? `No ${s.name.slice(3)}` : s.name;
-      const ctl = h('div', { class: 'lane-ctl', style: `--c:${colour}` }, h('span', { class: 'name' }, label), mute, solo, dl,
+      const ctl = h('div', { class: 'lane-ctl', style: `--c:${colour}` }, h('span', { class: 'name' }, label), mute, solo, eqBtn, dl,
         h('label', { class: 'mini' }, h('span', {}, 'Vol'), vol),
         h('label', { class: 'mini pan' }, h('span', {}, 'Pan'), pan, panOut));
       const wave = h('div', { class: 'wave' }, canvas);
       const el = h('div', { class: 'lane' }, ctl, wave);
       lanes.append(el);
       const lane: Lane = { name: s.name, vol: 1, pan: 0, mute: false, solo: false, el, canvas, peaks: peaksOf(s.data) };
+      eqBtn.onclick = () => this.toggleEq(lane, colour);
+      pressed(eqBtn, false);
       mute.onclick = () => this.setLane(lane, { mute: !lane.mute });
       solo.onclick = () => this.setLane(lane, { solo: !lane.solo });
       vol.oninput = () => this.setLane(lane, { vol: Number(vol.value) });
@@ -209,13 +216,33 @@ export class Deck {
     return this.lanes.map((l) => l.pan);
   }
 
-  private setLane(l: Lane, patch: Partial<Pick<Lane, 'vol' | 'pan' | 'mute' | 'solo'>>) {
+  private eqs() {
+    return this.lanes.map((l) => l.eq);
+  }
+
+  /** Open/close a stem's EQ panel (one open at a time). */
+  private toggleEq(l: Lane, colour: string) {
+    const open = !!l.eqPanel?.el.isConnected;
+    for (const x of this.lanes) {
+      x.eqPanel?.el.remove();
+      x.el.classList.remove('eq-open');
+    }
+    if (open) return;
+    l.eqPanel ??= eqPanel(colour, (eq) => this.setLane(l, { eq }));
+    if (l.eq) l.eqPanel.set(l.eq);
+    l.el.append(l.eqPanel.el);
+    l.el.classList.add('eq-open');
+    requestAnimationFrame(() => l.eqPanel!.redraw());
+  }
+
+  private setLane(l: Lane, patch: Partial<Pick<Lane, 'vol' | 'pan' | 'mute' | 'solo' | 'eq'>>) {
     Object.assign(l, patch);
     pressed(l.el.querySelector('.m')!, l.mute);
     pressed(l.el.querySelector('.s')!, l.solo);
     const g = this.gains();
     this.lanes.forEach((x, i) => x.el.classList.toggle('off', g[i] === 0));
-    this.player.setGains(g, this.pans());
+    this.player.setGains(g, this.pans(), this.eqs());
+    for (const x of this.lanes) x.el.querySelector('.eq')!.classList.toggle('on', !isFlat(x.eq));
     // If pan is hidden but in use, say so on the button so it isn't forgotten.
     $('panToggle').textContent = this.lanes.some((x) => x.pan) ? 'Pan (active)' : 'Pan';
   }
@@ -430,6 +457,7 @@ export class Deck {
       on.length === this.lanes.length ? 'mix' : on.join('+') || 'silence',
       this.tempo !== 1 ? `${Math.round(this.tempo * 100)}%` : '',
       this.pitch ? `${this.pitch > 0 ? '+' : ''}${this.pitch}st` : '',
+      this.lanes.some((l, i) => g[i] > 0 && !isFlat(l.eq)) ? 'EQ' : '',
       useLoop ? `${fmtTime(start / SR).replace(':', '.')}-${fmtTime(end / SR).replace(':', '.')}` : '',
     ].filter(Boolean);
     const name = `${this.baseName()} - ${bits.join(' ')}.${extensionFor(o)}`;
@@ -438,7 +466,7 @@ export class Deck {
     btn.textContent = 'Rendering…';
     try {
       await this.encoder.run(
-        { type: 'mix', name, stems: this.r.stems.map((s) => s.data), gains: g, pans: this.pans(), start, end, tempo: this.tempo, pitch: this.pitch, out: o },
+        { type: 'mix', name, stems: this.r.stems.map((s) => s.data), gains: g, pans: this.pans(), eqs: this.eqs(), start, end, tempo: this.tempo, pitch: this.pitch, out: o },
         async (n, bytes) => void (await saveFile(n, bytes, mimeFor(o))),
       );
     } catch (e) {
