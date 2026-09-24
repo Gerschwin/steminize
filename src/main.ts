@@ -18,7 +18,21 @@ initModelsDialog();
 onModelsChanged.add(() => settings.render());
 
 const chip = $('backendChip');
-chip.textContent = 'gpu' in navigator ? 'GPU available' : 'CPU only';
+chip.textContent = 'Checking device…';
+// Chrome can expose WebGPU without a usable GPU, so ask for an actual adapter.
+(async () => {
+  let gpu = false;
+  try {
+    gpu = !!(await (navigator as any).gpu?.requestAdapter());
+  } catch {
+    /* no GPU */
+  }
+  if (chip.textContent === 'Checking device…') {
+    chip.textContent = gpu ? 'GPU ready' : `CPU only · ${navigator.hardwareConcurrency || '?'} threads`;
+    chip.title = gpu ? 'Separation will use your graphics card' : 'No usable GPU found; separation will run on the processor (slower)';
+    chip.className = `chip${gpu ? ' gpu' : ''}`;
+  }
+})();
 engine.onBackend = ({ backend, threads, note }) => {
   chip.textContent = backend === 'webgpu' ? 'Running on GPU' : `Running on CPU · ${threads} thread${threads > 1 ? 's' : ''}`;
   chip.className = `chip${backend === 'webgpu' ? ' gpu' : ''}`;
