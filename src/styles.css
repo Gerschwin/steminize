@@ -289,6 +289,35 @@ details.more[open] summary { color: var(--text); }
 .marker-chip .mk-loop:hover, .marker-chip .mk-del:hover, .marker-chip .mk-ren:hover { color: var(--text); }
 @media (hover: none) { .shortcuts { display: none; } }
 
+/* ---------- transcription lanes (chords, notes) ---------- */
+.x-toggles { display: inline-flex; gap: 4px; }
+.xlanes:not(:has(> :not([hidden]))) { display: none; }
+.x-lane .lane-ctl { --c: var(--accent); align-content: center; }
+.x-ctl .name { grid-column: auto; }
+.chord-lane .lane-ctl { grid-template-columns: 1fr auto auto; row-gap: 2px; }
+.chord-lane .wave { min-height: 34px; }
+.chord-lane .x-now, .chord-lane .x-status { grid-column: 1 / -1; grid-row: 2; min-height: 18px; }
+.x-now { font-weight: 700; font-size: 14px; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.x-ctl .btn.tiny { height: 24px; padding: 0 8px; font-size: 12px; }
+.x-lane .notes-ctl { grid-template-columns: 1fr 30px; padding: 0 0 0 8px; align-items: stretch; align-content: stretch; }
+.notes-ctl .x-col { padding: 6px 0; }
+.x-col { display: flex; flex-direction: column; gap: 6px; justify-content: center; min-width: 0; }
+.x-col select { height: 28px; padding: 0 6px; font-size: 12px; min-width: 0; }
+.x-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.x-keys { position: relative; width: 30px; border-radius: 0 9px 9px 0; overflow: hidden; cursor: pointer; }
+.notes-lane .wave { min-height: 240px; background: #0f0f17; cursor: crosshair; }
+.x-status { min-height: 1em; }
+.chord-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: 246px; background: var(--panel-2); border-radius: 9px; padding: 8px 10px; border-left: 3px solid #f59e0b; }
+.chord-edit .ce-name { font-weight: 700; font-size: 15px; }
+.chord-edit .ce-alts, .chord-edit .ce-set { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.chord-edit select { width: auto; height: 28px; padding: 0 6px; font-size: 12px; }
+@media (max-width: 700px) {
+  .x-keys { display: none; }
+  .x-lane .notes-ctl { grid-template-columns: 1fr; padding: 0 8px; }
+  .notes-lane .wave { min-height: 170px; }
+  .chord-edit { margin-left: 0; }
+}
+
 /* One control height across the player's tool rows, so labels, buttons, dropdowns and boxes line up. */
 .tool, .markers-bar { --h: 30px; }
 .tool .btn, .markers-bar .btn, .tool select, .tool input[type='number'], .marker-chip, .bpm.key {

@@ -81,4 +81,59 @@ export class Player {
   setVolume(v: number) {
     if (this.master) this.master.gain.value = v;
   }
+
+  // ---- extra sounds for the note tools (freeze, keyboard) ----
+  private held: { src: AudioBufferSourceNode; gain: GainNode } | null = null;
+
+  /** Loop a stereo buffer (the "freeze" sound) until stopHold(); `rate` shifts its pitch. */
+  async hold(chs: Float32Array[], rate = 1) {
+    await this.unlock();
+    const ctx = this.ctx!;
+    this.stopHold();
+    const buf = ctx.createBuffer(chs.length, chs[0].length, 44100);
+    chs.forEach((c, i) => buf.copyToChannel(c as Float32Array<ArrayBuffer>, i));
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    src.playbackRate.value = rate;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(1, ctx.currentTime + 0.05);
+    src.connect(gain).connect(this.master!);
+    src.start();
+    this.held = { src, gain };
+  }
+
+  stopHold() {
+    if (!this.held || !this.ctx) return;
+    const { src, gain } = this.held;
+    const t = this.ctx.currentTime;
+    gain.gain.cancelScheduledValues(t);
+    gain.gain.setValueAtTime(gain.gain.value, t);
+    gain.gain.linearRampToValueAtTime(0, t + 0.06);
+    src.stop(t + 0.07);
+    this.held = null;
+  }
+
+  /** A short piano-ish tone for a MIDI note. */
+  async tone(midi: number) {
+    await this.unlock();
+    const ctx = this.ctx!;
+    const f = 440 * 2 ** ((midi - 69) / 12);
+    const t = ctx.currentTime;
+    const out = ctx.createGain();
+    out.gain.setValueAtTime(0, t);
+    out.gain.linearRampToValueAtTime(0.25, t + 0.01);
+    out.gain.exponentialRampToValueAtTime(0.001, t + 1.4);
+    out.connect(this.master!);
+    [1, 2, 3, 4].forEach((hn, i) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.frequency.value = f * hn;
+      g.gain.value = [1, 0.4, 0.2, 0.1][i];
+      o.connect(g).connect(out);
+      o.start(t);
+      o.stop(t + 1.5);
+    });
+  }
 }

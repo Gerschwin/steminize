@@ -14,6 +14,12 @@ It runs as a web app (installable on desktop and phone) and as a desktop app (Wi
 - **Library:** separated songs are kept on your computer (16-bit FLAC in the browser's private storage) with their mixer, EQ, loop and practice settings, so they reopen instantly.
 - **Practice tools:** tempo (BPM) and bar detection from the drum stem, with ½×/2×/tap correction; loop snapping to beats or bars; speed trainer (e.g. 70% → 100%, +5% per pass); gap between passes; one-bar count-in; metronome click that stays in step with slowed-down audio.
 - **Sections, key and zoom:** named section markers (click to jump, ⟳ to loop a section, saved per song); key detection with the shifted key shown when you change pitch (click the key to see other likely keys, check just the loop or a section, or set it yourself); waveform zoom (buttons, scroll wheel or + − 0) with beat lines when zoomed in.
+- **Transcription tools** (the **Chords** and **Notes** buttons above the tracks):
+  - **Notes view:** which notes are sounding over time, one row per semitone from E1 to C7, for all parts or any one stem, with a keyboard beside it (click a key to hear that pitch; it lights up with what's playing). Hover to name a note. It follows zoom, and a pitch shift moves it so it always shows what you hear.
+  - **Freeze** (F): holds the sound at the playhead as a steady tone so you can hum it or find it on your instrument. Click elsewhere while frozen to move it.
+  - **Chords:** detected per beat along the bar grid, using the separated bass to find the root. Click a chord to correct it (suggestions, any root/type, slash bass, split in two); corrections are marked and kept. **Chart ⤓** saves a text chord chart in bars, using your markers as sections, transposed if you've shifted the pitch.
+  - **To MIDI:** turns a stem (or all parts) into notes with Spotify's Basic Pitch, drawn over the notes view. Lead vocals and bass are kept to one note at a time. **MIDI ⤓** saves every part you've transcribed as one MIDI file, at the song's tempo.
+  - How good: the notes view is reliable (it's measurement, not guessing). Chords are a first draft: expect roughly 60–75% right on real songs, better on simple pop/rock with a separated bass, worse on jazz chords, and fix the rest by ear. MIDI is good on bass and single-note melodies, fair on piano, messy on strummed guitar or a full mix.
 - **Hands-free:** PageDown plays/pauses and PageUp restarts the section, which suits most Bluetooth page-turner pedals; "Foot pedal mode" maps arrow-key pedals the same way.
 - **Export:** single stems, all stems (to a folder, or as a ZIP), or "what you hear" as a mix with your levels, loop, tempo and pitch applied.
 - **Offline:** once a model has downloaded, the app works with no connection.
@@ -93,7 +99,9 @@ src/
   modelstore.ts        downloads and caches models in Cache Storage (works offline)
   player/mixcore.ts    stem mixing, looping, SoundTouch time-stretch and pitch-shift
   player/worklet.ts    real-time player (AudioWorklet)
-  encode/              WAV, FLAC (own encoder) and MP3 (lamejs); runs in a worker
+  encode/              WAV, FLAC (own encoder), MP3 (lamejs) and MIDI; runs in a worker
+  analysis/            beats and tempo, key, notes view (constant-Q transform), chords,
+                       Basic Pitch audio-to-MIDI (model bundled, ~230 KB, own worker)
   ui/                  interface
 public/sw.js           offline caching, plus the headers that enable multi-threaded WASM
 src-tauri/             desktop wrapper (native save dialogs)
@@ -126,6 +134,7 @@ The float64 conversion is done by `src/engine/fixfloat64.ts`, which rewrites tho
 - **ONNX Runtime Web** by Microsoft, MIT licence.
 - **SoundTouchJS**, LGPL-2.1. It's used unmodified from npm, and you can swap in your own build of it.
 - **lamejs** (MP3), LGPL. **fflate** (ZIP), MIT.
+- **Basic Pitch** by Spotify, Apache-2.0: https://github.com/spotify/basic-pitch. The model file is bundled unchanged; its licence and notice are next to it in `src/analysis/models/`. The note-extraction steps are ported from its Python code.
 - Stemdeck itself: MIT (see `LICENSE`).
 
 Only separate audio you have the right to use.

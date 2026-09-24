@@ -8,6 +8,7 @@ import { renderMix, type Stereo } from '../player/mixcore.ts';
 import type { EqParams } from '../player/eq.ts';
 import { analyse } from '../analysis/beats.ts';
 import { detectKey, rankKeys } from '../analysis/key.ts';
+import { cqt } from '../analysis/cqt.ts';
 
 export type EncodeReq =
   | { type: 'stems'; id: number; stems: { name: string; data: Stereo }[]; out: OutputOptions }
@@ -29,7 +30,9 @@ export type EncodeReq =
   | { type: 'lib-save'; id: number; dir: string; meta: string; stems: { name: string; data: Stereo; scale: number }[] }
   | { type: 'lib-meta'; id: number; dir: string; meta: string }
   | { type: 'beats'; id: number; mono: Float32Array; harmonic?: Float32Array }
-  | { type: 'keys'; id: number; harmonic: Float32Array };
+  | { type: 'keys'; id: number; harmonic: Float32Array }
+  /** Note energy per semitone over time, for the note view and chords. */
+  | { type: 'cqt'; id: number; mono: Float32Array };
 
 export type EncodeRes =
   | { id: number; type: 'file'; name: string; bytes: Uint8Array }
@@ -92,6 +95,9 @@ async function handle(m: EncodeReq) {
     post({ id: m.id, type: 'result', value: total });
   } else if (m.type === 'lib-meta') {
     await writeFile(await libDir(m.dir), 'meta.json', new TextEncoder().encode(m.meta));
+  } else if (m.type === 'cqt') {
+    const c = cqt(m.mono);
+    post({ id: m.id, type: 'result', value: c }, [c.data.buffer as ArrayBuffer]);
   } else if (m.type === 'keys') {
     post({ id: m.id, type: 'result', value: rankKeys(m.harmonic).slice(0, 6) });
   } else if (m.type === 'beats') {

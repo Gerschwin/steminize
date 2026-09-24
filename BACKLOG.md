@@ -2,11 +2,14 @@
 
 (nothing waiting)
 
-Parked: band collaboration "Session mode" (watch a synced folder, versions, comments). Revisit if the band actually shares parts via a folder + Open multitrack for a month.
+Parked: band collaboration "Session mode" (watch a synced folder, versions, comments). Decided it doesn't belong in a separation app: better as DAW scripts (Reaper/Ardour Lua export + import) plus Syncthing. Revisit only if the band shares parts via a folder + Open multitrack for a few weeks.
 
-Ideas not yet chosen: record yourself over the track, MIDI transcription, tuner.
+Ideas not yet chosen: record yourself over the track, tuner, library backup/restore, setlists, practice notes per song.
+
+Transcription, not planned: guitar tab (string/fret guessing is poor) and sheet music (needs a big notation library; automatic rhythms need too much fixing).
 
 ## Done
+- [x] Transcription tools: notes view with keyboard, freeze, editable chord lane + chord chart, audio to MIDI with Basic Pitch (v1.9.0)
 - [x] Open multitrack / open folder (v1.7.0)
 - [x] Section markers, foot pedal control, key detection, waveform zoom (v1.6.0)
 - [x] Library: keep separated songs + settings between sessions (v1.5.0)
