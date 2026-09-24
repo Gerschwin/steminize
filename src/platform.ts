@@ -70,3 +70,34 @@ export async function openSink(zipName: string): Promise<Sink | null> {
 }
 
 export const safeName = (s: string) => s.replace(/[\\/:*?"<>|]+/g, '_').trim() || 'track';
+
+/**
+ * Native folder picker for the desktop app: WebKitGTK (the Linux webview) doesn't support
+ * the HTML `webkitdirectory` picker, so "Open folder…" needs Tauri's own dialog + fs plugins
+ * instead. Returns every file found (recursively), with `webkitRelativePath` set so callers
+ * can treat them the same as an `<input webkitdirectory>` selection; null if cancelled.
+ */
+export async function pickFolderFiles(): Promise<File[] | null> {
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const { readDir, readFile } = await import('@tauri-apps/plugin-fs');
+  const { join, basename } = await import('@tauri-apps/api/path');
+  const root = await open({ directory: true, title: 'Choose a folder of audio files' });
+  if (!root || Array.isArray(root)) return null;
+  const rootName = await basename(root);
+  const files: File[] = [];
+  async function walk(dir: string, rel: string) {
+    for (const entry of await readDir(dir)) {
+      const full = await join(dir, entry.name!);
+      const relPath = `${rel}/${entry.name}`;
+      if (entry.isDirectory) await walk(full, relPath);
+      else {
+        const bytes = await readFile(full);
+        const file = new File([bytes as BlobPart], entry.name!);
+        Object.defineProperty(file, 'webkitRelativePath', { value: relPath });
+        files.push(file);
+      }
+    }
+  }
+  await walk(root, rootName);
+  return files;
+}

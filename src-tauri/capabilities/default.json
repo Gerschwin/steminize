@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Save dialogs and writing the files the user chose",
+  "description": "Open/save dialogs and reading/writing the files or folders the user chose",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:default", "fs:allow-write-file"]
+  "permissions": ["core:default", "dialog:default", "fs:allow-write-file", "fs:allow-read-file", "fs:allow-read-dir"]
 }

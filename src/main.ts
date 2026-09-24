@@ -2,7 +2,7 @@ import './styles.css';
 import { Engine } from './engine/client.ts';
 import type { Stereo } from './engine/separate.ts';
 import { MODELS, neededFiles } from './models.ts';
-import { isTauri } from './platform.ts';
+import { isTauri, pickFolderFiles } from './platform.ts';
 import { loadSettings, type Settings } from './settings.ts';
 import { Deck, type Result } from './ui/deck.ts';
 import { $, fmtDuration, fmtEta, fmtTime, h, toast } from './ui/dom.ts';
@@ -247,7 +247,15 @@ async function decode(file: File): Promise<Stereo> {
   const bytes = await file.arrayBuffer();
   // Decoding in a 44.1 kHz context resamples to the model's rate.
   const ctx = new OfflineAudioContext(2, 1, 44100);
-  const buf = await ctx.decodeAudioData(bytes);
+  // On the Linux desktop app, decodeAudioData can hang indefinitely instead of failing
+  // when the system's GStreamer install is missing a codec, rather than reject. Time it
+  // out so that shows up as an error instead of a stuck "Reading audio…".
+  const buf = await Promise.race([
+    ctx.decodeAudioData(bytes),
+    new Promise<AudioBuffer>((_, reject) =>
+      setTimeout(() => reject(Object.assign(new Error('Timed out reading the audio'), { name: 'DecodeTimeout' })), 20_000),
+    ),
+  ]);
   const l = buf.getChannelData(0).slice();
   const r = buf.numberOfChannels > 1 ? buf.getChannelData(1).slice() : l.slice();
   return [l, r];
@@ -307,6 +315,10 @@ async function processTrack(t: Track) {
 
 function friendlyError(e: Error) {
   const m = e.message || String(e);
+  if (e.name === 'DecodeTimeout')
+    return isTauri
+      ? 'Reading the audio timed out. This desktop app needs GStreamer for audio decoding; try installing gstreamer1.0-plugins-good, gstreamer1.0-plugins-bad and gstreamer1.0-libav (or your distro’s equivalents).'
+      : 'Reading the audio timed out.';
   if (/decode|EncodingError|Unable to decode/i.test(m) || e.name === 'EncodingError') return "Couldn't read this audio format";
   if (/memory|allocation|OOM|RangeError/i.test(m)) return 'Ran out of memory. Try a shorter file, the Compact model, or CPU.';
   if (/Could not find an implementation/i.test(m))
@@ -379,6 +391,17 @@ for (const id of ['multiFiles', 'multiFolder']) {
   el.onchange = () => {
     if (el.files?.length) void openMultitrack(el.files);
     el.value = '';
+  };
+}
+// WebKitGTK (the Linux desktop app's webview) doesn't support the HTML `webkitdirectory`
+// picker, so it silently falls back to picking a single file. Use Tauri's native folder
+// dialog instead there.
+if (isTauri) {
+  $('multiFolderLabel').onclick = (e) => {
+    e.preventDefault();
+    void pickFolderFiles().then((files) => {
+      if (files?.length) void openMultitrack(files);
+    });
   };
 }
 

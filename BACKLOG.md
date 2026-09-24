@@ -7,6 +7,7 @@ Parked: band collaboration "Session mode" (watch a synced folder, versions, comm
 Ideas not yet chosen: record yourself over the track, MIDI transcription, tuner.
 
 ## Done
+- [x] Linux desktop fixes from first AppImage testing: "Open folder…" used Tauri's native folder dialog instead of the unsupported `webkitdirectory` picker; window opens maximised to the screen instead of a fixed 1280×860; a stuck "Reading audio…" (missing GStreamer codecs) now times out with a clear error instead of hanging forever (v1.9.1)
 - [x] Library backup/restore: back up every song (stems + settings) as one zip, restore into any browser/install; songs already present are skipped, not duplicated (v1.9.0)
 - [x] Open multitrack / open folder (v1.7.0)
 - [x] Section markers, foot pedal control, key detection, waveform zoom (v1.6.0)

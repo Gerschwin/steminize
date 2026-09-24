@@ -73,6 +73,16 @@ The *Desktop builds* workflow builds Windows (`.msi` and `.exe`), macOS (`.dmg`,
    npm run tauri build    # build an installer into src-tauri/target/release/bundle/
    ```
 
+### Linux: audio decoding needs GStreamer
+
+The Linux desktop app decodes audio through WebKitGTK, which uses the system's GStreamer install rather than a bundled decoder. If adding a song gets stuck on "Reading audio…" (it times out after 20s with an error instead of hanging forever), install the codec plugins:
+
+```bash
+sudo apt install gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav
+```
+
+(package names for other distros will differ). This isn't needed for the web app or for Windows/macOS.
+
 ### Unsigned-app warnings
 
 The installers aren't code-signed, so people will see warnings the first time:
