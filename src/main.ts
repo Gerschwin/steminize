@@ -181,6 +181,8 @@ function friendlyError(e: Error) {
   const m = e.message || String(e);
   if (/decode|EncodingError|Unable to decode/i.test(m) || e.name === 'EncodingError') return "Couldn't read this audio format";
   if (/memory|allocation|OOM|RangeError/i.test(m)) return 'Ran out of memory. Try a shorter file, the Compact model, or CPU.';
+  if (/Could not find an implementation/i.test(m))
+    return 'This model file uses maths the browser engine lacks (float64). Convert it with tools/fix_models.py and import it via Models (see README).';
   if (/Failed to fetch|NetworkError|Download failed/i.test(m)) return 'Model download failed. Check your connection, or import it via Models.';
   return m;
 }
