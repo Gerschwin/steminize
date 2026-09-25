@@ -14,7 +14,7 @@ Usage:
   pip install onnx numpy onnxruntime
   python tools/fix_models.py htdemucs_fp16weights.onnx [more.onnx ...] [-o browser-models]
 
-Then in Stemdeck: Models -> Import model file... and pick the converted files.
+Then in Steminize: Models -> Import model file... and pick the converted files.
 """
 import argparse
 import os

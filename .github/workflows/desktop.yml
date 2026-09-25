@@ -31,6 +31,6 @@ jobs:
         env: { GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}' }
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: Stemdeck ${{ github.ref_name }}
+          releaseName: Steminize ${{ github.ref_name }}
           releaseDraft: true
           args: ${{ matrix.args }}

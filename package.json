@@ -1,5 +1,5 @@
 {
-  "name": "stemdeck",
+  "name": "steminize",
   "version": "1.10.0",
   "description": "Stem separation (Demucs) that runs entirely on your device",
   "scripts": {

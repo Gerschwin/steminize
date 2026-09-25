@@ -1,6 +1,6 @@
 {
-  "name": "Stemdeck",
-  "short_name": "Stemdeck",
+  "name": "Steminize",
+  "short_name": "Steminize",
   "description": "Split songs into stems on your own device",
   "start_url": "./",
   "scope": "./",

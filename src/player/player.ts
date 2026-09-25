@@ -6,6 +6,28 @@ import type { EqParams } from './eq.ts';
 
 export type PlayerState = PlayerReport;
 
+/** Rough timbre families for the Notes-view preview tone, picked to suit what you're comparing it against. */
+export type Voice = 'default' | 'bass' | 'guitar' | 'vocal';
+interface VoiceParams {
+  harmonics: number[]; // relative starting gains, index 0 = fundamental
+  attack: number; // seconds
+  decay: number; // seconds to near-silence, for the fundamental
+  /** How much faster each successive harmonic fades than the one below it. 1 = all together (a flat, buzzy decay). */
+  decaySpread: number;
+  filterHz?: number; // lowpass cutoff, for a darker/rounder tone
+  vibrato?: { rate: number; cents: number }; // a slow pitch wobble, for a sung quality
+  pluck?: boolean; // a brief noise "attack" click, for a plucked string
+}
+const VOICES: Record<Voice, VoiceParams> = {
+  default: { harmonics: [1, 0.4, 0.2, 0.1], attack: 0.01, decay: 1.4, decaySpread: 1 },
+  // Dominant fundamental, dark (low-passed), slower attack, rings out longer.
+  bass: { harmonics: [1, 0.32, 0.08], attack: 0.02, decay: 2.4, decaySpread: 1, filterHz: 900 },
+  // A pluck transient, bright at onset, upper harmonics fading much faster than the fundamental.
+  guitar: { harmonics: [1, 0.7, 0.5, 0.3, 0.18, 0.1], attack: 0.002, decay: 1.7, decaySpread: 2.2, pluck: true },
+  // Soft, filtered, few harmonics, with a slow vibrato.
+  vocal: { harmonics: [1, 0.3, 0.1], attack: 0.07, decay: 1.9, decaySpread: 1, filterHz: 2400, vibrato: { rate: 5.5, cents: 25 } },
+};
+
 /** Main-thread handle on the AudioWorklet stem player. */
 export class Player {
   private ctx: AudioContext | null = null;
@@ -15,6 +37,13 @@ export class Player {
   private queued: PlayerMsg[] = [];
   state: PlayerState = { pos: 0, playing: false, ended: false, passes: 0, tempo: 1, countingIn: false };
   onState: (s: PlayerState) => void = () => {};
+
+  // ---- live input monitoring: a real instrument/mic played live alongside the tracks ----
+  private monitorStream: MediaStream | null = null;
+  private monitorSource: MediaStreamAudioSourceNode | null = null;
+  private monitorGain: GainNode | null = null;
+  private monitorPanner: StereoPannerNode | null = null;
+  private monitorAnalyser: AnalyserNode | null = null;
 
   private init() {
     if (this.ready) return this.ready;
@@ -115,25 +144,149 @@ export class Player {
     this.held = null;
   }
 
-  /** A short piano-ish tone for a MIDI note. */
-  async tone(midi: number) {
+  /** A short preview tone for a MIDI note, in a timbre roughly suited to `voice`. */
+  async tone(midi: number, voice: Voice = 'default') {
     await this.unlock();
     const ctx = this.ctx!;
+    const p = VOICES[voice];
     const f = 440 * 2 ** ((midi - 69) / 12);
     const t = ctx.currentTime;
+
     const out = ctx.createGain();
-    out.gain.setValueAtTime(0, t);
-    out.gain.linearRampToValueAtTime(0.25, t + 0.01);
-    out.gain.exponentialRampToValueAtTime(0.001, t + 1.4);
-    out.connect(this.master!);
-    [1, 2, 3, 4].forEach((hn, i) => {
+    out.gain.value = 0.28;
+    let dest: AudioNode = out;
+    if (p.filterHz) {
+      const filt = ctx.createBiquadFilter();
+      filt.type = 'lowpass';
+      filt.frequency.value = p.filterHz;
+      filt.Q.value = 0.7;
+      out.connect(filt);
+      dest = filt;
+    }
+    dest.connect(this.master!);
+
+    // A slow pitch wobble, shared by every harmonic, for a sung quality.
+    let vibrato: GainNode | null = null;
+    if (p.vibrato) {
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = p.vibrato.rate;
+      vibrato = ctx.createGain();
+      vibrato.gain.value = f * (2 ** (p.vibrato.cents / 1200) - 1);
+      lfo.connect(vibrato);
+      lfo.start(t);
+      lfo.stop(t + p.decay + 0.2);
+    }
+
+    p.harmonics.forEach((amp, i) => {
+      // Each harmonic decays a bit faster than the one below it (decaySpread > 1), so a
+      // plucked/struck voice loses its brightness over time instead of decaying flat.
+      const hDecay = p.decay / (1 + i * (p.decaySpread - 1) * 0.5);
       const o = ctx.createOscillator();
       const g = ctx.createGain();
-      o.frequency.value = f * hn;
-      g.gain.value = [1, 0.4, 0.2, 0.1][i];
+      o.frequency.value = f * (i + 1);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(amp, t + p.attack);
+      g.gain.exponentialRampToValueAtTime(0.001 * amp, t + hDecay);
+      vibrato?.connect(o.frequency);
       o.connect(g).connect(out);
       o.start(t);
-      o.stop(t + 1.5);
+      o.stop(t + hDecay + 0.1);
     });
+
+    if (p.pluck) {
+      const dur = 0.02;
+      const buf = ctx.createBuffer(1, Math.round(ctx.sampleRate * dur), ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const hp = ctx.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = f * 2;
+      const g = ctx.createGain();
+      g.gain.value = 0.18;
+      src.connect(hp).connect(g).connect(out);
+      src.start(t);
+    }
+  }
+
+  // ---------- live input monitoring ----------
+  get monitoring() {
+    return !!this.monitorStream;
+  }
+
+  /** Input devices, with labels — only populated once permission has been granted at least once. */
+  async listInputs(): Promise<MediaDeviceInfo[]> {
+    if (!navigator.mediaDevices?.enumerateDevices) return [];
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices.filter((d) => d.kind === 'audioinput');
+  }
+
+  /** Starts playing a real instrument/mic live through the same output as the tracks, at `gain`/`pan`. */
+  async startMonitor(deviceId: string | undefined, gain: number, pan = 0) {
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error("This browser can't capture audio input.");
+    this.stopMonitor();
+    await this.unlock();
+    const ctx = this.ctx!;
+    // Raw signal, not voice-call processing: echo cancellation/noise suppression/AGC all
+    // audibly mangle an instrument or a mic held up to one.
+    const audio: MediaTrackConstraints = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+    if (deviceId) audio.deviceId = { exact: deviceId };
+    const stream = await navigator.mediaDevices.getUserMedia({ audio });
+    const source = ctx.createMediaStreamSource(stream);
+    const g = ctx.createGain();
+    g.gain.value = gain;
+    const panner = ctx.createStereoPanner();
+    panner.pan.value = pan;
+    const analyser = ctx.createAnalyser();
+    // Big enough to hold several cycles of a low bass note (~30 Hz) for pitch detection,
+    // not just a level meter.
+    analyser.fftSize = 4096;
+    source.connect(g).connect(panner).connect(ctx.destination);
+    g.connect(analyser);
+    this.monitorStream = stream;
+    this.monitorSource = source;
+    this.monitorGain = g;
+    this.monitorPanner = panner;
+    this.monitorAnalyser = analyser;
+  }
+
+  stopMonitor() {
+    this.monitorSource?.disconnect();
+    this.monitorGain?.disconnect();
+    this.monitorPanner?.disconnect();
+    this.monitorAnalyser?.disconnect();
+    for (const t of this.monitorStream?.getTracks() ?? []) t.stop();
+    this.monitorStream = null;
+    this.monitorSource = null;
+    this.monitorGain = null;
+    this.monitorPanner = null;
+    this.monitorAnalyser = null;
+  }
+
+  setMonitorGain(v: number) {
+    if (this.monitorGain) this.monitorGain.gain.value = v;
+  }
+
+  setMonitorPan(v: number) {
+    if (this.monitorPanner) this.monitorPanner.pan.value = v;
+  }
+
+  /** Current input level, 0–1 (peak over the last analysis window), for a simple meter. */
+  monitorLevel(): number {
+    if (!this.monitorAnalyser) return 0;
+    const buf = new Float32Array(this.monitorAnalyser.fftSize);
+    this.monitorAnalyser.getFloatTimeDomainData(buf);
+    let peak = 0;
+    for (const v of buf) peak = Math.max(peak, Math.abs(v));
+    return Math.min(1, peak);
+  }
+
+  /** Raw samples for pitch detection (a tuner), or null while not monitoring. */
+  monitorTimeDomain(): { buf: Float32Array; sampleRate: number } | null {
+    if (!this.monitorAnalyser || !this.ctx) return null;
+    const buf = new Float32Array(this.monitorAnalyser.fftSize);
+    this.monitorAnalyser.getFloatTimeDomainData(buf);
+    return { buf, sampleRate: this.ctx.sampleRate };
   }
 }

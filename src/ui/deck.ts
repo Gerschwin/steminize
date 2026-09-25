@@ -16,6 +16,8 @@ import { Transcribe, type TxHost, type TxState } from './transcribePanel.ts';
 import type { Chord } from '../analysis/chords.ts';
 import type { NoteEvent } from '../analysis/basicPitch.ts';
 import type { Cqt } from '../analysis/cqt.ts';
+import { noteName } from '../analysis/cqt.ts';
+import { detectPitch, freqToNote } from '../analysis/pitch.ts';
 
 const SR = 44100;
 
@@ -64,7 +66,7 @@ const DEFAULT_PR: PracticeUi = {
 
 /** Everything about how a song is set up in the player, saved per song. */
 export interface DeckState {
-  lanes: { vol: number; pan: number; mute: boolean; solo: boolean; eq?: EqParams }[];
+  lanes: { vol: number; pan: number; mute: boolean; solo: boolean; eq?: EqParams; height?: number; label?: string }[];
   loop: { on: boolean; a: number; b: number };
   tempo: number;
   pitch: number;
@@ -72,6 +74,16 @@ export interface DeckState {
   markers?: Marker[];
   /** Note view, chords and MIDI. */
   tx?: TxState;
+  /** Lyrics, tab, drum tab and free notes, per song. */
+  scratch?: ScratchState;
+}
+
+/** Plain-text scratchpad, kept simple on purpose: no per-line structure, just what you paste or type. */
+export interface ScratchState {
+  lyrics?: string;
+  tab?: string;
+  drums?: string;
+  notes?: string;
 }
 
 interface Marker {
@@ -79,6 +91,8 @@ interface Marker {
   pos: number; // frames
 }
 const FINE = 256; // samples per bucket in the fine peak arrays used for zoomed drawing
+// Matches the CSS default track height: below that the waveform becomes too thin to read.
+const LANE_MIN_H = 58;
 
 interface Lane {
   name: string;
@@ -89,11 +103,15 @@ interface Lane {
   eqPanel?: EqPanel;
   mute: boolean;
   solo: boolean;
+  label?: string; // display name; unset shows a formatted `name`. Doesn't affect role detection (chords, MIDI).
+  height?: number; // px; unset uses the CSS default
   el: HTMLElement;
   canvas: HTMLCanvasElement;
   peaks: Float32Array; // fine peaks (FINE samples per bucket)
   data: Stereo;
   layers?: [HTMLCanvasElement, HTMLCanvasElement];
+  /** This track's own zoom, independent of the shared view; unset follows the shared view. */
+  ownView?: { start: number; end: number };
 }
 
 /** Peak level per FINE-sample bucket, averaged across channels. */
@@ -136,6 +154,11 @@ function peaksForView(fine: Float32Array, chs: Float32Array[], start: number, en
 }
 
 /** Pre-render a waveform in one colour to an offscreen canvas. */
+/** A track's display name: its own rename if it has one, else a tidied-up stem name. */
+function laneLabel(l: Pick<Lane, 'name' | 'label'>) {
+  return l.label ?? (l.name.startsWith('no_') ? `No ${l.name.slice(3)}` : l.name);
+}
+
 function waveLayer(peaks: Float32Array, w: number, hgt: number, colour: string, scale: number) {
   const c = document.createElement('canvas');
   c.width = w;
@@ -165,12 +188,17 @@ export class Deck {
   onStateChange: (s: DeckState) => void = () => {};
   /** Called when a tempo correction changes the song's analysis. */
   onAnalysisChange: (r: Result) => void = () => {};
+  /** Called when the song is renamed, so the library entry (if any) can be updated. */
+  onRename: (title: string) => void = () => {};
   /** Ranks keys for the song, or for a range of frames. */
   rankKeys: (r: Result, start?: number, end?: number) => Promise<KeyCandidate[]> = () => Promise.resolve([]);
   /** Provides onset envelopes for a song that doesn't have them in memory. */
   needOnsets: (r: Result) => Promise<{ env: Float32Array; low: Float32Array }> = () => Promise.reject(new Error('unavailable'));
   private r: Result | null = null;
   private lanes: Lane[] = [];
+  /** The track scroll-to-zoom applies to; others just scroll the page. Click a track to pick it. */
+  private selectedLane: Lane | null = null;
+  private stopLiveInputUi: () => void = () => {};
   private overviewPeaks = new Float32Array(0);
   private overviewScale = 1;
   private laneScale = 1;
@@ -185,6 +213,8 @@ export class Deck {
   private drag: { x0: number; moved: boolean } | null = null;
   onRerun: () => void = () => {};
   private tx: Transcribe;
+  private scratch: ScratchState = {};
+  private scratchAreas!: { lyrics: HTMLTextAreaElement; tab: HTMLTextAreaElement; drums: HTMLTextAreaElement; notes: HTMLTextAreaElement };
 
   constructor(private settings: () => Settings) {
     this.player.onState = (s) => {
@@ -198,7 +228,13 @@ export class Deck {
       this.updateTrainerInfo(s.passes, s.countingIn);
       this.dirty = true;
     };
+    $('trackTitle').title = 'Double-click to rename';
+    $('trackTitle').ondblclick = () => this.renameSong();
     $('playBtn').onclick = () => this.toggle();
+    $('toStartBtn').onclick = () => this.player.seek(0);
+    $('toEndBtn').onclick = () => this.player.seek(Math.max(0, this.length - SR));
+    $('rewindBtn').onclick = () => this.skip(-5);
+    $('ffBtn').onclick = () => this.skip(5);
     $('loopBtn').onclick = () => this.setLoop(!this.loop.on);
     $('setA').onclick = () => this.setPoint('a');
     $('setB').onclick = () => this.setPoint('b');
@@ -218,14 +254,14 @@ export class Deck {
       pressed(panBtn, on);
       $('lanes').classList.toggle('show-pan', on);
       try {
-        localStorage.setItem('stemdeck.showPan', on ? '1' : '');
+        localStorage.setItem('steminize.showPan', on ? '1' : '');
       } catch {
         /* ignore */
       }
     };
     let panOn = false;
     try {
-      panOn = localStorage.getItem('stemdeck.showPan') === '1';
+      panOn = localStorage.getItem('steminize.showPan') === '1';
     } catch {
       /* ignore */
     }
@@ -237,6 +273,9 @@ export class Deck {
     this.initDrawer();
     this.initOverview();
     this.initKeys();
+    this.initLiveInput();
+    this.initTuner();
+    this.initScratchpad();
     const host: TxHost = {
       player: this.player,
       song: () => this.r,
@@ -277,6 +316,7 @@ export class Deck {
   }
 
   open(r: Result, state?: DeckState) {
+    this.stopLiveInputUi();
     this.quiet = true;
     this.player.pause();
     this.r = r;
@@ -303,27 +343,33 @@ export class Deck {
     // Normalise display to the loudest stem so quiet stems are still visible.
     const lanes = $('lanes');
     lanes.replaceChildren();
+    this.selectedLane = null;
     this.lanes = r.stems.map((s, i) => {
       const colour = stemColour(s.name, i);
       const canvas = h('canvas');
       const mute = h('button', { class: 'ms m', type: 'button', title: `Mute (${i + 1})` }, 'M');
       const solo = h('button', { class: 'ms s', type: 'button', title: 'Solo' }, 'S');
       const eqBtn = h('button', { class: 'ms eq', type: 'button', title: 'EQ: presets, low/high cut and a focus band' }, 'EQ');
-      const dl = h('button', { class: 'dl', type: 'button', title: `Save ${s.name}` });
+      const dl = h('button', { class: 'dl', type: 'button', title: `Save ${laneLabel({ name: s.name })}` });
       dl.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>';
       const vol = h('input', { type: 'range', min: '0', max: '1.5', step: '0.01', value: '1', title: 'Level' });
       const pan = h('input', { type: 'range', min: '-1', max: '1', step: '0.05', value: '0', title: 'Pan (double-click to centre)' });
       const panOut = h('output', {}, 'C');
-      const label = s.name.startsWith('no_') ? `No ${s.name.slice(3)}` : s.name;
-      const ctl = h('div', { class: 'lane-ctl', style: `--c:${colour}` }, h('span', { class: 'name', title: label }, label), mute, solo, eqBtn, dl,
+      const nameBtn = h('button', { class: 'name', type: 'button', title: 'Double-click to rename' }, laneLabel({ name: s.name }));
+      const ctl = h('div', { class: 'lane-ctl' }, nameBtn, mute, solo, eqBtn, dl,
         h('label', { class: 'mini vol' }, h('span', {}, 'Vol'), vol),
         h('label', { class: 'mini pan' }, h('span', {}, 'Pan'), pan, panOut));
-      const wave = h('div', { class: 'wave' }, canvas);
-      const el = h('div', { class: 'lane' }, ctl, wave);
+      const wave = h('div', { class: 'wave', title: 'Click to seek and pick this track; scroll to zoom once it’s picked' }, canvas);
+      const resizeHandle = h('div', {
+        class: 'lane-resize',
+        title: 'Drag to resize this track (or Shift with + / − for every track). Double-click to reset.',
+      });
+      const el = h('div', { class: 'lane', style: `--c:${colour}` }, ctl, wave, resizeHandle);
       lanes.append(el);
       const lane: Lane = { name: s.name, colour, vol: 1, pan: 0, mute: false, solo: false, el, canvas, peaks: peaksOf(s.data), data: s.data };
       eqBtn.onclick = () => this.toggleEq(lane, colour);
       pressed(eqBtn, false);
+      nameBtn.ondblclick = () => this.renameLane(lane, nameBtn, dl);
       mute.onclick = () => this.setLane(lane, { mute: !lane.mute });
       solo.onclick = () => this.setLane(lane, { solo: !lane.solo });
       vol.oninput = () => this.setLane(lane, { vol: Number(vol.value) });
@@ -335,14 +381,50 @@ export class Deck {
       pan.oninput = () => setPan(Number(pan.value));
       pan.ondblclick = () => setPan(0);
       dl.onclick = () => this.saveStem(i);
-      wave.onclick = (e) => this.seekFrac(e.offsetX / wave.clientWidth);
-      wave.addEventListener('wheel', (e) => this.onWheel(e, wave), { passive: false });
+      wave.onclick = (e) => {
+        const view = lane.ownView ?? this.view;
+        const f = Math.max(0, Math.min(1, e.offsetX / wave.clientWidth));
+        this.player.seek(view.start + f * (view.end - view.start));
+      };
+      // Scroll-to-zoom only acts on the picked track, zooming just that track, so scrolling
+      // the page past the others doesn't hijack it or change what they're showing.
+      el.addEventListener('click', () => this.selectLane(lane));
+      wave.addEventListener(
+        'wheel',
+        (e) => {
+          if (this.selectedLane === lane) this.onWheel(e, wave, lane);
+        },
+        { passive: false },
+      );
+      let dragFromH: number | null = null;
+      resizeHandle.addEventListener('pointerdown', (e) => {
+        resizeHandle.setPointerCapture(e.pointerId);
+        dragFromH = wave.clientHeight - e.clientY;
+      });
+      resizeHandle.addEventListener('pointermove', (e) => {
+        if (dragFromH == null) return;
+        wave.style.height = `${Math.max(LANE_MIN_H, Math.min(500, dragFromH + e.clientY))}px`;
+        this.dirty = true;
+      });
+      resizeHandle.addEventListener('pointerup', () => {
+        if (dragFromH == null) return;
+        dragFromH = null;
+        lane.height = wave.clientHeight;
+        this.emit();
+      });
+      resizeHandle.ondblclick = () => {
+        wave.style.height = '';
+        lane.height = undefined;
+        this.dirty = true;
+        this.emit();
+      };
       pressed(mute, false);
       pressed(solo, false);
       return lane;
     });
     this.player.load(r.stems.map((s) => s.data), this.gains());
     if (state) this.applyState(state);
+    this.refreshTunerSources();
     this.setTempoPitch(this.tempo, this.pitch, false);
     this.player.setLoop(this.loop.on, this.loop.a, this.loop.b);
     this.updateLoopUi();
@@ -352,6 +434,7 @@ export class Deck {
     this.setView(0, this.length);
     this.setAnalysis(r.analysis);
     this.tx.open(r, state?.tx);
+    this.applyScratch(state?.scratch);
     this.invalidateLayers();
     this.quiet = false;
   }
@@ -359,13 +442,14 @@ export class Deck {
   // ---------- saved state ----------
   getState(): DeckState {
     return {
-      lanes: this.lanes.map((l) => ({ vol: l.vol, pan: l.pan, mute: l.mute, solo: l.solo, eq: l.eq })),
+      lanes: this.lanes.map((l) => ({ vol: l.vol, pan: l.pan, mute: l.mute, solo: l.solo, eq: l.eq, height: l.height, label: l.label })),
       loop: { ...this.loop },
       tempo: this.tempo,
       pitch: this.pitch,
       practice: structuredClone({ ...this.pr, trainer: { ...this.pr.trainer, on: false } }),
       markers: this.markers.map((m) => ({ ...m })),
       tx: this.tx.getState(),
+      scratch: { ...this.scratch },
     };
   }
 
@@ -383,6 +467,11 @@ export class Deck {
       const pan = l.el.querySelectorAll('input[type=range]')[1] as HTMLInputElement;
       pan.value = String(l.pan);
       pan.dispatchEvent(new Event('input'));
+      if (l.height) (l.el.querySelector('.wave') as HTMLElement).style.height = `${l.height}px`;
+      if (l.label) {
+        (l.el.querySelector('.name') as HTMLElement).textContent = laneLabel(l);
+        (l.el.querySelector('.dl') as HTMLElement).title = `Save ${laneLabel(l)}`;
+      }
     });
     for (const l of this.lanes) this.setLane(l, {});
   }
@@ -559,6 +648,238 @@ export class Deck {
     this.updateDrawerSummary();
   }
 
+  // ---------- live input: a real instrument or mic, played live alongside the tracks ----------
+  private initLiveInput() {
+    if (!navigator.mediaDevices?.getUserMedia) return; // liveTab stays hidden: not available here
+    $('liveTab').hidden = false;
+    const btn = $<HTMLButtonElement>('liveBtn');
+    const deviceSel = $<HTMLSelectElement>('liveDevice');
+    const vol = $<HTMLInputElement>('liveVol');
+    const volWrap = $('liveVolWrap');
+    const pan = $<HTMLInputElement>('livePan');
+    const panWrap = $('livePanWrap');
+    const panOut = $('livePanOut');
+    const meter = $('liveMeter');
+    const meterBar = $('liveMeterBar');
+    const status = $('liveStatus');
+    const sum = $('sumLive');
+
+    const refreshDevices = async () => {
+      const inputs = await this.player.listInputs();
+      const current = deviceSel.value;
+      deviceSel.replaceChildren(...inputs.map((d, i) => h('option', { value: d.deviceId }, d.label || `Input ${i + 1}`)));
+      if (inputs.some((d) => d.deviceId === current)) deviceSel.value = current;
+      deviceSel.hidden = inputs.length < 2;
+    };
+    navigator.mediaDevices.addEventListener?.('devicechange', () => {
+      if (this.player.monitoring) void refreshDevices();
+    });
+
+    let meterTimer = 0;
+    const meterTick = () => {
+      if (!this.player.monitoring) return;
+      meterBar.style.width = `${Math.round(this.player.monitorLevel() * 100)}%`;
+      meterTimer = requestAnimationFrame(meterTick);
+    };
+
+    const setUi = (on: boolean) => {
+      pressed(btn, on);
+      btn.textContent = on ? 'Stop' : 'Monitor';
+      volWrap.hidden = !on;
+      panWrap.hidden = !on;
+      meter.hidden = !on;
+      if (on) {
+        meterTimer = requestAnimationFrame(meterTick);
+      } else {
+        cancelAnimationFrame(meterTimer);
+        meterBar.style.width = '0%';
+      }
+      sum.textContent = on ? 'on' : '';
+      sum.classList.toggle('on', on);
+    };
+    this.stopLiveInputUi = () => {
+      if (!this.player.monitoring) return;
+      this.player.stopMonitor();
+      setUi(false);
+      status.textContent = '';
+    };
+
+    btn.onclick = async () => {
+      if (this.player.monitoring) {
+        this.stopLiveInputUi();
+        return;
+      }
+      btn.disabled = true;
+      status.textContent = 'Starting…';
+      try {
+        await this.player.startMonitor(deviceSel.value || undefined, Number(vol.value), Number(pan.value));
+        await refreshDevices();
+        setUi(true);
+        status.textContent = '';
+      } catch (e) {
+        status.textContent = "Couldn't start.";
+        toast(`Live input: ${(e as Error).message}`, true);
+      } finally {
+        btn.disabled = false;
+      }
+    };
+    deviceSel.onchange = () => {
+      if (!this.player.monitoring) return;
+      void this.player.startMonitor(deviceSel.value || undefined, Number(vol.value), Number(pan.value)).then(() => setUi(true));
+    };
+    vol.oninput = () => this.player.setMonitorGain(Number(vol.value));
+    const setPan = (v: number) => {
+      pan.value = String(v);
+      panOut.textContent = v === 0 ? 'C' : `${v < 0 ? 'L' : 'R'}${Math.round(Math.abs(v) * 100)}`;
+      this.player.setMonitorPan(v);
+    };
+    pan.oninput = () => setPan(Number(pan.value));
+    pan.ondblclick = () => setPan(0);
+
+    void refreshDevices();
+  }
+
+  // ---------- tuner: pitch detection against the live input or any track ----------
+  private refreshTunerSources() {
+    const sel = $<HTMLSelectElement>('tunerSource');
+    const current = sel.value;
+    const options: HTMLOptionElement[] = [];
+    const hasMonitor = !!navigator.mediaDevices?.getUserMedia;
+    if (hasMonitor) options.push(h('option', { value: 'monitor' }, 'Live input (Monitor)'));
+    options.push(...this.lanes.map((l, i) => h('option', { value: String(i) }, laneLabel(l))));
+    sel.replaceChildren(...options);
+    if ([...sel.options].some((o) => o.value === current)) sel.value = current;
+  }
+
+  private initTuner() {
+    const pane = document.querySelector<HTMLElement>('[data-pane="tuner"]')!;
+    const noteEl = $('tunerNote');
+    const needle = $('tunerNeedle');
+    const hz = $('tunerHz');
+    const status = $('tunerStatus');
+    const sel = $<HTMLSelectElement>('tunerSource');
+    const N = 4096;
+
+    const clear = () => {
+      noteEl.textContent = '–';
+      // A non-breaking space, not '': an empty line box is shorter than one with real text
+      // (as tall as the font's natural line height), so losing the note between one note and
+      // the next made this row's height flicker every tick while a track was playing.
+      hz.textContent = ' ';
+      needle.style.left = '50%';
+      needle.classList.remove('in-tune');
+    };
+
+    const tick = () => {
+      if (pane.hidden || !this.r) {
+        setTimeout(tick, 200);
+        return;
+      }
+      const src = sel.value;
+      let result: ReturnType<typeof detectPitch> = null;
+      let shift = 0;
+      if (src === 'monitor') {
+        const td = this.player.monitorTimeDomain();
+        if (td) result = detectPitch(td.buf, td.sampleRate);
+        status.textContent = td ? '' : 'Start Live input monitoring first';
+      } else {
+        const lane = this.lanes[Number(src)];
+        if (lane) {
+          const data = lane.data;
+          const len = data[0].length;
+          const start = Math.max(0, Math.min(Math.max(0, len - N), Math.round(this.player.state.pos)));
+          const end = Math.min(len, start + N);
+          const mono = new Float32Array(end - start);
+          for (let i = 0; i < mono.length; i++) mono[i] = (data[0][start + i] + data[1][start + i]) / 2;
+          result = detectPitch(mono, SR);
+          shift = this.pitch;
+        }
+        status.textContent = '';
+      }
+      if (result) {
+        const { note, cents } = freqToNote(result.freq);
+        noteEl.textContent = noteName(note + shift);
+        hz.textContent = `${result.freq.toFixed(1)} Hz`;
+        needle.style.left = `${50 + Math.max(-50, Math.min(50, cents))}%`;
+        needle.classList.toggle('in-tune', Math.abs(cents) <= 5);
+        if (!status.textContent) status.textContent = Math.abs(cents) <= 5 ? 'In tune' : cents < 0 ? 'Flat' : 'Sharp';
+      } else {
+        clear();
+        if (!status.textContent) status.textContent = 'Play a single note';
+      }
+      setTimeout(tick, 90);
+    };
+    tick();
+
+    this.refreshTunerSources();
+  }
+
+  // ---------- scratchpad: plain-text lyrics, tab, drum tab and notes, per song ----------
+  private initScratchpad() {
+    const tabBtns = {
+      lyrics: $<HTMLButtonElement>('scratchTabLyrics'),
+      tab: $<HTMLButtonElement>('scratchTabTab'),
+      drums: $<HTMLButtonElement>('scratchTabDrums'),
+      notes: $<HTMLButtonElement>('scratchTabNotes'),
+    };
+    const areas = {
+      lyrics: $<HTMLTextAreaElement>('scratchLyrics'),
+      tab: $<HTMLTextAreaElement>('scratchTab'),
+      drums: $<HTMLTextAreaElement>('scratchDrums'),
+      notes: $<HTMLTextAreaElement>('scratchNotes'),
+    };
+    this.scratchAreas = areas;
+    const show = (name: keyof typeof areas) => {
+      for (const k of Object.keys(areas) as (keyof typeof areas)[]) {
+        pressed(tabBtns[k], k === name);
+        areas[k].hidden = k !== name;
+      }
+    };
+    for (const k of Object.keys(tabBtns) as (keyof typeof tabBtns)[]) tabBtns[k].onclick = () => show(k);
+    show('lyrics');
+    areas.lyrics.oninput = () => {
+      this.scratch.lyrics = areas.lyrics.value;
+      this.updateScratchSummary();
+      this.emit();
+    };
+    areas.tab.oninput = () => {
+      this.scratch.tab = areas.tab.value;
+      this.updateScratchSummary();
+      this.emit();
+    };
+    areas.drums.oninput = () => {
+      this.scratch.drums = areas.drums.value;
+      this.updateScratchSummary();
+      this.emit();
+    };
+    areas.notes.oninput = () => {
+      this.scratch.notes = areas.notes.value;
+      this.updateScratchSummary();
+      this.emit();
+    };
+  }
+
+  private applyScratch(s?: ScratchState) {
+    this.scratch = { lyrics: s?.lyrics ?? '', tab: s?.tab ?? '', drums: s?.drums ?? '', notes: s?.notes ?? '' };
+    this.scratchAreas.lyrics.value = this.scratch.lyrics ?? '';
+    this.scratchAreas.tab.value = this.scratch.tab ?? '';
+    this.scratchAreas.drums.value = this.scratch.drums ?? '';
+    this.scratchAreas.notes.value = this.scratch.notes ?? '';
+    this.updateScratchSummary();
+  }
+
+  private updateScratchSummary() {
+    const bits = [
+      this.scratch.lyrics ? 'Lyrics' : '',
+      this.scratch.tab ? 'Tab' : '',
+      this.scratch.drums ? 'Drum tab' : '',
+      this.scratch.notes ? 'Notes' : '',
+    ].filter(Boolean);
+    const sum = $('sumScratch');
+    sum.textContent = bits.join(' · ');
+    sum.classList.toggle('on', bits.length > 0);
+  }
+
   // ---------- collapsible "Practice" / "Tempo & key" drawer ----------
   private initDrawer() {
     const tabs = [...document.querySelectorAll<HTMLButtonElement>('.dtab')];
@@ -566,7 +887,7 @@ export class Deck {
       for (const t of tabs) t.setAttribute('aria-expanded', String(t.dataset.tab === name));
       for (const p of document.querySelectorAll<HTMLElement>('.dpane')) p.hidden = p.dataset.pane !== name;
       try {
-        localStorage.setItem('stemdeck.drawer', name ?? '');
+        localStorage.setItem('steminize.drawer', name ?? '');
       } catch {
         /* ignore */
       }
@@ -574,7 +895,7 @@ export class Deck {
     for (const t of tabs) t.onclick = () => open(t.getAttribute('aria-expanded') === 'true' ? null : t.dataset.tab!);
     let saved = '';
     try {
-      saved = localStorage.getItem('stemdeck.drawer') ?? '';
+      saved = localStorage.getItem('steminize.drawer') ?? '';
     } catch {
       /* ignore */
     }
@@ -701,6 +1022,7 @@ export class Deck {
   }
 
   close() {
+    this.stopLiveInputUi();
     this.player.pause();
     this.r = null;
     this.lanes = [];
@@ -751,6 +1073,66 @@ export class Deck {
     $('panToggle').textContent = this.lanes.some((x) => x.pan) ? 'Pan (active)' : 'Pan';
   }
 
+  private selectLane(lane: Lane) {
+    if (this.selectedLane === lane) return;
+    this.selectedLane = lane;
+    for (const l of this.lanes) l.el.classList.toggle('selected', l === lane);
+  }
+
+  /** Renames a track for display/export only; chords, MIDI etc. still key off its real stem name. */
+  private renameLane(lane: Lane, nameBtn: HTMLButtonElement, dl: HTMLButtonElement) {
+    const input = h('input', { type: 'text', value: laneLabel(lane), maxLength: 40, class: 'name-edit', 'aria-label': 'Track name' } as any);
+    let done = false;
+    const finish = (save: boolean) => {
+      if (done) return;
+      done = true;
+      if (save) lane.label = input.value.trim() || undefined;
+      nameBtn.textContent = laneLabel(lane);
+      dl.title = `Save ${laneLabel(lane)}`;
+      input.replaceWith(nameBtn);
+      if (save) {
+        this.refreshTunerSources();
+        this.emit();
+      }
+    };
+    input.onkeydown = (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') finish(true);
+      if (e.key === 'Escape') finish(false);
+    };
+    input.onblur = () => finish(true);
+    nameBtn.replaceWith(input);
+    input.focus();
+    input.select();
+  }
+
+  private renameSong() {
+    if (!this.r) return;
+    const heading = $('trackTitle');
+    const input = h('input', { type: 'text', value: this.r.title, maxLength: 120, class: 'title-edit', 'aria-label': 'Song title' } as any);
+    let done = false;
+    const finish = (save: boolean) => {
+      if (done) return;
+      done = true;
+      const val = input.value.trim();
+      if (save && val && this.r) {
+        this.r.title = val;
+        this.onRename(val);
+      }
+      heading.textContent = this.r?.title ?? '';
+      input.replaceWith(heading);
+    };
+    input.onkeydown = (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') finish(true);
+      if (e.key === 'Escape') finish(false);
+    };
+    input.onblur = () => finish(true);
+    heading.replaceWith(input);
+    input.focus();
+    input.select();
+  }
+
   private setTempoPitch(tempo: number, pitch: number, save = true) {
     this.tempo = tempo;
     this.pitch = pitch;
@@ -790,35 +1172,65 @@ export class Deck {
   }
 
   // ---------- zoom ----------
-  private setView(start: number, end: number) {
+  private clampView(start: number, end: number) {
     const len = this.length || 1;
     const span = Math.min(len, Math.max(SR, end - start));
     start = Math.max(0, Math.min(len - span, start));
-    this.view = { start, end: start + span };
+    return { start, end: start + span };
+  }
+
+  private setView(start: number, end: number) {
+    this.view = this.clampView(start, end);
+    const len = this.length || 1;
+    const span = this.view.end - this.view.start;
     const zoomed = span < len - 1;
     const scroll = $<HTMLInputElement>('viewScroll');
     scroll.hidden = !zoomed;
-    if (zoomed) scroll.value = String(Math.round((1000 * start) / Math.max(1, len - span)));
+    if (zoomed) scroll.value = String(Math.round((1000 * this.view.start) / Math.max(1, len - span)));
     this.invalidateLayers();
   }
 
-  private zoom(factor: number, centre = this.player.state.pos) {
-    const span = this.view.end - this.view.start;
-    const next = span / factor;
-    const rel = span ? (centre - this.view.start) / span : 0.5;
-    this.setView(centre - rel * next, centre - rel * next + next);
+  /** A track's own zoom, independent of the shared view and every other track's. */
+  private setLaneView(lane: Lane, start: number, end: number) {
+    lane.ownView = this.clampView(start, end);
+    lane.layers = undefined;
+    this.dirty = true;
   }
 
-  private onWheel(e: WheelEvent, el: HTMLElement) {
+  /** Resets the shared view and every track's own zoom back to the whole song. */
+  private zoomFit() {
+    this.setView(0, this.length);
+    for (const l of this.lanes) {
+      l.ownView = undefined;
+      l.layers = undefined;
+    }
+    this.dirty = true;
+  }
+
+  private zoom(factor: number, centre = this.player.state.pos, lane?: Lane) {
+    const view = lane ? (lane.ownView ?? this.view) : this.view;
+    const span = view.end - view.start;
+    const next = span / factor;
+    const rel = span ? (centre - view.start) / span : 0.5;
+    const start = centre - rel * next;
+    if (lane) this.setLaneView(lane, start, start + next);
+    else this.setView(start, start + next);
+  }
+
+  private onWheel(e: WheelEvent, el: HTMLElement, lane?: Lane) {
     if (!this.r) return;
     e.preventDefault();
-    const span = this.view.end - this.view.start;
+    const view = lane ? (lane.ownView ?? this.view) : this.view;
+    const span = view.end - view.start;
     if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
       const d = e.shiftKey ? e.deltaY : e.deltaX;
-      this.setView(this.view.start + (d / el.clientWidth) * span, this.view.end + (d / el.clientWidth) * span);
+      const start = view.start + (d / el.clientWidth) * span;
+      const end = view.end + (d / el.clientWidth) * span;
+      if (lane) this.setLaneView(lane, start, end);
+      else this.setView(start, end);
     } else {
       const f = Math.max(0, Math.min(1, e.offsetX / el.clientWidth));
-      this.zoom(Math.exp(-e.deltaY * 0.002), this.frameAt(f));
+      this.zoom(Math.exp(-e.deltaY * 0.002), view.start + f * span, lane);
     }
   }
 
@@ -826,7 +1238,7 @@ export class Deck {
   private initMarkersAndZoom() {
     $('zoomIn').onclick = () => this.zoom(2);
     $('zoomOut').onclick = () => this.zoom(0.5);
-    $('zoomFit').onclick = () => this.setView(0, this.length);
+    $('zoomFit').onclick = () => this.zoomFit();
     $<HTMLInputElement>('viewScroll').oninput = (e) => {
       const span = this.view.end - this.view.start;
       const start = (Number((e.target as HTMLInputElement).value) / 1000) * (this.length - span);
@@ -836,7 +1248,7 @@ export class Deck {
     $('addMarker').onclick = () => this.addMarker();
     const pedalBtn = $('pedalBtn');
     try {
-      this.pedal = localStorage.getItem('stemdeck.pedal') === '1';
+      this.pedal = localStorage.getItem('steminize.pedal') === '1';
     } catch {
       /* ignore */
     }
@@ -845,7 +1257,7 @@ export class Deck {
       this.pedal = !this.pedal;
       pressed(pedalBtn, this.pedal);
       try {
-        localStorage.setItem('stemdeck.pedal', this.pedal ? '1' : '0');
+        localStorage.setItem('steminize.pedal', this.pedal ? '1' : '0');
       } catch {
         /* ignore */
       }
@@ -959,6 +1371,23 @@ export class Deck {
     this.dirty = true;
   }
 
+  /** Skip forward (positive) or back (negative) `sec` seconds, clamped to the song. */
+  private skip(sec: number) {
+    const pos = this.player.state.pos;
+    this.player.seek(sec < 0 ? pos + sec * SR : Math.min(this.length - SR, pos + sec * SR));
+  }
+
+  /** Grow (positive) or shrink (negative) every track's waveform by `px`, together. */
+  private resizeLanes(px: number) {
+    for (const l of this.lanes) {
+      const wave = l.el.querySelector('.wave') as HTMLElement;
+      l.height = Math.max(LANE_MIN_H, Math.min(500, (l.height ?? wave.clientHeight) + px));
+      wave.style.height = `${l.height}px`;
+    }
+    this.dirty = true;
+    this.emit();
+  }
+
   private setLoop(on: boolean) {
     if (on && this.loop.b - this.loop.a < SR / 4) {
       // No section chosen yet: loop 8 s from the playhead.
@@ -1011,14 +1440,19 @@ export class Deck {
         this.loop.a = Math.round(this.frameAt(a));
         this.loop.b = Math.round(this.frameAt(b));
         this.dirty = true;
+        // Scrub: preview audio at the pointer as you drag, same as scanning a tape (only audible while already playing).
+        this.player.seek(this.frameAt(f));
       }
     });
     wrap.addEventListener('pointerup', (e) => {
       if (!this.drag) return;
       if (this.drag.moved) {
+        // Mark the section but leave the loop off and playback where scrubbing left it:
+        // dragging is also how you scan the song to find a part, and forcing the loop on
+        // (jumping back to its start) would undo that. Press Loop to actually use the section.
         this.snapLoop();
-        this.setLoop(true);
-        this.player.seek(this.loop.a);
+        this.updateLoopUi();
+        this.emit();
       } else this.seekFrac(frac(e));
       this.drag = null;
     });
@@ -1027,16 +1461,17 @@ export class Deck {
   private initKeys() {
     window.addEventListener('keydown', (e) => {
       if (!this.r || e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || (e.target as HTMLElement)?.isContentEditable || e.metaKey || e.ctrlKey || e.altKey) return;
-      const pos = this.player.state.pos;
       const k = e.key;
       if (e.code === 'Space' || k === 'PageDown' || k === 'MediaPlayPause' || (this.pedal && ['ArrowRight', 'ArrowDown', 'Enter'].includes(k))) this.toggle();
       else if (k === 'PageUp' || k === 'Home' || (this.pedal && ['ArrowLeft', 'ArrowUp'].includes(k))) this.restart();
       else if (k === 'm' || k === 'M') this.addMarker();
+      else if (e.shiftKey && (k === '+' || k === '=')) this.resizeLanes(20);
+      else if (e.shiftKey && (k === '-' || k === '_')) this.resizeLanes(-20);
       else if (k === '+' || k === '=') this.zoom(2);
       else if (k === '-' || k === '_') this.zoom(0.5);
-      else if (k === '0') this.setView(0, this.length);
-      else if (e.key === 'ArrowLeft') this.player.seek(pos - 5 * SR);
-      else if (e.key === 'ArrowRight') this.player.seek(Math.min(this.length - SR, pos + 5 * SR));
+      else if (k === '0') this.zoomFit();
+      else if (e.key === 'ArrowLeft') this.skip(-5);
+      else if (e.key === 'ArrowRight') this.skip(5);
       else if (e.key === 'l' || e.key === 'L') this.setLoop(!this.loop.on);
       else if (e.key === 'f' || e.key === 'F') this.tx.toggleFreeze();
       else if (e.key === '[') this.setPoint('a');
@@ -1054,11 +1489,11 @@ export class Deck {
     this.dirty = true;
   }
 
-  private drawStrip(canvas: HTMLCanvasElement, layers: [HTMLCanvasElement, HTMLCanvasElement], pos: number, showLoop: boolean) {
+  private drawStrip(canvas: HTMLCanvasElement, layers: [HTMLCanvasElement, HTMLCanvasElement], pos: number, showLoop: boolean, view = this.view) {
     const g = fitCanvas(canvas);
     const { width: w, height: hh } = canvas;
     g.clearRect(0, 0, w, hh);
-    const x = (f: number) => ((f - this.view.start) / (this.view.end - this.view.start)) * w;
+    const x = (f: number) => ((f - view.start) / (view.end - view.start)) * w;
     const px = Math.max(-2, Math.min(w + 2, x(pos)));
     if (showLoop && this.loop.b > this.loop.a) {
       g.fillStyle = this.loop.on ? 'rgba(139,124,246,0.18)' : 'rgba(139,124,246,0.08)';
@@ -1129,12 +1564,13 @@ export class Deck {
     this.drawMarkerLabels(ov);
     for (const l of this.lanes) {
       fitCanvas(l.canvas);
+      const view = l.ownView ?? this.view;
       if (!l.layers || l.layers[0].width !== l.canvas.width || l.layers[0].height !== l.canvas.height) {
         const c = l.colour;
-        const p = peaksForView(l.peaks, l.data, this.view.start, this.view.end, buckets(l.canvas.width));
+        const p = peaksForView(l.peaks, l.data, view.start, view.end, buckets(l.canvas.width));
         l.layers = [waveLayer(p, l.canvas.width, l.canvas.height, c + '66', this.laneScale), waveLayer(p, l.canvas.width, l.canvas.height, c, this.laneScale)];
       }
-      this.drawStrip(l.canvas, l.layers, pos, true);
+      this.drawStrip(l.canvas, l.layers, pos, true, view);
     }
     this.tx.draw(pos);
   }
@@ -1169,11 +1605,11 @@ export class Deck {
 
   private async saveStem(i: number) {
     if (!this.r) return;
-    const s = this.r.stems[i];
+    const lane = this.lanes[i];
     const o = this.settings();
-    const t = toast(`Encoding ${s.name}…`);
+    const t = toast(`Encoding ${laneLabel(lane)}…`);
     try {
-      await this.encoder.run({ type: 'stems', stems: [s], out: o }, async (name, bytes) => {
+      await this.encoder.run({ type: 'stems', stems: [{ name: safeName(laneLabel(lane)), data: lane.data }], out: o }, async (name, bytes) => {
         await saveFile(`${this.baseName()} - ${name}.${extensionFor(o)}`, bytes, mimeFor(o));
       });
     } catch (e) {
@@ -1194,8 +1630,17 @@ export class Deck {
     let n = 0;
     const total = this.r.stems.length;
     btn.textContent = `Encoding 0/${total}…`;
+    // Track names become file names, so keep them unique even if two tracks share a rename.
+    const seen = new Map<string, number>();
+    const stems = this.lanes.map((l) => {
+      let name = safeName(laneLabel(l));
+      const n = (seen.get(name.toLowerCase()) ?? 0) + 1;
+      seen.set(name.toLowerCase(), n);
+      if (n > 1) name = `${name} (${n})`;
+      return { name, data: l.data };
+    });
     try {
-      await this.encoder.run({ type: 'stems', stems: this.r.stems, out: o }, async (name, bytes) => {
+      await this.encoder.run({ type: 'stems', stems, out: o }, async (name, bytes) => {
         await sink.write(`${base} - ${name}.${extensionFor(o)}`, bytes);
         btn.textContent = `Encoding ${++n}/${total}…`;
       });

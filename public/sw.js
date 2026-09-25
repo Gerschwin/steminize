@@ -1,16 +1,16 @@
-// Stemdeck service worker:
+// Steminize service worker:
 //  1. caches the app so it opens offline;
 //  2. adds COOP/COEP headers so the page is "cross-origin isolated", which
 //     enables multi-threaded WASM on hosts (like GitHub Pages) that can't set headers.
-// Model files are stored separately by the app (Cache Storage "stemdeck-models-v1").
+// Model files are stored separately by the app (Cache Storage "steminize-models-v1").
 
-const APP_CACHE = 'stemdeck-app-v1';
+const APP_CACHE = 'steminize-app-v1';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     (async () => {
-      for (const k of await caches.keys()) if (k.startsWith('stemdeck-app-') && k !== APP_CACHE) await caches.delete(k);
+      for (const k of await caches.keys()) if (k.startsWith('steminize-app-') && k !== APP_CACHE) await caches.delete(k);
       await self.clients.claim();
     })(),
   );

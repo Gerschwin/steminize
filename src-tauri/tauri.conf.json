@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Stemdeck",
+  "productName": "Steminize",
   "version": "1.10.0",
-  "identifier": "app.stemdeck.desktop",
+  "identifier": "app.steminize.desktop",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Stemdeck",
+        "title": "Steminize",
         "width": 1280,
         "height": 860,
         "minWidth": 380,

@@ -20,6 +20,7 @@ import { chordName, chordSheet, detectChords, mergeSame, prefersSharps } from '.
 import { BP_PITCHES, BP_WINDOW, bpNotes, bpUnwrap, bpWindows, singleLine } from '../src/analysis/basicPitch.ts';
 import { decimate2 } from '../src/analysis/resample.ts';
 import { writeMidi } from '../src/encode/midi.ts';
+import { detectPitch, freqToNote } from '../src/analysis/pitch.ts';
 
 let failed = 0;
 const ok = (name: string, cond: boolean, detail = '') => {
@@ -367,6 +368,25 @@ for (const [len, overlap, shifts] of [
   const dec = decimate2(new Float32Array(44100).map((_, i) => Math.sin((2 * Math.PI * 440 * i) / 44100)));
   const peak = Math.max(...dec.subarray(1000, 20000));
   ok('resampler keeps a 440 Hz tone', dec.length === 22050 && Math.abs(peak - 1) < 0.01, peak.toFixed(4));
+
+  // ---- tuner: pitch detection ----
+  const sineBuf = (freq: number, n: number, sr = 44100) => {
+    const b = new Float32Array(n);
+    for (let i = 0; i < n; i++) b[i] = 0.5 * Math.sin((2 * Math.PI * freq * i) / sr);
+    return b;
+  };
+  const pA3 = detectPitch(sineBuf(220, 4096), 44100);
+  ok('pitch detection: 220 Hz tone', !!pA3 && Math.abs(pA3.freq - 220) < 0.5, pA3 ? `${pA3.freq.toFixed(2)} Hz` : 'null');
+  if (pA3) {
+    const { note, cents } = freqToNote(pA3.freq);
+    ok('pitch detection: 220 Hz is A3 (note 57), in tune', note === 57 && Math.abs(cents) <= 2, `note ${note}, ${cents} cents`);
+  }
+  const pLow = detectPitch(sineBuf(41.2, 4096), 44100);
+  ok('pitch detection: low bass note (~41 Hz, E1)', !!pLow && Math.abs(pLow.freq - 41.2) < 1, pLow ? `${pLow.freq.toFixed(2)} Hz` : 'null');
+  const pSharp = detectPitch(sineBuf(220 * 2 ** (30 / 1200), 4096), 44100); // 30 cents sharp of A3
+  const sharpCents = pSharp ? freqToNote(pSharp.freq).cents : null;
+  ok('pitch detection: reads a detuned note as sharp', sharpCents != null && sharpCents > 15 && sharpCents < 45, `${sharpCents} cents`);
+  ok('pitch detection: silence gives no reading', detectPitch(new Float32Array(4096), 44100) === null);
   const mid = writeMidi([{ name: 'Bass', notes: [{ start: 0, end: 0.5, pitch: 40, amp: 1 }] }], 120);
   const txt = String.fromCharCode(...mid.subarray(0, 4));
   ok('MIDI file header', txt === 'MThd' && mid[9] === 1 && mid[11] === 2 && mid[mid.length - 3] === 0xff && mid[mid.length - 2] === 0x2f);
@@ -407,7 +427,7 @@ try {
   console.log('SKIP  encoder checks (ffmpeg not installed)');
 }
 if (hasFfmpeg) {
-  const dir = mkdtempSync(join(tmpdir(), 'stemdeck-'));
+  const dir = mkdtempSync(join(tmpdir(), 'steminize-'));
   const x = signal(SR * 5 + 777, 5);
   x[1].fill(0.25, 0, 30000); // constant run exercises CONSTANT subframes
   const decode = (file: string, fmt: string) => execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-f', fmt, '-'], { maxBuffer: 1 << 30 });

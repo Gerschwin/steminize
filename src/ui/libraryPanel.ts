@@ -40,10 +40,10 @@ export function initLibrary(deck: Deck) {
   const metas = new Map<string, LibMeta>();
   const list = $('libList');
   const autoSave = $<HTMLInputElement>('autoSave');
-  autoSave.checked = pref('stemdeck.autoSave', '1') === '1';
+  autoSave.checked = pref('steminize.autoSave', '1') === '1';
   autoSave.onchange = () => {
     try {
-      localStorage.setItem('stemdeck.autoSave', autoSave.checked ? '1' : '0');
+      localStorage.setItem('steminize.autoSave', autoSave.checked ? '1' : '0');
     } catch {
       /* ignore */
     }
@@ -70,6 +70,14 @@ export function initLibrary(deck: Deck) {
       meta.analysis = r.analysis;
       writeMeta(meta).catch(() => {});
     }
+  };
+  deck.onRename = (title) => {
+    const id = deck.current?.libId;
+    const meta = id && metas.get(id);
+    if (!meta) return;
+    meta.title = title;
+    writeMeta(meta).catch(() => {});
+    render();
   };
   deck.rankKeys = (r, start, end) => {
     const { harmonic } = analysisSources(r.stems);
@@ -100,7 +108,7 @@ export function initLibrary(deck: Deck) {
     try {
       const zip = await exportLibrary((done, total) => (exportBtn.textContent = `Zipping… ${done}/${total}`));
       const date = new Date().toISOString().slice(0, 10);
-      const saved = await saveFile(`stemdeck-library-${date}.zip`, zip, 'application/zip');
+      const saved = await saveFile(`steminize-library-${date}.zip`, zip, 'application/zip');
       if (saved) toast(`Backed up ${metas.size} song${metas.size > 1 ? 's' : ''}.`);
     } catch (e) {
       toast(`Couldn't back up the library: ${(e as Error).message}`, true);
@@ -133,7 +141,40 @@ export function initLibrary(deck: Deck) {
     const stems = m.kind === 'multitrack' ? `${m.stems.length} tracks` : m.settings?.twoStems ? `${m.settings.twoStems}/rest` : `${m.stems.length} stems`;
     const sub = h('div', { class: 't-sub' }, [fmtTime(m.seconds), stems, m.analysis ? `${Math.round(m.analysis.bpm)} BPM` : '', fmtMB(m.bytes), date].filter(Boolean).join(' · '));
     const x = h('button', { class: 't-x', type: 'button', title: 'Delete from library' }, '×');
-    const li = h('li', { class: `track done${deck.current?.libId === m.id ? ' active' : ''}` }, h('div', { class: 't-name', title: m.title }, m.title), x, sub);
+    // Single click opens, but waits a moment so a double-click (rename) doesn't open it first.
+    let openTimer = 0;
+    const nameEl = h('div', { class: 't-name', title: `${m.title}\n(double-click to rename)` }, m.title);
+    nameEl.ondblclick = (e) => {
+      e.stopPropagation();
+      clearTimeout(openTimer);
+      const input = h('input', { type: 'text', value: m.title, maxLength: 120, class: 't-name-edit', 'aria-label': 'Song title' } as any);
+      let done = false;
+      const finish = (save: boolean) => {
+        if (done) return;
+        done = true;
+        const val = input.value.trim();
+        if (save && val && val !== m.title) {
+          m.title = val;
+          writeMeta(m).catch(() => {});
+          if (deck.current?.libId === m.id) {
+            deck.current.title = val;
+            $('trackTitle').textContent = val;
+          }
+        }
+        render();
+      };
+      input.onclick = (ev) => ev.stopPropagation();
+      input.onkeydown = (ev) => {
+        ev.stopPropagation();
+        if (ev.key === 'Enter') finish(true);
+        if (ev.key === 'Escape') finish(false);
+      };
+      input.onblur = () => finish(true);
+      nameEl.replaceWith(input);
+      input.focus();
+      input.select();
+    };
+    const li = h('li', { class: `track done${deck.current?.libId === m.id ? ' active' : ''}` }, nameEl, x, sub);
     x.onclick = async (e) => {
       e.stopPropagation();
       if (!x.classList.contains('confirm')) {
@@ -150,29 +191,32 @@ export function initLibrary(deck: Deck) {
       if (deck.current?.libId === m.id) deck.current.libId = undefined;
       render();
     };
-    li.onclick = async () => {
+    li.onclick = () => {
       if (deck.current?.libId === m.id) return;
-      sub.textContent = 'Opening…';
-      try {
-        const stems = await loadStems(m);
-        const r: Result = { title: m.title, stems, settings: m.settings, seconds: m.seconds, took: m.took, libId: m.id, analysis: m.analysis, kind: m.kind };
-        deck.open(r, m.state as DeckState | undefined);
-        onOpen(r);
-        // Songs saved before key detection existed: work it out now, keep any tempo corrections.
-        if (m.analysis && !m.analysis.key) {
-          void analyse(r).then((a) => {
-            if (!a.key || !r.analysis) return;
-            r.analysis = { ...r.analysis, key: a.key };
-            r.onsets ??= { env: a.env, low: a.low };
-            m.analysis = r.analysis;
-            if (deck.current === r) deck.setAnalysis(r.analysis);
-            writeMeta(m).catch(() => {});
-          });
+      clearTimeout(openTimer);
+      openTimer = window.setTimeout(async () => {
+        sub.textContent = 'Opening…';
+        try {
+          const stems = await loadStems(m);
+          const r: Result = { title: m.title, stems, settings: m.settings, seconds: m.seconds, took: m.took, libId: m.id, analysis: m.analysis, kind: m.kind };
+          deck.open(r, m.state as DeckState | undefined);
+          onOpen(r);
+          // Songs saved before key detection existed: work it out now, keep any tempo corrections.
+          if (m.analysis && !m.analysis.key) {
+            void analyse(r).then((a) => {
+              if (!a.key || !r.analysis) return;
+              r.analysis = { ...r.analysis, key: a.key };
+              r.onsets ??= { env: a.env, low: a.low };
+              m.analysis = r.analysis;
+              if (deck.current === r) deck.setAnalysis(r.analysis);
+              writeMeta(m).catch(() => {});
+            });
+          }
+        } catch (err) {
+          toast(`Couldn't open ${m.title}: ${(err as Error).message}`, true);
         }
-      } catch (err) {
-        toast(`Couldn't open ${m.title}: ${(err as Error).message}`, true);
-      }
-      render();
+        render();
+      }, 250);
     };
     return li;
   }

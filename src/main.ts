@@ -9,6 +9,7 @@ import { $, fmtDuration, fmtEta, fmtTime, h, toast } from './ui/dom.ts';
 import { ensureDownloaded, initModelsDialog, onModelsChanged } from './ui/modelsDialog.ts';
 import { SettingsPanel } from './ui/settingsPanel.ts';
 import { initLibrary } from './ui/libraryPanel.ts';
+import { initYoutubeDialog } from './ui/youtubeDialog.ts';
 
 // ---------------------------------------------------------------- setup
 registerServiceWorker();
@@ -70,10 +71,10 @@ const pref = (k: string, d: string) => {
   }
 };
 const autoStart = $<HTMLInputElement>('autoStart');
-autoStart.checked = pref('stemdeck.autoStart', '1') === '1';
+autoStart.checked = pref('steminize.autoStart', '1') === '1';
 autoStart.onchange = () => {
   try {
-    localStorage.setItem('stemdeck.autoStart', autoStart.checked ? '1' : '0');
+    localStorage.setItem('steminize.autoStart', autoStart.checked ? '1' : '0');
   } catch {
     /* ignore */
   }
@@ -403,6 +404,12 @@ if (isTauri) {
       if (files?.length) void openMultitrack(files);
     });
   };
+  // Downloading needs yt-dlp shelled out from the native side; there's no browser-only
+  // equivalent, so this stays desktop-only.
+  const yt = initYoutubeDialog((file) => addFiles([file]));
+  const ytBtn = $('ytBtn');
+  ytBtn.hidden = false;
+  ytBtn.onclick = () => yt.open();
 }
 
 // ---------------------------------------------------------------- file input & drag/drop
@@ -432,7 +439,7 @@ setInterval(() => {
 }, 1000);
 
 $('appVersion').textContent = `v${__APP_VERSION__}`;
-$('appVersion').title = `Stemdeck ${__APP_VERSION__}, built ${__BUILD_DATE__}`;
+$('appVersion').title = `Steminize ${__APP_VERSION__}, built ${__BUILD_DATE__}`;
 
 // ---------------------------------------------------------------- PWA bits
 let installEvt: any = null;
@@ -481,7 +488,7 @@ function sessionStorageSet(k: string, v: string) {
   }
 }
 
-// Opened via "Open with Stemdeck" on an installed PWA.
+// Opened via "Open with Steminize" on an installed PWA.
 (window as any).launchQueue?.setConsumer(async (p: { files: FileSystemFileHandle[] }) => {
   if (p.files?.length) addFiles(await Promise.all(p.files.map((f) => f.getFile())));
 });

@@ -48,7 +48,7 @@ export async function openSink(zipName: string): Promise<Sink | null> {
   const picker = (window as any).showDirectoryPicker;
   if (picker) {
     try {
-      const dir = await picker({ mode: 'readwrite', id: 'stemdeck' });
+      const dir = await picker({ mode: 'readwrite', id: 'steminize' });
       return {
         async write(n, b) {
           const fh = await dir.getFileHandle(n, { create: true });

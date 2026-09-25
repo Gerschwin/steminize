@@ -23,7 +23,7 @@ export interface Settings {
 }
 
 export const DEFAULTS: Settings = {
-  model: 'htdemucs',
+  model: 'htdemucs_6s',
   precision: 'compact',
   twoStems: '',
   skipStems: [],
@@ -37,7 +37,7 @@ export const DEFAULTS: Settings = {
   clip: 'rescale',
 };
 
-const KEY = 'stemdeck.settings.v1';
+const KEY = 'steminize.settings.v1';
 
 export function loadSettings(): Settings {
   try {

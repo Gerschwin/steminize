@@ -72,7 +72,8 @@ export function initModelsDialog() {
             }),
           ),
         );
-        return h('div', { class: 'm-group' }, h('h3', {}, m.label), ...rows);
+        const browse = h('a', { class: 'm-browse', href: `https://huggingface.co/${m.hfRepo}`, target: '_blank', rel: 'noreferrer' }, 'Browse on Hugging Face ↗');
+        return h('div', { class: 'm-group' }, h('div', { class: 'm-group-head' }, h('h3', {}, m.label), browse), ...rows);
       }),
     );
     list.replaceChildren(...groups);

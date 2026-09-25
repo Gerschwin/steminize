@@ -1,4 +1,4 @@
-# Stemdeck
+# Steminize
 
 Split songs into stems (vocals, drums, bass, other, and optionally guitar and piano) using Meta's **Demucs v4** model. Everything runs **on your own device**: nothing is uploaded.
 
@@ -6,7 +6,7 @@ It runs as a web app (installable on desktop and phone) and as a desktop app (Wi
 
 ## Features
 
-- **Models:** HT Demucs (fast), HT Demucs Fine-tuned (best, about 4× slower) and HT Demucs 6-stem (adds guitar and piano). Each comes in a compact (fp16) or full (fp32) download.
+- **Models:** HT Demucs (fast), HT Demucs Fine-tuned (best, about 4× slower) and HT Demucs 6-stem (adds guitar and piano — the default). Each comes in a compact (fp16) or full (fp32) download.
 - **The Demucs command-line options:** two-stem/karaoke mode (`--two-stems`), shifts (`--shifts`), overlap (`--overlap`), clip mode (`--clip-mode`), and output as WAV 16/24/32-bit float, FLAC 16/24 or MP3 128–320 kbps.
 - **Batch queue:** drop in several songs; each shows progress and time left.
 - **Practice player:** mute, solo, set the level and pan (left–right) of each stem, plus a per-stem EQ with presets (Kick, Snare, Hi-hats, Bass on small speakers, Vocal clarity) and manual low-cut, high-cut and focus band; loop a section (drag across the waveform); change tempo (50–150%) and pitch (±12 semitones) without affecting the other.
@@ -15,11 +15,14 @@ It runs as a web app (installable on desktop and phone) and as a desktop app (Wi
 - **Practice tools:** tempo (BPM) and bar detection from the drum stem, with ½×/2×/tap correction; loop snapping to beats or bars; speed trainer (e.g. 70% → 100%, +5% per pass); gap between passes; one-bar count-in; metronome click that stays in step with slowed-down audio.
 - **Sections, key and zoom:** named section markers (click to jump, ⟳ to loop a section, saved per song); key detection with the shifted key shown when you change pitch (click the key to see other likely keys, check just the loop or a section, or set it yourself); waveform zoom (buttons, scroll wheel or + − 0) with beat lines when zoomed in.
 - **Transcription tools** (the **Chords** and **Notes** buttons above the tracks):
-  - **Notes view:** which notes are sounding over time, one row per semitone from E1 to C7, for all parts or any one stem, with a keyboard beside it (click a key to hear that pitch; it lights up with what's playing). Hover to name a note. It follows zoom, and a pitch shift moves it so it always shows what you hear.
+  - **Notes view:** which notes are sounding over time, one row per semitone from E1 to C7, for all parts or any one stem, with a keyboard beside it (click a key to hear that pitch, or hover to see its name; it lights up with what's playing). The preview tone's timbre roughly follows whatever part you're viewing (fuller and slower for bass, plucked for guitar, soft for vocals), so it's closer to what you're matching by ear. The keyboard has its own zoom: scroll over it to zoom in on a range of notes, Shift+scroll to pan, double-click to reset. Your computer keyboard also plays it while Notes is open (ZXCVBNM,./ for the white keys, SDGHJL; for the black ones, like a piano). It follows the waveform's zoom, and a pitch shift moves it so it always shows what you hear.
   - **Freeze** (F): holds the sound at the playhead as a steady tone so you can hum it or find it on your instrument. Click elsewhere while frozen to move it.
   - **Chords:** detected per beat along the bar grid, using the separated bass to find the root. Click a chord to correct it (suggestions, any root/type, slash bass, split in two); corrections are marked and kept. **Chart ⤓** saves a text chord chart in bars, using your markers as sections, transposed if you've shifted the pitch.
   - **To MIDI:** turns a stem (or all parts) into notes with Spotify's Basic Pitch, drawn over the notes view. Lead vocals and bass are kept to one note at a time. **MIDI ⤓** saves every part you've transcribed as one MIDI file, at the song's tempo.
   - How good: the notes view is reliable (it's measurement, not guessing). Chords are a first draft: expect roughly 60–75% right on real songs, better on simple pop/rock with a separated bass, worse on jazz chords, and fix the rest by ear. MIDI is good on bass and single-note melodies, fair on piano, messy on strummed guitar or a full mix.
+- **Live input** (in the **Live input** drawer): play a real instrument or mic live alongside the tracks, through whatever's plugged into your computer (built-in mic or a USB audio interface, picked from a device list). It's monitoring only — nothing is recorded or exported — with its own level and pan sliders and a small meter so you can see it's actually receiving signal. Browser audio has some inherent latency (roughly 10–50 ms depending on your OS/hardware), so it's for practicing along, not sample-accurate like an ASIO-based DAW.
+- **Tuner** (in the **Tuner** drawer): a needle tuner for the live input or any stem/track, showing the detected note, Hz and cents sharp/flat. Works best on a single sustained note (a bass or guitar open string, a held vocal note); it ignores silence and chords rather than guessing. Follows any pitch shift you've applied, so it reads correctly against a shifted stem.
+- **Scratchpad** (in the **Scratchpad** drawer): plain-text notes per song, in four tabs — Lyrics, Tab, Drum tab and Notes. The Tab and Drum tab boxes use a monospace font with no line-wrap, so ASCII tab (`e|--0-1-3--|`) stays aligned as you type or paste it in. Sections already have their own markers (name, jump, loop); this is just free text alongside them.
 - **Hands-free:** PageDown plays/pauses and PageUp restarts the section, which suits most Bluetooth page-turner pedals; "Foot pedal mode" maps arrow-key pedals the same way.
 - **Export:** single stems, all stems (to a folder, or as a ZIP), or "what you hear" as a mix with your levels, loop, tempo and pitch applied.
 - **Offline:** once a model has downloaded, the app works with no connection.
@@ -46,11 +49,11 @@ Open http://localhost:5173. Other commands:
 
 1. Create a new repository on GitHub and push this folder to it:
    ```bash
-   git remote add origin https://github.com/YOUR-NAME/stemdeck.git
+   git remote add origin https://github.com/YOUR-NAME/steminize.git
    git push -u origin main
    ```
 2. On GitHub, go to **Settings → Pages** and set **Source** to **GitHub Actions**.
-3. The *Deploy web app* workflow runs on every push. When it finishes, the site is at `https://YOUR-NAME.github.io/stemdeck/`.
+3. The *Deploy web app* workflow runs on every push. When it finishes, the site is at `https://YOUR-NAME.github.io/steminize/`.
 
 On a phone, open that address and choose **Add to Home Screen** (iOS Safari) or **Install app** (Android Chrome).
 
@@ -89,12 +92,16 @@ sudo apt install gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0
 
 (package names for other distros will differ). This isn't needed for the web app or for Windows/macOS.
 
+### "From YouTube" import
+
+Next to **Open multitrack…** / **Open folder…**, the desktop app has a **From YouTube…** button: enter a song name and artist, pick from the search results, and it downloads the audio straight into the import queue. Desktop-only, because a browser tab has no way to download from YouTube itself; the native side shells out to a standalone [yt-dlp](https://github.com/yt-dlp/yt-dlp) binary, fetched once on first use and cached (no ffmpeg needed — it downloads an audio-only stream directly, no re-encoding or muxing). Everything still runs on your own machine; nothing is uploaded anywhere. You're responsible for having the right to use anything you download, same as with yt-dlp generally.
+
 ### Unsigned-app warnings
 
 The installers aren't code-signed, so people will see warnings the first time:
 
 - **Windows:** SmartScreen says "Windows protected your PC". Click **More info → Run anyway**.
-- **macOS:** Gatekeeper blocks the app. Right-click it and choose **Open**. If macOS says it's "damaged", run `xattr -cr /Applications/Stemdeck.app`.
+- **macOS:** Gatekeeper blocks the app. Right-click it and choose **Open**. If macOS says it's "damaged", run `xattr -cr /Applications/Steminize.app`.
 
 Signing removes these warnings. It costs about £79/year for Apple, and a few pounds a month for Windows via Azure Trusted Signing.
 
@@ -145,6 +152,6 @@ The float64 conversion is done by `src/engine/fixfloat64.ts`, which rewrites tho
 - **SoundTouchJS**, LGPL-2.1. It's used unmodified from npm, and you can swap in your own build of it.
 - **lamejs** (MP3), LGPL. **fflate** (ZIP), MIT.
 - **Basic Pitch** by Spotify, Apache-2.0: https://github.com/spotify/basic-pitch. The model file is bundled unchanged; its licence and notice are next to it in `src/analysis/models/`. The note-extraction steps are ported from its Python code.
-- Stemdeck itself: MIT (see `LICENSE`).
+- Steminize itself: MIT (see `LICENSE`).
 
 Only separate audio you have the right to use.

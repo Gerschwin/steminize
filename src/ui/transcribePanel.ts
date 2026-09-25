@@ -13,7 +13,7 @@ import { singleLine, type NoteEvent } from '../analysis/basicPitch.ts';
 import { monoOf } from '../analysis/resample.ts';
 import { programFor, writeMidi } from '../encode/midi.ts';
 import { renderMix } from '../player/mixcore.ts';
-import type { Player } from '../player/player.ts';
+import type { Player, Voice } from '../player/player.ts';
 import type { EqParams } from '../player/eq.ts';
 import type { KeyResult } from '../analysis/key.ts';
 import { saveFile } from '../platform.ts';
@@ -63,6 +63,7 @@ export interface TxState {
   source: string;
   chordList?: Chord[];
   midi?: Record<string, NoteEvent[]>;
+  notesHeight?: number; // px; unset uses the CSS default
 }
 
 // Heat-map palette for the note view: dark → violet → orange → yellow.
@@ -89,6 +90,14 @@ const LUT = (() => {
 
 const isBlack = (n: number) => [1, 3, 6, 8, 10].includes(((n % 12) + 12) % 12);
 
+// Computer keyboard as a piano, while the Notes view is open: the bottom row is white keys,
+// the row above is black keys, offset to sit over the gaps between them (as on a real piano).
+const PIANO_BASE = 60; // C4
+const PIANO_KEYS: Record<string, number> = {
+  z: 0, x: 2, c: 4, v: 5, b: 7, n: 9, m: 11, ',': 12, '.': 14, '/': 16,
+  s: 1, d: 3, g: 6, h: 8, j: 10, l: 13, ';': 15,
+};
+
 /** Rough role of a track from its name, for choosing what chord detection listens to. */
 function role(name: string): 'drums' | 'vocals' | 'bass' | 'harm' {
   const n = name.toLowerCase();
@@ -99,12 +108,27 @@ function role(name: string): 'drums' | 'vocals' | 'bass' | 'harm' {
   return 'harm';
 }
 
+/** Which preview-tone timbre suits the currently selected part, so it's closer to what you're matching by ear. */
+function voiceFor(name: string): Voice {
+  if (name === HEAR) return 'default';
+  const n = name.toLowerCase();
+  if (/bass/.test(n)) return 'bass';
+  if (/guitar/.test(n)) return 'guitar';
+  if (/vox|vocal|voice|sing|\bbv/.test(n)) return 'vocal';
+  return 'default';
+}
+
 export class Transcribe {
   private notesOn = false;
   private chordsOn = false;
   private source = HEAR;
   private img: { key: string; canvas: HTMLCanvasElement } | null = null;
   private hover: { row: number; t: number } | null = null;
+  /** Visible pitch range, as rows (0 = NOTE_HI at the top, BINS = one past NOTE_LO). Scroll/zoom the piano to change it. */
+  private pitchView = { top: 0, bottom: BINS };
+  private keyHover: number | null = null;
+  private heldRows = new Set<number>();
+  private notesHeight?: number; // px; unset uses the CSS default
   private frozenAt = -1;
   private busy = '';
   private editing = -1;
@@ -123,6 +147,7 @@ export class Transcribe {
   private noteStatus: HTMLElement;
   private freezeBtn: HTMLButtonElement;
   private midiBtn: HTMLButtonElement;
+  private midiClearBtn: HTMLButtonElement;
   private midiSaveBtn: HTMLButtonElement;
 
   constructor(private host: TxHost) {
@@ -155,7 +180,9 @@ export class Transcribe {
 
     // ---- notes lane
     this.noteCanvas = h('canvas');
-    this.keys = h('canvas', { title: 'Click a key to hear the note' });
+    this.keys = h('canvas', {
+      title: "Click a key to hear it, in a tone roughly matching the part you're viewing. Scroll to zoom, Shift+scroll to pan, double-click to reset.",
+    });
     this.sourceSel = h('select', { title: 'Which part to show' });
     this.sourceSel.onchange = () => {
       this.source = this.sourceSel.value;
@@ -173,10 +200,13 @@ export class Transcribe {
     pressed(this.freezeBtn, false);
     this.midiBtn = h('button', { class: 'btn tiny ghost', type: 'button', title: 'Work out the notes of this part as MIDI (Basic Pitch)' }, 'To MIDI');
     this.midiBtn.onclick = () => void this.toMidi();
+    this.midiClearBtn = h('button', { class: 'btn tiny ghost', type: 'button', title: 'Remove the MIDI notes for this part', hidden: true }, '×');
+    this.midiClearBtn.onclick = () => this.clearMidi();
     this.midiSaveBtn = h('button', { class: 'btn tiny ghost', type: 'button', title: 'Save the MIDI (every part you have transcribed)' }, 'MIDI ⤓');
     this.midiSaveBtn.onclick = () => this.saveMidi();
     this.noteStatus = h('span', { class: 'muted small x-status' });
     const noteWave = h('div', { class: 'wave x-wave notes-wave' }, this.noteCanvas);
+    const notesResize = h('div', { class: 'lane-resize', title: 'Drag to resize the notes view. Double-click to reset.' });
     this.notesLane = h(
       'div',
       { class: 'lane x-lane notes-lane' },
@@ -188,18 +218,43 @@ export class Transcribe {
           { class: 'x-col' },
           h('span', { class: 'name' }, 'Notes'),
           this.sourceSel,
-          h('div', { class: 'x-row' }, this.freezeBtn, this.midiBtn, this.midiSaveBtn),
+          h('div', { class: 'x-row' }, this.freezeBtn, this.midiBtn, this.midiClearBtn, this.midiSaveBtn),
           this.noteStatus,
         ),
         h('div', { class: 'x-keys' }, this.keys),
       ),
       noteWave,
+      notesResize,
     );
     noteWave.onclick = (e) => this.host.seekFrac(e.offsetX / noteWave.clientWidth);
     noteWave.addEventListener('wheel', (e) => this.host.wheel(e, noteWave), { passive: false });
+    let notesDragFromH: number | null = null;
+    notesResize.addEventListener('pointerdown', (e) => {
+      notesResize.setPointerCapture(e.pointerId);
+      notesDragFromH = noteWave.clientHeight - e.clientY;
+    });
+    notesResize.addEventListener('pointermove', (e) => {
+      if (notesDragFromH == null) return;
+      // Floor matches the CSS default (360px): below that the keyboard and note rows become
+      // too small to read, which is the exact problem the default height was set to fix.
+      noteWave.style.height = `${Math.max(360, Math.min(800, notesDragFromH + e.clientY))}px`;
+      this.redraw();
+    });
+    notesResize.addEventListener('pointerup', () => {
+      if (notesDragFromH == null) return;
+      notesDragFromH = null;
+      this.notesHeight = noteWave.clientHeight;
+      this.host.changed();
+    });
+    notesResize.ondblclick = () => {
+      noteWave.style.height = '';
+      this.notesHeight = undefined;
+      this.redraw();
+      this.host.changed();
+    };
     noteWave.onpointermove = (e) => {
-      const rows = BINS;
-      const row = Math.floor((e.offsetY / noteWave.clientHeight) * rows);
+      const { top, bottom } = this.pitchView;
+      const row = top + Math.floor((e.offsetY / noteWave.clientHeight) * (bottom - top));
       const v = this.host.view();
       this.hover = { row, t: (v.start + (e.offsetX / noteWave.clientWidth) * (v.end - v.start)) / SR };
       this.redraw();
@@ -208,10 +263,77 @@ export class Transcribe {
       this.hover = null;
       this.redraw();
     };
-    this.keys.onclick = (e) => {
-      const row = Math.floor((e.offsetY / this.keys.clientHeight) * BINS);
-      void this.host.player.tone(NOTE_HI - row);
+    const keyRowAt = (e: MouseEvent) => {
+      const { top, bottom } = this.pitchView;
+      return Math.max(0, Math.min(BINS - 1, top + Math.floor((e.offsetY / this.keys.clientHeight) * (bottom - top))));
     };
+    this.keys.onclick = (e) => void this.host.player.tone(NOTE_HI - keyRowAt(e), voiceFor(this.source));
+    this.keys.onpointermove = (e) => {
+      this.keyHover = keyRowAt(e);
+      this.redraw();
+    };
+    this.keys.onpointerleave = () => {
+      this.keyHover = null;
+      this.redraw();
+    };
+    this.keys.ondblclick = () => {
+      this.pitchView = { top: 0, bottom: BINS };
+      this.redraw();
+    };
+    this.keys.addEventListener(
+      'wheel',
+      (e) => {
+        e.preventDefault();
+        const { top, bottom } = this.pitchView;
+        const span = bottom - top;
+        if (e.shiftKey) {
+          const d = (e.deltaY / this.keys.clientHeight) * span;
+          this.pitchView = this.clampPitchView(top + d, bottom + d);
+        } else {
+          const f = Math.max(0, Math.min(1, e.offsetY / this.keys.clientHeight));
+          const centre = top + f * span;
+          const nextSpan = span / Math.exp(-e.deltaY * 0.002);
+          const t = centre - f * nextSpan;
+          this.pitchView = this.clampPitchView(t, t + nextSpan);
+        }
+        this.redraw();
+      },
+      { passive: false },
+    );
+    // Computer keyboard as a piano while the Notes view is showing. Capture phase + stopPropagation
+    // so mapped keys (some overlap the deck's own shortcuts, e.g. L, M) play a note instead here.
+    const pianoKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || (e.target as HTMLElement)?.isContentEditable) return null;
+      if (e.metaKey || e.ctrlKey || e.altKey) return null;
+      const offset = PIANO_KEYS[e.key.toLowerCase()];
+      return offset == null ? null : PIANO_BASE + offset;
+    };
+    window.addEventListener(
+      'keydown',
+      (e) => {
+        if (!this.notesOn || e.repeat) return;
+        const note = pianoKey(e);
+        if (note == null) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const row = NOTE_HI - note;
+        if (row >= 0 && row < BINS) {
+          this.heldRows.add(row);
+          this.redraw();
+        }
+        void this.host.player.tone(note, voiceFor(this.source));
+      },
+      { capture: true },
+    );
+    window.addEventListener(
+      'keyup',
+      (e) => {
+        const note = pianoKey(e);
+        if (note == null) return;
+        if (this.heldRows.delete(NOTE_HI - note)) this.redraw();
+      },
+      { capture: true },
+    );
 
     $('xlanes').append(this.chordLane, this.editor, this.notesLane);
     $('chordsBtn').onclick = () => this.show({ chords: !this.chordsOn });
@@ -223,8 +345,19 @@ export class Transcribe {
     this.host.redraw();
   }
 
+  /** Clamps a pitch view (in rows) to the real range and a sensible minimum zoom. */
+  private clampPitchView(top: number, bottom: number) {
+    // Whole rows only: a fractional top/bottom would make every row lookup (hover, clicks,
+    // the keyboard mapping) land on a non-integer index, and noteName() would read undefined.
+    const span = Math.min(BINS, Math.max(4, Math.round(bottom - top)));
+    top = Math.max(0, Math.min(BINS - span, Math.round(top)));
+    return { top, bottom: top + span };
+  }
+
   // ---------- song / state ----------
   open(s: TxSong, st?: TxState) {
+    this.pitchView = { top: 0, bottom: BINS };
+    this.heldRows.clear();
     this.unfreeze();
     cancelTranscribe();
     this.busy = '';
@@ -239,12 +372,14 @@ export class Transcribe {
     this.sourceSel.value = this.source;
     this.show({ notes: st?.notes ?? this.notesOn, chords: st?.chords ?? this.chordsOn }, false);
     this.refreshMidiButtons();
+    this.notesHeight = st?.notesHeight;
+    if (this.notesHeight) (this.notesLane.querySelector('.notes-wave') as HTMLElement).style.height = `${this.notesHeight}px`;
     this.invalidate();
   }
 
   getState(): TxState {
     const s = this.host.song();
-    return { notes: this.notesOn, chords: this.chordsOn, source: this.source, chordList: s?.chords, midi: s?.midi };
+    return { notes: this.notesOn, chords: this.chordsOn, source: this.source, chordList: s?.chords, midi: s?.midi, notesHeight: this.notesHeight };
   }
 
   private show(p: { notes?: boolean; chords?: boolean }, save = true) {
@@ -253,7 +388,10 @@ export class Transcribe {
     this.notesLane.hidden = !this.notesOn;
     this.chordLane.hidden = !this.chordsOn;
     if (!this.chordsOn) this.closeEditor();
-    if (!this.notesOn) this.unfreeze();
+    if (!this.notesOn) {
+      this.unfreeze();
+      this.heldRows.clear();
+    }
     pressed($('notesBtn'), this.notesOn);
     pressed($('chordsBtn'), this.chordsOn);
     const s = this.host.song();
@@ -411,16 +549,19 @@ export class Transcribe {
     const g = fitCanvas(c);
     const { width: w, height: H } = c;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const rowH = H / BINS;
+    const { top, bottom } = this.pitchView;
+    const rowH = H / (bottom - top);
+    const rowY = (row: number) => (row - top) * rowH;
     g.imageSmoothingEnabled = false;
-    g.drawImage(this.buildImage(Math.max(1, Math.round(w / dpr))), 0, 0, w, H);
+    const img = this.buildImage(Math.max(1, Math.round(w / dpr)));
+    g.drawImage(img, 0, top, img.width, bottom - top, 0, 0, w, H);
     const shift = this.host.pitch();
     // Octave lines (at each C) and labels.
     g.font = `${9 * dpr}px system-ui, sans-serif`;
     g.textBaseline = 'bottom';
     for (let n = NOTE_LO; n <= NOTE_HI; n++) {
       if (n % 12) continue;
-      const y = (NOTE_HI - n + 1) * rowH;
+      const y = rowY(NOTE_HI - n + 1);
       g.fillStyle = 'rgba(255,255,255,0.10)';
       g.fillRect(0, Math.round(y), w, 1);
       g.fillStyle = 'rgba(255,255,255,0.45)';
@@ -452,15 +593,15 @@ export class Transcribe {
       for (const n of notes) {
         if (n.end * SR < v.start || n.start * SR > v.end) continue;
         const row = NOTE_HI - (n.pitch + shift);
-        if (row < 0 || row >= BINS) continue;
+        if (row < top || row >= bottom) continue;
         const x0 = this.x(n.start * SR, w);
         const x1 = Math.max(x0 + 2, this.x(n.end * SR, w));
         // White outline shows on the heat map; a tick in the part's colour marks the start.
         g.strokeStyle = 'rgba(255,255,255,0.9)';
         g.lineWidth = Math.max(1, dpr);
-        g.strokeRect(x0 - 0.5, row * rowH - 1.5, x1 - x0 + 1, rowH + 3);
+        g.strokeRect(x0 - 0.5, rowY(row) - 1.5, x1 - x0 + 1, rowH + 3);
         g.fillStyle = colour;
-        g.fillRect(x0 - 0.5, row * rowH - 1.5, 2 * dpr, rowH + 3);
+        g.fillRect(x0 - 0.5, rowY(row) - 1.5, 2 * dpr, rowH + 3);
       }
     }
     // Markers and playhead.
@@ -472,14 +613,14 @@ export class Transcribe {
     g.fillStyle = '#fff';
     g.fillRect(Math.round(this.x(pos, w)), 0, Math.max(1, dpr), H);
     // Hover: highlight the row and name it.
-    if (this.hover) {
-      const r = Math.max(0, Math.min(BINS - 1, this.hover.row));
+    if (this.hover && this.hover.row >= top && this.hover.row < bottom) {
+      const r = this.hover.row;
       g.fillStyle = 'rgba(255,255,255,0.12)';
-      g.fillRect(0, r * rowH, w, rowH);
+      g.fillRect(0, rowY(r), w, rowH);
       const label = `${noteName(NOTE_HI - r)} · ${fmtTime(this.hover.t)}`;
       g.font = `600 ${11 * dpr}px system-ui, sans-serif`;
       const tw = g.measureText(label).width + 8 * dpr;
-      const ly = Math.max(14 * dpr, r * rowH);
+      const ly = Math.max(14 * dpr, rowY(r));
       g.fillStyle = 'rgba(0,0,0,0.7)';
       g.fillRect(w - tw - 4 * dpr, ly - 14 * dpr, tw, 14 * dpr);
       g.fillStyle = '#fff';
@@ -493,11 +634,12 @@ export class Transcribe {
     if (!c.clientWidth) return;
     const g = fitCanvas(c);
     const { width: w, height: H } = c;
-    const rowH = H / BINS;
+    const { top, bottom } = this.pitchView;
+    const rowH = H / (bottom - top);
     const active = this.activeRows(pos);
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     // y of a pitch value (a note's row runs from v = n to n + 1, low at the bottom)
-    const y = (v: number) => (NOTE_HI + 1 - v) * rowH;
+    const y = (v: number) => (NOTE_HI + 1 - v - top) * rowH;
     g.fillStyle = '#e8e8ee';
     g.fillRect(0, 0, w, H);
     // White-key edges: at B|C and E|F, and half-way up each black key.
@@ -512,14 +654,34 @@ export class Transcribe {
     }
     // Sounding notes.
     active.forEach((a, r) => {
-      if (a <= 0) return;
+      if (a <= 0 || r < top || r >= bottom) return;
       g.fillStyle = `rgba(139,124,246,${0.4 + 0.6 * a})`;
-      g.fillRect(0, r * rowH, w, rowH);
+      g.fillRect(0, (r - top) * rowH, w, rowH);
     });
     g.fillStyle = '#666';
     g.font = `${8 * dpr}px system-ui, sans-serif`;
     g.textBaseline = 'bottom';
     for (let n = NOTE_LO; n <= NOTE_HI; n++) if (n % 12 === 0) g.fillText(`C${n / 12 - 1}`, w - g.measureText(`C${n / 12 - 1}`).width - 2 * dpr, y(n) - 1);
+    // Keys held on the computer keyboard.
+    for (const r of this.heldRows) {
+      if (r < top || r >= bottom) continue;
+      g.fillStyle = 'rgba(139,124,246,0.55)';
+      g.fillRect(0, (r - top) * rowH, w, rowH);
+    }
+    // Hover: highlight the key and name it.
+    if (this.keyHover != null) {
+      const r = this.keyHover;
+      g.fillStyle = 'rgba(139,124,246,0.35)';
+      g.fillRect(0, (r - top) * rowH, w, rowH);
+      const label = noteName(NOTE_HI - r);
+      g.font = `600 ${11 * dpr}px system-ui, sans-serif`;
+      const tw = g.measureText(label).width + 8 * dpr;
+      const ly = Math.max(14 * dpr, Math.min(H, (r - top) * rowH + rowH));
+      g.fillStyle = 'rgba(0,0,0,0.8)';
+      g.fillRect(2 * dpr, ly - 14 * dpr, tw, 14 * dpr);
+      g.fillStyle = '#fff';
+      g.fillText(label, 4 * dpr, ly - 2 * dpr);
+    }
   }
 
   private sourceColour() {
@@ -737,7 +899,18 @@ export class Transcribe {
     const s = this.host.song();
     const has = !!s?.midi && Object.values(s.midi).some((n) => n.length);
     this.midiSaveBtn.hidden = !has;
+    this.midiClearBtn.hidden = !s?.midi?.[this.midiKey()];
     this.midiBtn.textContent = this.busy ? 'Cancel' : s?.midi?.[this.midiKey()] ? 'Redo MIDI' : 'To MIDI';
+  }
+
+  private clearMidi() {
+    const s = this.host.song();
+    if (!s?.midi?.[this.midiKey()]) return;
+    const { [this.midiKey()]: _, ...rest } = s.midi;
+    s.midi = rest;
+    this.host.changed();
+    this.refreshMidiButtons();
+    this.redraw();
   }
 
   private async toMidi() {

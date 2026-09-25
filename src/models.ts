@@ -23,6 +23,8 @@ export interface ModelInfo {
   /** Relative run time vs htdemucs, for estimates. */
   cost: number;
   files: Record<Precision, ModelFile[]>;
+  /** The Hugging Face repo these files come from, so people can browse it for other versions/formats. */
+  hfRepo: string;
 }
 
 const HF = 'https://huggingface.co';
@@ -46,6 +48,7 @@ export const MODELS: Record<ModelId, ModelInfo> = {
       compact: [file('StemSplitio/htdemucs-onnx', 'htdemucs_fp16weights.onnx', 166, [0, 1, 2, 3])],
       full: [file('StemSplitio/htdemucs-onnx', 'htdemucs.onnx', 316, [0, 1, 2, 3])],
     },
+    hfRepo: 'StemSplitio/htdemucs-onnx',
   },
   htdemucs_ft: {
     id: 'htdemucs_ft',
@@ -54,6 +57,7 @@ export const MODELS: Record<ModelId, ModelInfo> = {
     stems: STEMS_4,
     cost: 4,
     files: { compact: ftFiles('_fp16weights', 166), full: ftFiles('', 316) },
+    hfRepo: 'StemSplitio/htdemucs-ft-onnx',
   },
   htdemucs_6s: {
     id: 'htdemucs_6s',
@@ -65,6 +69,7 @@ export const MODELS: Record<ModelId, ModelInfo> = {
       compact: [file('StemSplitio/htdemucs-6s-onnx', 'htdemucs_6s_fp16weights.onnx', 136, [0, 1, 2, 3, 4, 5])],
       full: [file('StemSplitio/htdemucs-6s-onnx', 'htdemucs_6s.onnx', 258, [0, 1, 2, 3, 4, 5])],
     },
+    hfRepo: 'StemSplitio/htdemucs-6s-onnx',
   },
 };
 

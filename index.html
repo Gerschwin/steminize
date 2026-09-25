@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Stemdeck</title>
+    <title>Steminize</title>
     <meta name="description" content="Split songs into vocals, drums, bass and more. Runs entirely on your device." />
     <meta name="theme-color" content="#0f1115" />
     <link rel="icon" href="./icon.svg" type="image/svg+xml" />
@@ -14,7 +14,7 @@
     <header class="top">
       <div class="brand">
         <img src="./icon.svg" alt="" width="28" height="28" />
-        <span>Stemdeck</span>
+        <span>Steminize</span>
         <small class="ver" id="appVersion"></small>
       </div>
       <div class="chips">
@@ -44,6 +44,7 @@
           <span class="muted small">Already have separate tracks?</span>
           <label class="btn tiny ghost" title="Open several audio files as one song, one lane each (no separation)">Open multitrack…<input type="file" id="multiFiles" accept="audio/*,.mp3,.wav,.flac,.ogg,.m4a,.aac,.opus,.aiff,.aif" multiple hidden /></label>
           <label class="btn tiny ghost" id="multiFolderLabel" title="Open every audio file in a folder as one song">Open folder…<input type="file" id="multiFolder" webkitdirectory multiple hidden /></label>
+          <button class="btn tiny ghost" type="button" id="ytBtn" title="Search YouTube and download a track to separate" hidden>From YouTube…</button>
         </div>
         <p class="use-sum muted small">New songs use <b id="useSum"></b> · <button class="linkish" type="button" id="changeSettings">change</button></p>
 
@@ -180,14 +181,28 @@
           </div>
 
           <div class="transport">
-            <button class="play" id="playBtn" aria-label="Play">
-              <svg viewBox="0 0 24 24" class="i-play"><path d="M8 5v14l11-7z"/></svg>
-              <svg viewBox="0 0 24 24" class="i-pause"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
-            </button>
-            <div class="time"><span id="timeNow">0:00</span><span class="muted"> / <span id="timeTotal">0:00</span></span></div>
             <div class="ov-col">
               <div class="overview" id="overviewWrap"><canvas id="overview"></canvas></div>
               <input type="range" id="viewScroll" min="0" max="1000" value="0" hidden aria-label="Scroll the zoomed waveform" />
+            </div>
+            <div class="transport-bar">
+              <button class="btn tbtn" id="toStartBtn" type="button" title="Jump to the start" aria-label="Jump to the start">
+                <svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM19 5v14l-11-7z"/></svg>
+              </button>
+              <button class="btn tbtn" id="rewindBtn" type="button" title="Skip back 5 s" aria-label="Skip back 5 s">
+                <svg viewBox="0 0 24 24"><path d="M20 6v12l-8-6zM12 6v12l-8-6z"/></svg>
+              </button>
+              <button class="play" id="playBtn" aria-label="Play">
+                <svg viewBox="0 0 24 24" class="i-play"><path d="M8 5v14l11-7z"/></svg>
+                <svg viewBox="0 0 24 24" class="i-pause"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
+              </button>
+              <button class="btn tbtn" id="ffBtn" type="button" title="Skip forward 5 s" aria-label="Skip forward 5 s">
+                <svg viewBox="0 0 24 24"><path d="M4 6v12l8-6zM12 6v12l8-6z"/></svg>
+              </button>
+              <button class="btn tbtn" id="toEndBtn" type="button" title="Jump to the end" aria-label="Jump to the end">
+                <svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM5 5v14l11-7z"/></svg>
+              </button>
+              <div class="time"><span id="timeNow">0:00</span><span class="muted"> / <span id="timeTotal">0:00</span></span></div>
             </div>
           </div>
 
@@ -234,6 +249,9 @@
               <div class="drawer-tabs">
                 <button class="dtab" type="button" data-tab="practice" aria-expanded="false"><span class="chev">▸</span> Practice <span class="dsum" id="sumPractice"></span></button>
                 <button class="dtab" type="button" data-tab="beat" aria-expanded="false"><span class="chev">▸</span> Tempo &amp; key <span class="dsum" id="sumBeat"></span></button>
+                <button class="dtab" type="button" id="liveTab" data-tab="live" aria-expanded="false" hidden><span class="chev">▸</span> Live input <span class="dsum" id="sumLive"></span></button>
+                <button class="dtab" type="button" data-tab="tuner" aria-expanded="false"><span class="chev">▸</span> Tuner <span class="dsum" id="sumTuner"></span></button>
+                <button class="dtab" type="button" data-tab="scratch" aria-expanded="false"><span class="chev">▸</span> Scratchpad <span class="dsum" id="sumScratch"></span></button>
               </div>
               <div class="dpane" data-pane="practice" hidden>
                 <div class="tool practice">
@@ -284,13 +302,46 @@
                   </div>
                 </div>
               </div>
+              <div class="dpane" data-pane="live" hidden>
+                <div class="tool live">
+                  <button class="btn tiny toggle" id="liveBtn" type="button" aria-pressed="false" title="Play a real instrument or mic live alongside the tracks (not recorded)">Monitor</button>
+                  <select id="liveDevice" title="Input device" hidden></select>
+                  <div class="live-meter" id="liveMeter" hidden><i id="liveMeterBar"></i></div>
+                  <label class="mini vol" id="liveVolWrap" hidden><span>Level</span><input type="range" id="liveVol" min="0" max="1.5" step="0.01" value="0.8" /></label>
+                  <label class="mini pan" id="livePanWrap" hidden title="Pan (double-click to centre)"><span>Pan</span><input type="range" id="livePan" min="-1" max="1" step="0.05" value="0" /><output id="livePanOut">C</output></label>
+                  <span class="muted small" id="liveStatus"></span>
+                </div>
+              </div>
+              <div class="dpane" data-pane="tuner" hidden>
+                <div class="tool tuner">
+                  <select id="tunerSource" title="What to tune against"></select>
+                  <div class="tuner-display">
+                    <span class="tuner-note" id="tunerNote">–</span>
+                    <div class="tuner-meter"><span class="tuner-mid"></span><i id="tunerNeedle"></i></div>
+                    <span class="muted small" id="tunerHz"></span>
+                  </div>
+                  <span class="muted small" id="tunerStatus">Play a single note</span>
+                </div>
+              </div>
+              <div class="dpane" data-pane="scratch" hidden>
+                <div class="tool scratch-tabs">
+                  <button class="btn tiny ghost toggle" type="button" id="scratchTabLyrics" aria-pressed="true">Lyrics</button>
+                  <button class="btn tiny ghost toggle" type="button" id="scratchTabTab" aria-pressed="false">Tab</button>
+                  <button class="btn tiny ghost toggle" type="button" id="scratchTabDrums" aria-pressed="false">Drum tab</button>
+                  <button class="btn tiny ghost toggle" type="button" id="scratchTabNotes" aria-pressed="false">Notes</button>
+                </div>
+                <textarea class="scratch-area" id="scratchLyrics" placeholder="Lyrics…" spellcheck="true"></textarea>
+                <textarea class="scratch-area mono" id="scratchTab" placeholder="e|--------------------|&#10;B|--------------------|&#10;G|--------------------|&#10;D|--------------------|&#10;A|--------------------|&#10;E|--------------------|" spellcheck="false" wrap="off" hidden></textarea>
+                <textarea class="scratch-area mono" id="scratchDrums" placeholder="Hh|x-x-x-x-x-x-x-x-|&#10;Sn|----o-------o---|&#10;Bd|o-------o-------|" spellcheck="false" wrap="off" hidden></textarea>
+                <textarea class="scratch-area" id="scratchNotes" placeholder="Notes, song sections, anything else…" spellcheck="true" hidden></textarea>
+              </div>
             </div>
           </div>
 
           <div class="lanes xlanes" id="xlanes"></div>
           <div class="lanes" id="lanes"></div>
           <div class="shortcuts-row">
-            <p class="muted small shortcuts">Space / PageDown play · PageUp restart section · M marker · + − 0 zoom · ← → skip 5 s · L loop · [ ] loop points · F freeze · 1–6 mute</p>
+            <p class="muted small shortcuts">Space / PageDown play · PageUp restart section · M marker · + − 0 zoom · Shift + − track height · ← → skip 5 s · L loop · [ ] loop points · F freeze · 1–6 mute</p>
             <button class="btn tiny ghost toggle" id="pedalBtn" aria-pressed="false" title="For page-turner pedals that send arrow keys: right/down = play/pause, left/up = restart section">Foot pedal mode</button>
           </div>
         </div>
@@ -308,6 +359,21 @@
         <span class="muted small" id="storageInfo"></span>
         <label class="btn ghost">Import model file…<input type="file" id="importModel" accept=".onnx" multiple hidden /></label>
       </div>
+    </dialog>
+
+    <dialog id="ytDlg">
+      <form method="dialog" class="dlg-head">
+        <h2>From YouTube</h2>
+        <button class="btn tiny ghost" aria-label="Close">Close</button>
+      </form>
+      <form id="ytSearchForm" class="yt-search">
+        <input type="text" id="ytSong" placeholder="Song name" autocomplete="off" />
+        <input type="text" id="ytArtist" placeholder="Artist" autocomplete="off" />
+        <button class="btn tiny primary" type="submit">Search</button>
+      </form>
+      <p class="muted small">Downloads run locally via yt-dlp, straight into the import queue. You're responsible for having the right to use anything you download.</p>
+      <p class="muted small" id="ytStatus"></p>
+      <div class="yt-results" id="ytResults"></div>
     </dialog>
 
     <div class="toasts" id="toasts" aria-live="polite"></div>

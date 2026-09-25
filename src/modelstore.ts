@@ -4,7 +4,7 @@
 
 import type { ModelFile } from './models.ts';
 
-const CACHE = 'stemdeck-models-v1';
+const CACHE = 'steminize-models-v1';
 const memory = new Map<string, ArrayBuffer>();
 const hasCaches = () => typeof caches !== 'undefined';
 
