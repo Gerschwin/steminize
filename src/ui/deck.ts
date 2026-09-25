@@ -40,6 +40,8 @@ export interface Result {
   midi?: Record<string, NoteEvent[]>;
   /** Note energy per stem for the note view (memory only). */
   cqt?: Map<string, { c: Cqt; peak: number }>;
+  /** Live-recorded takes, loaded from the library alongside the stems (see the Live input drawer). One entry per recorded source (bass, guitar, ...). */
+  takeGroups?: { id: string; activeTake?: string; takes: { id: string; data: Stereo; note?: string }[] }[];
 }
 
 type Snap = 'off' | 'beat' | 'bar';
@@ -93,6 +95,9 @@ interface Marker {
 const FINE = 256; // samples per bucket in the fine peak arrays used for zoomed drawing
 // Matches the CSS default track height: below that the waveform becomes too thin to read.
 const LANE_MIN_H = 58;
+// With per-track Pan sliders shown, the control panel grows a row taller: below this the
+// waveform falls short of it again (matches .lanes.show-pan .wave in styles.css).
+const PAN_MIN_H = 88;
 
 interface Lane {
   name: string;
@@ -112,6 +117,22 @@ interface Lane {
   layers?: [HTMLCanvasElement, HTMLCanvasElement];
   /** This track's own zoom, independent of the shared view; unset follows the shared view. */
   ownView?: { start: number; end: number };
+  /** True for a lane that holds live-recorded takes (a song can have several — bass, guitar,
+   * ...); all its takes share this one mixer slot, only the active one is ever actually mixed in. */
+  recordGroup?: boolean;
+  /** Stable internal id for a recordGroup lane, used as its takes' storage filename prefix (its
+   * own display name is just the lane's normal, renameable label — this is never shown). */
+  groupId?: string;
+  takes?: Take[];
+  activeTakeId?: string;
+  takesEl?: HTMLElement; // the collapsed-takes strip under this lane, once it has more than one
+}
+
+interface Take {
+  id: string; // "take-1", "take-2", ... also the saved filename stem
+  data: Stereo;
+  peaks: Float32Array;
+  note?: string; // freeform, e.g. "rushed the bridge" — a reminder for telling takes apart later
 }
 
 /** Peak level per FINE-sample bucket, averaged across channels. */
@@ -159,6 +180,44 @@ function laneLabel(l: Pick<Lane, 'name' | 'label'>) {
   return l.label ?? (l.name.startsWith('no_') ? `No ${l.name.slice(3)}` : l.name);
 }
 
+/** Restores a line's leading "label|" (e.g. "HH|") if it's been damaged: the pipe deleted on its own, or the whole prefix gone. Already-correct lines pass through unchanged. */
+function fixLinePrefix(line: string, templateLine: string) {
+  const pipeIdx = templateLine.indexOf('|');
+  if (pipeIdx < 0) return line;
+  const label = templateLine.slice(0, pipeIdx);
+  const prefix = templateLine.slice(0, pipeIdx + 1);
+  if (line.startsWith(prefix)) return line;
+  if (line.startsWith(label)) return `${label}|${line.slice(label.length)}`;
+  return prefix + line;
+}
+
+/**
+ * Adds more bars to a tab/drum-tab, each line's own trailing "|" kept at the end so the lines
+ * stay lined up. An empty box gets the blank template back rather than nothing to extend. Within
+ * the template's line count, any row that's missing or was emptied out (a string deleted along
+ * with its content, not just missing from the end) gets that string's line restored from the
+ * template, brought up to the other lines' width, before everyone gets the new bars. A line whose
+ * leading "label|" was damaged (e.g. just the "|" deleted) gets that fixed too, not just extended
+ * as-is. Extra lines past the template (freeform notes below the tab) are left alone if blank,
+ * extended if not.
+ */
+function extendTabText(text: string, template: string, addChars = 16) {
+  if (!text.trim()) return template;
+  const templateLines = template.split('\n');
+  const lines = text.split('\n');
+  while (lines.length < templateLines.length) lines.push('');
+  for (let i = 0; i < templateLines.length; i++) lines[i] = lines[i].trim() ? fixLinePrefix(lines[i], templateLines[i]) : templateLines[i];
+  const maxLen = Math.max(...lines.slice(0, templateLines.length).map((l) => l.length));
+  const pad = (line: string, len: number, ch: string) => (line.endsWith('|') ? `${line.slice(0, -1)}${ch.repeat(len)}|` : line + ch.repeat(len));
+  return lines
+    .map((line, i) => {
+      if (i >= templateLines.length) return line.trim() ? pad(line, addChars, '-') : line;
+      if (line.length < maxLen) line = pad(line, maxLen - line.length, '-');
+      return pad(line, addChars, '-');
+    })
+    .join('\n');
+}
+
 function waveLayer(peaks: Float32Array, w: number, hgt: number, colour: string, scale: number) {
   const c = document.createElement('canvas');
   c.width = w;
@@ -190,6 +249,14 @@ export class Deck {
   onAnalysisChange: (r: Result) => void = () => {};
   /** Called when the song is renamed, so the library entry (if any) can be updated. */
   onRename: (title: string) => void = () => {};
+  /** A new take was recorded and is now the active one; save it (and which one is active) to the library, if this song is kept there. `groupId` identifies which recording (bass, guitar, ...) it belongs to. */
+  onTakeAdded: (groupId: string, take: { id: string; data: Stereo; note?: string }) => Promise<void> = () => Promise.resolve();
+  /** A different existing take was switched to. */
+  onTakeSelected: (groupId: string, takeId: string) => void = () => {};
+  /** A take was discarded; remove it from the library, if this song is kept there. */
+  onTakeRemoved: (groupId: string, takeId: string) => Promise<void> = () => Promise.resolve();
+  /** A take's note was edited; metadata only, no audio to re-save. */
+  onTakeNoteChanged: (groupId: string, takeId: string, note: string) => void = () => {};
   /** Ranks keys for the song, or for a range of frames. */
   rankKeys: (r: Result, start?: number, end?: number) => Promise<KeyCandidate[]> = () => Promise.resolve([]);
   /** Provides onset envelopes for a song that doesn't have them in memory. */
@@ -199,6 +266,7 @@ export class Deck {
   /** The track scroll-to-zoom applies to; others just scroll the page. Click a track to pick it. */
   private selectedLane: Lane | null = null;
   private stopLiveInputUi: () => void = () => {};
+  private refreshRecordTargetsUi: () => void = () => {};
   private overviewPeaks = new Float32Array(0);
   private overviewScale = 1;
   private laneScale = 1;
@@ -215,6 +283,10 @@ export class Deck {
   private tx: Transcribe;
   private scratch: ScratchState = {};
   private scratchAreas!: { lyrics: HTMLTextAreaElement; tab: HTMLTextAreaElement; drums: HTMLTextAreaElement; notes: HTMLTextAreaElement };
+  // ---- a live recording being drawn in as its own track while it's captured ----
+  private recordLane: Lane | null = null;
+  private recordStartPos = 0;
+  private recordDrawTimer = 0;
 
   constructor(private settings: () => Settings) {
     this.player.onState = (s) => {
@@ -253,6 +325,13 @@ export class Deck {
     const showPan = (on: boolean) => {
       pressed(panBtn, on);
       $('lanes').classList.toggle('show-pan', on);
+      // Tracks with an explicit (drag-resized) height keep it, but never smaller than what
+      // the current control panel needs, so toggling Pan can't leave them shorter than it.
+      const floor = this.laneMinH();
+      for (const l of this.lanes) {
+        if (l.height == null) continue;
+        (l.el.querySelector('.wave') as HTMLElement).style.height = `${Math.max(l.height, floor)}px`;
+      }
       try {
         localStorage.setItem('steminize.showPan', on ? '1' : '');
       } catch {
@@ -315,6 +394,347 @@ export class Deck {
     return this.r;
   }
 
+  /** Builds one track's DOM and wiring (mute/solo/EQ/vol/pan/rename/resize/zoom/export) and appends it to #lanes. Shared by the initial song-open loop and by a finished live recording, which adds itself as a lane the same way. */
+  private buildLane(s: { name: string; data: Stereo }, i: number, colourOverride?: string): Lane {
+    const colour = colourOverride ?? stemColour(s.name, i);
+    const canvas = h('canvas');
+    const mute = h('button', { class: 'ms m', type: 'button', title: `Mute (${i + 1})` }, 'M');
+    const solo = h('button', { class: 'ms s', type: 'button', title: 'Solo' }, 'S');
+    const eqBtn = h('button', { class: 'ms eq', type: 'button', title: 'EQ: presets, low/high cut and a focus band' }, 'EQ');
+    const dl = h('button', { class: 'dl', type: 'button', title: `Save ${laneLabel({ name: s.name })}` });
+    dl.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>';
+    const vol = h('input', { type: 'range', min: '0', max: '1.5', step: '0.01', value: '1', title: 'Level' });
+    const pan = h('input', { type: 'range', min: '-1', max: '1', step: '0.05', value: '0', title: 'Pan (double-click to centre)' });
+    const panOut = h('output', {}, 'C');
+    const nameBtn = h(
+      'button',
+      { class: 'name', type: 'button', title: 'Double-click to rename' },
+      laneLabel({ name: s.name }),
+      h('span', { class: 'take-badge muted' }),
+    );
+    const ctl = h(
+      'div',
+      { class: 'lane-ctl' },
+      nameBtn,
+      mute,
+      solo,
+      eqBtn,
+      dl,
+      h('label', { class: 'mini vol' }, h('span', {}, 'Vol'), vol),
+      h('label', { class: 'mini pan' }, h('span', {}, 'Pan'), pan, panOut),
+    );
+    const wave = h('div', { class: 'wave', title: 'Click to seek and pick this track; scroll to zoom once it’s picked' }, canvas);
+    const resizeHandle = h('div', {
+      class: 'lane-resize',
+      title: 'Drag to resize this track (or Shift with + / − for every track). Double-click to reset.',
+    });
+    const el = h('div', { class: 'lane', style: `--c:${colour}` }, ctl, wave, resizeHandle);
+    $('lanes').append(el);
+    const lane: Lane = { name: s.name, colour, vol: 1, pan: 0, mute: false, solo: false, el, canvas, peaks: peaksOf(s.data), data: s.data };
+    eqBtn.onclick = () => this.toggleEq(lane, lane.colour);
+    pressed(eqBtn, false);
+    nameBtn.ondblclick = () => this.renameLane(lane, nameBtn, dl);
+    mute.onclick = () => this.setLane(lane, { mute: !lane.mute });
+    solo.onclick = () => this.setLane(lane, { solo: !lane.solo });
+    vol.oninput = () => this.setLane(lane, { vol: Number(vol.value) });
+    const setPan = (v: number) => {
+      pan.value = String(v);
+      panOut.textContent = v === 0 ? 'C' : `${v < 0 ? 'L' : 'R'}${Math.round(Math.abs(v) * 100)}`;
+      this.setLane(lane, { pan: v });
+    };
+    pan.oninput = () => setPan(Number(pan.value));
+    pan.ondblclick = () => setPan(0);
+    dl.onclick = () => this.saveStem(this.lanes.indexOf(lane));
+    wave.onclick = (e) => {
+      const view = lane.ownView ?? this.view;
+      const f = Math.max(0, Math.min(1, e.offsetX / wave.clientWidth));
+      this.player.seek(view.start + f * (view.end - view.start));
+    };
+    // Scroll-to-zoom only acts on the picked track, zooming just that track, so scrolling
+    // the page past the others doesn't hijack it or change what they're showing.
+    el.addEventListener('click', () => this.selectLane(lane));
+    wave.addEventListener(
+      'wheel',
+      (e) => {
+        if (this.selectedLane === lane) this.onWheel(e, wave, lane);
+      },
+      { passive: false },
+    );
+    let dragFromH: number | null = null;
+    resizeHandle.addEventListener('pointerdown', (e) => {
+      resizeHandle.setPointerCapture(e.pointerId);
+      dragFromH = wave.clientHeight - e.clientY;
+    });
+    resizeHandle.addEventListener('pointermove', (e) => {
+      if (dragFromH == null) return;
+      wave.style.height = `${Math.max(this.laneMinH(), Math.min(500, dragFromH + e.clientY))}px`;
+      this.dirty = true;
+    });
+    resizeHandle.addEventListener('pointerup', () => {
+      if (dragFromH == null) return;
+      dragFromH = null;
+      lane.height = wave.clientHeight;
+      this.emit();
+    });
+    resizeHandle.ondblclick = () => {
+      wave.style.height = '';
+      lane.height = undefined;
+      this.dirty = true;
+      this.emit();
+    };
+    pressed(mute, false);
+    pressed(solo, false);
+    return lane;
+  }
+
+  /** Every lane that holds live-recorded takes (e.g. one for bass, one for guitar). */
+  private findRecordGroups() {
+    return this.lanes.filter((l) => l.recordGroup);
+  }
+
+  /** How many takes to keep per recording (oldest dropped first past this); a global preference, set in the Live input drawer. */
+  private maxTakes(): number {
+    try {
+      const v = Number(localStorage.getItem('steminize.maxTakes'));
+      if (Number.isFinite(v) && v >= 1) return Math.min(20, Math.round(v));
+    } catch {
+      /* ignore */
+    }
+    return 5;
+  }
+
+  /** Starts drawing a live waveform for a new take in progress. Pass an existing take-group lane
+   * to add another take to it (e.g. a second bass take); omit it to start a new named group (e.g.
+   * switching to guitar) — its mixer slot is created once and reused by every take put into it,
+   * only the active one is ever actually in the mix. finishRecordLane() turns the draft into a
+   * real take once it's stopped; this is just visual feedback that it's actually picking up
+   * signal, so it doesn't touch the group's own name (set once, renameable like any track). */
+  private beginRecordLane(target?: Lane) {
+    if (!this.r) return;
+    const bucketCount = Math.max(1, Math.ceil(this.length / FINE));
+    let lane = target;
+    if (!lane) {
+      const data: Stereo = [new Float32Array(this.length), new Float32Array(this.length)];
+      lane = this.buildLane({ name: `Track ${this.findRecordGroups().length + 1}`, data }, this.lanes.length, '#ef4444');
+      lane.recordGroup = true;
+      lane.groupId = Math.random().toString(36).slice(2, 10);
+      lane.takes = [];
+      this.lanes.push(lane);
+      this.player.addTrack(data);
+      this.player.setGains(this.gains(), this.pans(), this.eqs());
+    } else {
+      lane.data = [new Float32Array(this.length), new Float32Array(this.length)];
+    }
+    lane.peaks = new Float32Array(bucketCount);
+    lane.el.classList.add('recording');
+    this.recordLane = lane;
+    this.recordStartPos = this.player.state.pos;
+    // Grows by wall-clock time, not the playhead: recording works whether or not the song is
+    // actually playing, so tying live drawing to a possibly-stationary playhead could leave it
+    // updating a single bucket in place instead of visibly filling in left to right.
+    const wallStart = performance.now();
+    this.recordDrawTimer = window.setInterval(() => {
+      const l = this.recordLane;
+      if (!l) return;
+      const elapsedFrames = Math.round(((performance.now() - wallStart) / 1000) * SR);
+      const bucket = Math.floor((this.recordStartPos + elapsedFrames) / FINE);
+      if (bucket >= 0 && bucket < l.peaks.length) {
+        // A live meter reading is usually well under the amplitude the shared display scale
+        // expects (calibrated off the separated stems), so boost it a bit here purely for
+        // visibility; it has no bearing on the real, accurate peaks computed after stopping.
+        l.peaks[bucket] = Math.max(l.peaks[bucket], Math.min(1, this.player.monitorLevel() * 2.5));
+        l.layers = undefined;
+        this.dirty = true;
+      }
+    }, 80);
+  }
+
+  /** Stops the live waveform drawing and, given the finished recording (or null if there was
+   * nothing to keep), decodes it, places it in the song at the frame position recording started
+   * at, and adds it as a new take — selected, saved, and mixed in at the group's one slot. */
+  private async finishRecordLane(blob: Blob | null) {
+    clearInterval(this.recordDrawTimer);
+    const lane = this.recordLane;
+    this.recordLane = null;
+    if (!lane) return;
+    lane.el.classList.remove('recording');
+    const takes = lane.takes ?? [];
+    if (!blob) {
+      if (takes.length) this.selectTake(lane, takes[takes.length - 1]);
+      else {
+        lane.el.remove();
+        this.lanes.splice(this.lanes.indexOf(lane), 1);
+      }
+      return;
+    }
+    try {
+      const ctx = new OfflineAudioContext(2, 1, SR);
+      const audio = await ctx.decodeAudioData(await blob.arrayBuffer());
+      const ch = (i: number) => audio.getChannelData(Math.min(i, audio.numberOfChannels - 1));
+      const raw: Stereo = [ch(0), ch(1)];
+      const data: Stereo = [new Float32Array(this.length), new Float32Array(this.length)];
+      const offset = Math.min(this.length, Math.max(0, this.recordStartPos));
+      const n = Math.min(raw[0].length, this.length - offset);
+      if (n > 0) {
+        data[0].set(raw[0].subarray(0, n), offset);
+        data[1].set(raw[1].subarray(0, n), offset);
+      }
+      const take: Take = { id: `take-${takes.length + 1}`, data, peaks: peaksOf(data) };
+      lane.takes = [...takes, take];
+      if (takes.length === 0) {
+        lane.colour = stemColour('take', this.lanes.indexOf(lane));
+        lane.el.style.setProperty('--c', lane.colour);
+      }
+      // Oldest take(s) first, once there are more than the "Keep last" setting allows.
+      const cap = this.maxTakes();
+      const dropped: Take[] = [];
+      while (lane.takes.length > cap) dropped.push(lane.takes.shift()!);
+      this.selectTake(lane, take);
+      this.refreshTunerSources();
+      await this.onTakeAdded(lane.groupId!, { id: take.id, data: take.data });
+      for (const d of dropped) await this.onTakeRemoved(lane.groupId!, d.id).catch(() => {});
+      toast(dropped.length ? `${take.id} added (dropped ${dropped.map((d) => d.id).join(', ')})` : `${take.id} added`);
+    } catch (e) {
+      if (takes.length) this.selectTake(lane, takes[takes.length - 1]);
+      else {
+        lane.el.remove();
+        this.lanes.splice(this.lanes.indexOf(lane), 1);
+      }
+      toast(`Couldn't add the recording: ${(e as Error).message}`, true);
+    }
+  }
+
+  /** Makes `take` the active, audible one for its take-group lane: swaps the displayed waveform
+   * and the mixer's audio at that one shared slot, and rebuilds the collapsed-takes strip. */
+  private selectTake(lane: Lane, take: Take) {
+    lane.activeTakeId = take.id;
+    lane.data = take.data;
+    lane.peaks = take.peaks;
+    lane.layers = undefined;
+    const badge = lane.el.querySelector('.take-badge');
+    if (badge) badge.textContent = (lane.takes?.length ?? 0) > 1 ? ` · ${take.id}` : '';
+    this.laneScale = 1 / Math.max(1e-3, ...this.lanes.flatMap((l) => Math.max(...l.peaks)));
+    this.player.replaceTrack(this.lanes.indexOf(lane), take.data);
+    this.renderTakeStrip(lane);
+    this.dirty = true;
+    this.emit();
+  }
+
+  /** The row of other takes for a lane, below its main controls: click one to switch to it, or delete it. */
+  /** A click-to-edit note button for one take, reused for both the active take's row and the collapsed others. */
+  private takeNoteEditor(lane: Lane, t: Take): HTMLElement {
+    const val = t.note ?? '';
+    const btn = h('button', { class: 'take-note', type: 'button', title: val || 'Add a note' }, val || '+ note');
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const input = h('input', { type: 'text', class: 'take-note-edit', value: val, placeholder: 'Note…', maxLength: 80 } as any);
+      const finish = (save: boolean) => {
+        if (save && input.value.trim() !== (t.note ?? '')) {
+          t.note = input.value.trim() || undefined;
+          this.onTakeNoteChanged(lane.groupId!, t.id, t.note ?? '');
+        }
+        input.replaceWith(this.takeNoteEditor(lane, t));
+      };
+      input.onclick = (e2) => e2.stopPropagation();
+      input.onkeydown = (e2) => {
+        e2.stopPropagation();
+        if (e2.key === 'Enter') finish(true);
+        if (e2.key === 'Escape') finish(false);
+      };
+      input.onblur = () => finish(true);
+      btn.replaceWith(input);
+      input.focus();
+      input.select();
+    };
+    return btn;
+  }
+
+  /** Every take for a lane, one row each: the active one first (no switch/delete, just its note),
+   * then the others (click to switch, × to delete). Notes are editable on any of them. */
+  private renderTakeStrip(lane: Lane) {
+    const takes = lane.takes ?? [];
+    if (!takes.length) {
+      lane.takesEl?.remove();
+      lane.takesEl = undefined;
+      return;
+    }
+    lane.takesEl ??= h('div', { class: 'take-strip' });
+    if (!lane.takesEl.isConnected) lane.el.insertBefore(lane.takesEl, lane.el.lastElementChild);
+    lane.takesEl.replaceChildren(
+      ...takes.map((t) => {
+        const active = t.id === lane.activeTakeId;
+        if (active) return h('div', { class: 'take-row active' }, h('span', { class: 'take-chip current' }, t.id), this.takeNoteEditor(lane, t));
+        const switchBtn = h('button', { class: 'take-chip', type: 'button', title: `Switch to ${t.id}` }, t.id);
+        switchBtn.onclick = () => {
+          this.selectTake(lane, t);
+          this.onTakeSelected(lane.groupId!, t.id);
+        };
+        const del = h('button', { class: 'take-del', type: 'button', title: `Delete ${t.id}` }, '×');
+        del.onclick = (e) => {
+          e.stopPropagation();
+          void this.deleteTake(lane, t);
+        };
+        return h('div', { class: 'take-row' }, switchBtn, this.takeNoteEditor(lane, t), del);
+      }),
+    );
+  }
+
+  private async deleteTake(lane: Lane, take: Take) {
+    if (!confirm(`Delete ${take.id}? This can't be undone.`)) return;
+    lane.takes = (lane.takes ?? []).filter((t) => t.id !== take.id);
+    this.renderTakeStrip(lane);
+    try {
+      await this.onTakeRemoved(lane.groupId!, take.id);
+    } catch (e) {
+      toast(`Couldn't delete ${take.id}: ${(e as Error).message}`, true);
+    }
+    if (!lane.takes.length) {
+      // Nothing left at this slot. There's no message to remove a track from the player outright,
+      // so silence it in place (a zeroed stem is inaudible either way) and drop its row.
+      this.player.replaceTrack(this.lanes.indexOf(lane), [new Float32Array(this.length), new Float32Array(this.length)]);
+      lane.takesEl?.remove();
+      lane.el.remove();
+      this.lanes.splice(this.lanes.indexOf(lane), 1);
+      this.player.setGains(this.gains(), this.pans(), this.eqs());
+      this.refreshRecordTargetsUi();
+      this.dirty = true;
+      this.emit();
+    }
+  }
+
+  /** Rebuilds the take-group lane from takes loaded off the library (if any), same shape as a
+   * live recording produces: one lane, one mixer slot, the saved active take selected. Appended
+   * after the stem lanes, same as a live recording would be, so a saved DeckState's per-lane
+   * settings (indexed positionally) still line up with the right lane on reopen. */
+  private restoreTakes(r: Result) {
+    if (!r.takeGroups?.length) return;
+    for (const g of r.takeGroups) {
+      if (!g.takes.length) continue;
+      const placeholder: Stereo = [new Float32Array(this.length), new Float32Array(this.length)];
+      const lane = this.buildLane({ name: `Track ${this.findRecordGroups().length + 1}`, data: placeholder }, this.lanes.length, '#ef4444');
+      lane.recordGroup = true;
+      lane.groupId = g.id;
+      const takes: Take[] = g.takes.map((t) => ({ id: t.id, data: t.data, peaks: peaksOf(t.data), note: t.note }));
+      const active = takes.find((t) => t.id === g.activeTake) ?? takes[takes.length - 1];
+      // The "Keep last" cap may have been lowered since these were saved: trim down to it now,
+      // oldest first, but never the one that's actually selected.
+      const cap = this.maxTakes();
+      const dropped: Take[] = [];
+      while (takes.length > cap) {
+        const i = takes.findIndex((t) => t !== active);
+        if (i < 0) break;
+        dropped.push(takes.splice(i, 1)[0]);
+      }
+      lane.takes = takes;
+      this.lanes.push(lane);
+      this.player.addTrack(placeholder);
+      this.selectTake(lane, active);
+      for (const d of dropped) void this.onTakeRemoved(g.id, d.id).catch(() => {});
+    }
+    this.refreshRecordTargetsUi();
+  }
+
   open(r: Result, state?: DeckState) {
     this.stopLiveInputUi();
     this.quiet = true;
@@ -327,6 +747,7 @@ export class Deck {
     $('welcome').hidden = true;
     $('deck').hidden = false;
     $('trackTitle').textContent = r.title;
+    this.updateLyricsLink();
     const s = r.settings;
     const extras =
       r.kind === 'multitrack'
@@ -344,85 +765,9 @@ export class Deck {
     const lanes = $('lanes');
     lanes.replaceChildren();
     this.selectedLane = null;
-    this.lanes = r.stems.map((s, i) => {
-      const colour = stemColour(s.name, i);
-      const canvas = h('canvas');
-      const mute = h('button', { class: 'ms m', type: 'button', title: `Mute (${i + 1})` }, 'M');
-      const solo = h('button', { class: 'ms s', type: 'button', title: 'Solo' }, 'S');
-      const eqBtn = h('button', { class: 'ms eq', type: 'button', title: 'EQ: presets, low/high cut and a focus band' }, 'EQ');
-      const dl = h('button', { class: 'dl', type: 'button', title: `Save ${laneLabel({ name: s.name })}` });
-      dl.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>';
-      const vol = h('input', { type: 'range', min: '0', max: '1.5', step: '0.01', value: '1', title: 'Level' });
-      const pan = h('input', { type: 'range', min: '-1', max: '1', step: '0.05', value: '0', title: 'Pan (double-click to centre)' });
-      const panOut = h('output', {}, 'C');
-      const nameBtn = h('button', { class: 'name', type: 'button', title: 'Double-click to rename' }, laneLabel({ name: s.name }));
-      const ctl = h('div', { class: 'lane-ctl' }, nameBtn, mute, solo, eqBtn, dl,
-        h('label', { class: 'mini vol' }, h('span', {}, 'Vol'), vol),
-        h('label', { class: 'mini pan' }, h('span', {}, 'Pan'), pan, panOut));
-      const wave = h('div', { class: 'wave', title: 'Click to seek and pick this track; scroll to zoom once it’s picked' }, canvas);
-      const resizeHandle = h('div', {
-        class: 'lane-resize',
-        title: 'Drag to resize this track (or Shift with + / − for every track). Double-click to reset.',
-      });
-      const el = h('div', { class: 'lane', style: `--c:${colour}` }, ctl, wave, resizeHandle);
-      lanes.append(el);
-      const lane: Lane = { name: s.name, colour, vol: 1, pan: 0, mute: false, solo: false, el, canvas, peaks: peaksOf(s.data), data: s.data };
-      eqBtn.onclick = () => this.toggleEq(lane, colour);
-      pressed(eqBtn, false);
-      nameBtn.ondblclick = () => this.renameLane(lane, nameBtn, dl);
-      mute.onclick = () => this.setLane(lane, { mute: !lane.mute });
-      solo.onclick = () => this.setLane(lane, { solo: !lane.solo });
-      vol.oninput = () => this.setLane(lane, { vol: Number(vol.value) });
-      const setPan = (v: number) => {
-        pan.value = String(v);
-        panOut.textContent = v === 0 ? 'C' : `${v < 0 ? 'L' : 'R'}${Math.round(Math.abs(v) * 100)}`;
-        this.setLane(lane, { pan: v });
-      };
-      pan.oninput = () => setPan(Number(pan.value));
-      pan.ondblclick = () => setPan(0);
-      dl.onclick = () => this.saveStem(i);
-      wave.onclick = (e) => {
-        const view = lane.ownView ?? this.view;
-        const f = Math.max(0, Math.min(1, e.offsetX / wave.clientWidth));
-        this.player.seek(view.start + f * (view.end - view.start));
-      };
-      // Scroll-to-zoom only acts on the picked track, zooming just that track, so scrolling
-      // the page past the others doesn't hijack it or change what they're showing.
-      el.addEventListener('click', () => this.selectLane(lane));
-      wave.addEventListener(
-        'wheel',
-        (e) => {
-          if (this.selectedLane === lane) this.onWheel(e, wave, lane);
-        },
-        { passive: false },
-      );
-      let dragFromH: number | null = null;
-      resizeHandle.addEventListener('pointerdown', (e) => {
-        resizeHandle.setPointerCapture(e.pointerId);
-        dragFromH = wave.clientHeight - e.clientY;
-      });
-      resizeHandle.addEventListener('pointermove', (e) => {
-        if (dragFromH == null) return;
-        wave.style.height = `${Math.max(LANE_MIN_H, Math.min(500, dragFromH + e.clientY))}px`;
-        this.dirty = true;
-      });
-      resizeHandle.addEventListener('pointerup', () => {
-        if (dragFromH == null) return;
-        dragFromH = null;
-        lane.height = wave.clientHeight;
-        this.emit();
-      });
-      resizeHandle.ondblclick = () => {
-        wave.style.height = '';
-        lane.height = undefined;
-        this.dirty = true;
-        this.emit();
-      };
-      pressed(mute, false);
-      pressed(solo, false);
-      return lane;
-    });
+    this.lanes = r.stems.map((s, i) => this.buildLane(s, i));
     this.player.load(r.stems.map((s) => s.data), this.gains());
+    this.restoreTakes(r);
     if (state) this.applyState(state);
     this.refreshTunerSources();
     this.setTempoPitch(this.tempo, this.pitch, false);
@@ -467,9 +812,11 @@ export class Deck {
       const pan = l.el.querySelectorAll('input[type=range]')[1] as HTMLInputElement;
       pan.value = String(l.pan);
       pan.dispatchEvent(new Event('input'));
-      if (l.height) (l.el.querySelector('.wave') as HTMLElement).style.height = `${l.height}px`;
+      if (l.height) (l.el.querySelector('.wave') as HTMLElement).style.height = `${Math.max(l.height, this.laneMinH())}px`;
       if (l.label) {
-        (l.el.querySelector('.name') as HTMLElement).textContent = laneLabel(l);
+        const nameBtn = l.el.querySelector('.name')!;
+        const badgeText = nameBtn.querySelector('.take-badge')?.textContent ?? '';
+        nameBtn.replaceChildren(laneLabel(l), h('span', { class: 'take-badge muted' }, badgeText));
         (l.el.querySelector('.dl') as HTMLElement).title = `Save ${laneLabel(l)}`;
       }
     });
@@ -661,8 +1008,45 @@ export class Deck {
     const panOut = $('livePanOut');
     const meter = $('liveMeter');
     const meterBar = $('liveMeterBar');
+    const recordTarget = $<HTMLSelectElement>('liveRecordTarget');
+    const recordBtn = $<HTMLButtonElement>('liveRecordBtn');
+    const recordTime = $('liveRecordTime');
     const status = $('liveStatus');
     const sum = $('sumLive');
+
+    const maxTakesInput = $<HTMLInputElement>('liveMaxTakes');
+    maxTakesInput.value = String(this.maxTakes());
+    maxTakesInput.onchange = () => {
+      const v = Math.max(1, Math.min(20, Math.round(Number(maxTakesInput.value)) || 5));
+      maxTakesInput.value = String(v);
+      try {
+        localStorage.setItem('steminize.maxTakes', String(v));
+      } catch {
+        /* ignore */
+      }
+      // Apply immediately to every recording (bass, guitar, ...) that already has more takes than the new cap allows.
+      for (const lane of this.findRecordGroups()) {
+        if (!lane.takes) continue;
+        const active = lane.takes.find((t) => t.id === lane.activeTakeId);
+        while (lane.takes.length > v) {
+          const i = lane.takes.findIndex((t) => t !== active);
+          if (i < 0) break;
+          const [dropped] = lane.takes.splice(i, 1);
+          void this.onTakeRemoved(lane.groupId!, dropped.id).catch(() => {});
+        }
+        this.renderTakeStrip(lane);
+      }
+    };
+
+    const refreshRecordTargets = () => {
+      const groups = this.findRecordGroups();
+      recordTarget.hidden = groups.length === 0;
+      const current = recordTarget.value;
+      recordTarget.replaceChildren(...groups.map((l) => h('option', { value: String(this.lanes.indexOf(l)) }, laneLabel(l))), h('option', { value: 'new' }, '+ New track'));
+      if ([...recordTarget.options].some((o) => o.value === current)) recordTarget.value = current;
+    };
+    this.refreshRecordTargetsUi = refreshRecordTargets;
+    refreshRecordTargets();
 
     const refreshDevices = async () => {
       const inputs = await this.player.listInputs();
@@ -688,6 +1072,9 @@ export class Deck {
       volWrap.hidden = !on;
       panWrap.hidden = !on;
       meter.hidden = !on;
+      recordBtn.hidden = !on;
+      if (on) refreshRecordTargets();
+      else recordTarget.hidden = true;
       if (on) {
         meterTimer = requestAnimationFrame(meterTick);
       } else {
@@ -697,11 +1084,95 @@ export class Deck {
       sum.textContent = on ? 'on' : '';
       sum.classList.toggle('on', on);
     };
+
+    // ---- recording your own take while monitoring, as a new track alongside the others ----
+    let recordStart = 0;
+    let recordTimer = 0;
+    /** The tempo to restore once recording stops, if it had to be forced to 100% to start it. */
+    let restoreTempo: number | null = null;
+    const recordUi = (on: boolean) => {
+      pressed(recordBtn, on);
+      recordBtn.textContent = on ? '■ Stop' : '● Record';
+      recordTime.hidden = !on;
+      if (on) {
+        recordStart = performance.now();
+        recordTime.textContent = '0:00';
+        recordTimer = window.setInterval(() => (recordTime.textContent = fmtTime((performance.now() - recordStart) / 1000)), 500);
+      } else {
+        clearInterval(recordTimer);
+      }
+    };
+    /** Stops an in-progress recording (if any) and turns it into a track. Used by the Record
+     * button and by "Stop" on Monitor itself, so switching off monitoring never silently drops
+     * a take that's in progress. */
+    const finishRecording = async () => {
+      if (!this.player.recording) return;
+      recordUi(false);
+      const take = await this.player.stopRecording();
+      await this.finishRecordLane(take?.blob ?? null);
+      if (restoreTempo != null) {
+        this.setTempoPitch(restoreTempo, this.pitch);
+        restoreTempo = null;
+      }
+    };
+    recordBtn.onclick = () => {
+      if (this.player.recording) {
+        void finishRecording();
+        return;
+      }
+      // Which track this take goes into is decided now, before the lead-in, not after.
+      const targetIdx = recordTarget.hidden || recordTarget.value === 'new' ? NaN : Number(recordTarget.value);
+      const target = Number.isFinite(targetIdx) ? this.lanes[targetIdx] : undefined;
+      void (async () => {
+        recordBtn.disabled = true;
+        try {
+          // A recorded take is raw mic/instrument audio in real wall-clock time; it never goes
+          // through the song's own time-stretcher. Placing it against the song's native timeline
+          // only lines up if that timeline is advancing at 1x, so force 100% tempo for the
+          // recording — restored afterwards — rather than let a slowed-down take quietly drift
+          // out of sync with nothing to show for it until it's too late to redo.
+          if (this.tempo !== 1) {
+            restoreTempo = this.tempo;
+            this.setTempoPitch(1, this.pitch);
+            toast('Tempo reset to 100% for recording');
+          }
+          // Otherwise it's very easy to hit Record on a paused song (or a beat late on a
+          // playing one) and get a take that's nowhere near in sync. Start playback first if
+          // it isn't already, and give a short lead-in — a bar at the song's tempo if known,
+          // else a fixed beat — before capture actually starts, so there's time to come in on
+          // the beat instead of getting cut off mid-breath.
+          if (!this.player.state.playing) await this.player.play();
+          const bpm = this.r?.analysis?.bpm;
+          const leadInMs = bpm ? Math.max(800, Math.min(4000, (60 / bpm) * this.pr.perBar * 1000)) : 1500;
+          status.textContent = 'Get ready…';
+          await new Promise((res) => setTimeout(res, leadInMs));
+          if (!this.player.monitoring) return; // monitoring stopped during the lead-in
+          status.textContent = '';
+          this.player.startRecording();
+          this.beginRecordLane(target);
+          refreshRecordTargets();
+          recordUi(true);
+        } catch (e) {
+          toast(`Couldn't start recording: ${(e as Error).message}`, true);
+        } finally {
+          recordBtn.disabled = false;
+          // Didn't end up recording after all (lead-in cancelled, or it failed to start): put
+          // the tempo back rather than leave it stuck at 100% with nothing to show for it.
+          if (!this.player.recording && restoreTempo != null) {
+            this.setTempoPitch(restoreTempo, this.pitch);
+            restoreTempo = null;
+          }
+        }
+      })();
+    };
+
     this.stopLiveInputUi = () => {
       if (!this.player.monitoring) return;
-      this.player.stopMonitor();
-      setUi(false);
-      status.textContent = '';
+      void finishRecording().then(() => {
+        this.player.stopMonitor();
+        setUi(false);
+        status.textContent = '';
+      });
     };
 
     btn.onclick = async () => {
@@ -834,9 +1305,34 @@ export class Deck {
         pressed(tabBtns[k], k === name);
         areas[k].hidden = k !== name;
       }
+      // Clicking the tab button leaves focus on the button itself, not the text box it reveals,
+      // so typing right after switching tabs (the natural next move) hit the deck's own keyboard
+      // shortcuts instead of the text — a "0"/"-" for tab notation would zoom out, "1"-"6" would
+      // mute a track, etc. Move focus into the box so typing lands there immediately. A no-op if
+      // the pane isn't actually visible yet (e.g. this initial call, before a song is open).
+      areas[name].focus();
     };
     for (const k of Object.keys(tabBtns) as (keyof typeof tabBtns)[]) tabBtns[k].onclick = () => show(k);
     show('lyrics');
+
+    // "Extend line": add more bars to every string/beat line at once, staying lined up, instead
+    // of hand-typing dashes onto each one separately. Works on whichever of Tab/Drum tab is open.
+    const extend = (ta: HTMLTextAreaElement) => {
+      const pos = ta.selectionStart;
+      ta.value = extendTabText(ta.value, ta.placeholder);
+      ta.setSelectionRange(pos, pos);
+      ta.dispatchEvent(new Event('input'));
+      ta.focus();
+    };
+    $('tabExtendBtn').onclick = () => extend(areas.tab.hidden ? areas.drums : areas.tab);
+    for (const ta of [areas.tab, areas.drums])
+      ta.addEventListener('keydown', (e) => {
+        if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          e.preventDefault();
+          extend(ta);
+        }
+      });
+
     areas.lyrics.oninput = () => {
       this.scratch.lyrics = areas.lyrics.value;
       this.updateScratchSummary();
@@ -862,8 +1358,12 @@ export class Deck {
   private applyScratch(s?: ScratchState) {
     this.scratch = { lyrics: s?.lyrics ?? '', tab: s?.tab ?? '', drums: s?.drums ?? '', notes: s?.notes ?? '' };
     this.scratchAreas.lyrics.value = this.scratch.lyrics ?? '';
-    this.scratchAreas.tab.value = this.scratch.tab ?? '';
-    this.scratchAreas.drums.value = this.scratch.drums ?? '';
+    // Tab/Drum tab start with the blank string/beat template actually typed in (not just a
+    // placeholder hint), so there's something to type fret numbers or hits onto directly. Only
+    // for a song that has nothing saved yet; this.scratch itself stays empty until they edit it,
+    // so an untouched template is never mistaken for real content or saved as one.
+    this.scratchAreas.tab.value = this.scratch.tab || this.scratchAreas.tab.placeholder;
+    this.scratchAreas.drums.value = this.scratch.drums || this.scratchAreas.drums.placeholder;
     this.scratchAreas.notes.value = this.scratch.notes ?? '';
     this.updateScratchSummary();
   }
@@ -878,6 +1378,12 @@ export class Deck {
     const sum = $('sumScratch');
     sum.textContent = bits.join(' · ');
     sum.classList.toggle('on', bits.length > 0);
+  }
+
+  /** Points the Scratchpad's "Search lyrics" link at this song's title; never fetched or stored here, just a jump-off search. */
+  private updateLyricsLink() {
+    const title = this.r?.title ?? '';
+    ($('lyricsSearchLink') as HTMLAnchorElement).href = `https://genius.com/search?q=${encodeURIComponent(title)}`;
   }
 
   // ---------- collapsible "Practice" / "Tempo & key" drawer ----------
@@ -1087,11 +1593,13 @@ export class Deck {
       if (done) return;
       done = true;
       if (save) lane.label = input.value.trim() || undefined;
-      nameBtn.textContent = laneLabel(lane);
+      const badgeText = nameBtn.querySelector('.take-badge')?.textContent ?? '';
+      nameBtn.replaceChildren(laneLabel(lane), h('span', { class: 'take-badge muted' }, badgeText));
       dl.title = `Save ${laneLabel(lane)}`;
       input.replaceWith(nameBtn);
       if (save) {
         this.refreshTunerSources();
+        if (lane.recordGroup) this.refreshRecordTargetsUi();
         this.emit();
       }
     };
@@ -1121,6 +1629,7 @@ export class Deck {
       }
       heading.textContent = this.r?.title ?? '';
       input.replaceWith(heading);
+      this.updateLyricsLink();
     };
     input.onkeydown = (e) => {
       e.stopPropagation();
@@ -1377,11 +1886,16 @@ export class Deck {
     this.player.seek(sec < 0 ? pos + sec * SR : Math.min(this.length - SR, pos + sec * SR));
   }
 
+  /** Floor for a track's waveform height: taller while per-track Pan sliders add a row to its control panel. */
+  private laneMinH(): number {
+    return $('lanes').classList.contains('show-pan') ? PAN_MIN_H : LANE_MIN_H;
+  }
+
   /** Grow (positive) or shrink (negative) every track's waveform by `px`, together. */
   private resizeLanes(px: number) {
     for (const l of this.lanes) {
       const wave = l.el.querySelector('.wave') as HTMLElement;
-      l.height = Math.max(LANE_MIN_H, Math.min(500, (l.height ?? wave.clientHeight) + px));
+      l.height = Math.max(this.laneMinH(), Math.min(500, (l.height ?? wave.clientHeight) + px));
       wave.style.height = `${l.height}px`;
     }
     this.dirty = true;
@@ -1428,6 +1942,7 @@ export class Deck {
     const frac = (e: PointerEvent) => Math.max(0, Math.min(1, (e.clientX - wrap.getBoundingClientRect().left) / wrap.clientWidth));
     // (fractions are of the visible range; frameAt() converts)
     wrap.addEventListener('pointerdown', (e) => {
+      if ((e.target as HTMLElement).closest('button')) return; // let the zoom overlay's buttons handle their own clicks
       wrap.setPointerCapture(e.pointerId);
       this.drag = { x0: frac(e), moved: false };
     });
@@ -1460,7 +1975,17 @@ export class Deck {
 
   private initKeys() {
     window.addEventListener('keydown', (e) => {
-      if (!this.r || e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || (e.target as HTMLElement)?.isContentEditable || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (
+        !this.r ||
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement ||
+        (e.target as HTMLElement)?.isContentEditable ||
+        e.metaKey ||
+        e.ctrlKey ||
+        e.altKey
+      )
+        return;
       const k = e.key;
       if (e.code === 'Space' || k === 'PageDown' || k === 'MediaPlayPause' || (this.pedal && ['ArrowRight', 'ArrowDown', 'Enter'].includes(k))) this.toggle();
       else if (k === 'PageUp' || k === 'Home' || (this.pedal && ['ArrowLeft', 'ArrowUp'].includes(k))) this.restart();

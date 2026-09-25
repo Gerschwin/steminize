@@ -303,7 +303,13 @@ export class Transcribe {
     // Computer keyboard as a piano while the Notes view is showing. Capture phase + stopPropagation
     // so mapped keys (some overlap the deck's own shortcuts, e.g. L, M) play a note instead here.
     const pianoKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || (e.target as HTMLElement)?.isContentEditable) return null;
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement ||
+        (e.target as HTMLElement)?.isContentEditable
+      )
+        return null;
       if (e.metaKey || e.ctrlKey || e.altKey) return null;
       const offset = PIANO_KEYS[e.key.toLowerCase()];
       return offset == null ? null : PIANO_BASE + offset;

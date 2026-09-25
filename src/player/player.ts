@@ -44,6 +44,10 @@ export class Player {
   private monitorGain: GainNode | null = null;
   private monitorPanner: StereoPannerNode | null = null;
   private monitorAnalyser: AnalyserNode | null = null;
+  // ---- recording your own take while monitoring (not the separated stems) ----
+  private recorder: MediaRecorder | null = null;
+  private recordDest: MediaStreamAudioDestinationNode | null = null;
+  private recordedChunks: Blob[] = [];
 
   private init() {
     if (this.ready) return this.ready;
@@ -85,6 +89,14 @@ export class Player {
   }
   setGains(gains: number[], pans?: number[], eqs?: (EqParams | undefined)[]) {
     this.send({ type: 'gains', gains, pans, eqs });
+  }
+  /** Adds a track to the playing song in place, without resetting playback (unlike load()). Follow up with setGains() to size the gain/pan/EQ arrays to match. */
+  addTrack(stem: Stereo) {
+    this.send({ type: 'addTrack', stem });
+  }
+  /** Swaps the audio at an existing track slot (e.g. switching which take is active) without resetting playback or touching gain/pan/EQ. */
+  replaceTrack(index: number, stem: Stereo) {
+    this.send({ type: 'replaceTrack', index, stem });
   }
   async play() {
     await this.unlock();
@@ -252,6 +264,13 @@ export class Player {
   }
 
   stopMonitor() {
+    // Stopping monitoring tears down the graph a recording taps into; the caller (the UI) is
+    // expected to stop and save a recording first, but drop it cleanly here either way rather
+    // than leave a dangling recorder.
+    if (this.recorder && this.recorder.state !== 'inactive') this.recorder.stop();
+    this.recorder = null;
+    this.recordDest = null;
+    this.recordedChunks = [];
     this.monitorSource?.disconnect();
     this.monitorGain?.disconnect();
     this.monitorPanner?.disconnect();
@@ -262,6 +281,45 @@ export class Player {
     this.monitorGain = null;
     this.monitorPanner = null;
     this.monitorAnalyser = null;
+  }
+
+  get recording() {
+    return this.recorder?.state === 'recording';
+  }
+
+  /** Starts recording your own take (post gain/pan) while monitoring; call startMonitor() first. */
+  startRecording() {
+    if (!this.ctx || !this.monitorPanner) throw new Error('Start monitoring first.');
+    if (this.recording) return;
+    const dest = this.ctx.createMediaStreamDestination();
+    this.monitorPanner.connect(dest);
+    const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'].find((t) => MediaRecorder.isTypeSupported?.(t));
+    const rec = new MediaRecorder(dest.stream, mimeType ? { mimeType } : undefined);
+    this.recordedChunks = [];
+    rec.ondataavailable = (e) => {
+      if (e.data.size) this.recordedChunks.push(e.data);
+    };
+    rec.start();
+    this.recorder = rec;
+    this.recordDest = dest;
+  }
+
+  /** Stops recording and returns the take, or null if nothing was recording. */
+  stopRecording(): Promise<{ blob: Blob; mimeType: string } | null> {
+    const rec = this.recorder;
+    const dest = this.recordDest;
+    if (!rec || rec.state === 'inactive') return Promise.resolve(null);
+    return new Promise((resolve) => {
+      rec.onstop = () => {
+        this.monitorPanner?.disconnect(dest!);
+        const mimeType = rec.mimeType || 'audio/webm';
+        resolve(this.recordedChunks.length ? { blob: new Blob(this.recordedChunks, { type: mimeType }), mimeType } : null);
+        this.recordedChunks = [];
+        this.recorder = null;
+        this.recordDest = null;
+      };
+      rec.stop();
+    });
   }
 
   setMonitorGain(v: number) {

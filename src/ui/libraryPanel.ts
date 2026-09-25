@@ -1,5 +1,5 @@
 import { background as encoder } from '../encode/client.ts';
-import { deleteSong, exportLibrary, importLibrary, libraryAvailable, listSongs, loadStems, saveSong, writeMeta, type Analysis, type LibMeta } from '../library.ts';
+import { addTake, deleteSong, exportLibrary, importLibrary, libraryAvailable, listSongs, loadStems, loadTake, removeTake, saveSong, writeMeta, type Analysis, type LibMeta, type TakeGroupMeta } from '../library.ts';
 import { saveFile } from '../platform.ts';
 import type { Deck, DeckState, Result } from './deck.ts';
 import type { KeyCandidate } from '../analysis/key.ts';
@@ -78,6 +78,50 @@ export function initLibrary(deck: Deck) {
     meta.title = title;
     writeMeta(meta).catch(() => {});
     render();
+  };
+  /** Finds a song's take-group entry by id, creating it if this is its first take. */
+  function takeGroup(meta: LibMeta, groupId: string): TakeGroupMeta {
+    meta.takeGroups ??= [];
+    let g = meta.takeGroups.find((x) => x.id === groupId);
+    if (!g) {
+      g = { id: groupId, takes: [] };
+      meta.takeGroups.push(g);
+    }
+    return g;
+  }
+  deck.onTakeAdded = async (groupId, take) => {
+    const id = deck.current?.libId;
+    const meta = id && metas.get(id);
+    if (!meta) return; // song isn't kept in the library (yet): the take only lives in this session
+    const tm = await addTake(meta, groupId, take);
+    const g = takeGroup(meta, groupId);
+    g.takes = [...g.takes, tm];
+    g.activeTake = take.id;
+    await writeMeta(meta);
+  };
+  deck.onTakeSelected = (groupId, takeId) => {
+    const id = deck.current?.libId;
+    const meta = id && metas.get(id);
+    if (!meta) return;
+    takeGroup(meta, groupId).activeTake = takeId;
+    writeMeta(meta).catch(() => {});
+  };
+  deck.onTakeRemoved = async (groupId, takeId) => {
+    const id = deck.current?.libId;
+    const meta = id && metas.get(id);
+    if (!meta) return;
+    const g = takeGroup(meta, groupId);
+    g.takes = g.takes.filter((t) => t.id !== takeId);
+    await removeTake(meta, groupId, takeId);
+    await writeMeta(meta);
+  };
+  deck.onTakeNoteChanged = (groupId, takeId, note) => {
+    const id = deck.current?.libId;
+    const meta = id && metas.get(id);
+    if (!meta) return;
+    const t = takeGroup(meta, groupId).takes.find((x) => x.id === takeId);
+    if (t) t.note = note || undefined;
+    writeMeta(meta).catch(() => {});
   };
   deck.rankKeys = (r, start, end) => {
     const { harmonic } = analysisSources(r.stems);
@@ -198,7 +242,16 @@ export function initLibrary(deck: Deck) {
         sub.textContent = 'Opening…';
         try {
           const stems = await loadStems(m);
-          const r: Result = { title: m.title, stems, settings: m.settings, seconds: m.seconds, took: m.took, libId: m.id, analysis: m.analysis, kind: m.kind };
+          const takeGroups = m.takeGroups?.length
+            ? await Promise.all(
+                m.takeGroups.map(async (g: TakeGroupMeta) => ({
+                  id: g.id,
+                  activeTake: g.activeTake,
+                  takes: await Promise.all(g.takes.map(async (t) => ({ id: t.id, data: await loadTake(m.id, g.id, t), note: t.note }))),
+                })),
+              )
+            : undefined;
+          const r: Result = { title: m.title, stems, settings: m.settings, seconds: m.seconds, took: m.took, libId: m.id, analysis: m.analysis, kind: m.kind, takeGroups };
           deck.open(r, m.state as DeckState | undefined);
           onOpen(r);
           // Songs saved before key detection existed: work it out now, keep any tempo corrections.

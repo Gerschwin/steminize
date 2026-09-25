@@ -1,5 +1,5 @@
 import { downloadYoutube, searchYoutube, type YtResult } from '../ytdlp.ts';
-import { $, fmtTime, h } from './dom.ts';
+import { $, fmtTime, h, openDialog } from './dom.ts';
 
 /** Wires up the "From YouTube" dialog; `onDownloaded` hands the finished file to the import queue. */
 export function initYoutubeDialog(onDownloaded: (file: File) => void) {
@@ -71,7 +71,7 @@ export function initYoutubeDialog(onDownloaded: (file: File) => void) {
       status.textContent = '';
       song.value = '';
       artist.value = '';
-      dlg.showModal();
+      openDialog(dlg);
       song.focus();
     },
   };

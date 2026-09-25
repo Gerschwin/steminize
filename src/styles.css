@@ -14,8 +14,10 @@
   --shadow: 0 12px 34px rgba(0, 0, 0, 0.5);
   color-scheme: dark;
 }
+/* Dark is the default. Follow the OS preference only until the theme button sets an explicit
+   choice (data-theme on <html>), which then wins over prefers-color-scheme either way. */
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme='dark']) {
     --bg: #f5f6fa;
     --panel: #ffffff;
     --panel-2: #f0f1f6;
@@ -28,9 +30,22 @@
     color-scheme: light;
   }
 }
+:root[data-theme='light'] {
+  --bg: #f5f6fa;
+  --panel: #ffffff;
+  --panel-2: #f0f1f6;
+  --line: #dfe2ea;
+  --text: #151821;
+  --muted: #5f677a;
+  --accent: #c97a1a;
+  --accent-2: #a8630f;
+  --shadow: 0 10px 30px rgba(20, 24, 40, 0.12);
+  color-scheme: light;
+}
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
+body.modal-open { overflow: hidden; }
 body {
   background: var(--bg);
   color: var(--text);
@@ -61,6 +76,10 @@ button, select, input { font: inherit; color: inherit; }
 .chip.ok { color: var(--ok); }
 .chip.gpu { color: var(--accent-2); }
 .top-actions { display: flex; gap: 8px; }
+.btn.icon { padding: 8px; }
+#themeBtn .i-sun { display: none; }
+#themeBtn.is-light .i-moon { display: none; }
+#themeBtn.is-light .i-sun { display: block; }
 @media (max-width: 600px) {
   #privacyChip { display: none; }
   .brand span { display: none; }
@@ -81,6 +100,10 @@ button, select, input { font: inherit; color: inherit; }
 .btn.ghost { background: transparent; }
 .btn.tiny { padding: 4px 9px; font-size: 12px; border-radius: 7px; }
 .btn.toggle[aria-pressed='true'] { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: var(--accent); color: var(--accent-2); }
+.btn.toggle.rec { border-color: color-mix(in srgb, var(--bad) 55%, var(--line)); color: var(--bad); }
+.btn.toggle.rec:hover { border-color: var(--bad); }
+.btn.toggle.rec[aria-pressed='true'] { background: #ef4444; border-color: #ef4444; color: #fff; animation: rec-pulse 1.4s ease-in-out infinite; }
+@keyframes rec-pulse { 50% { opacity: 0.65; } }
 select {
   width: 100%; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line);
   background: var(--panel-2);
@@ -238,6 +261,10 @@ details.more[open] summary { color: var(--text); }
   font: inherit; resize: vertical;
 }
 .scratch-area.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.5; white-space: pre; overflow-x: auto; }
+#lyricsSearchLink { display: none; margin-left: auto; text-decoration: none; }
+#scratchTabLyrics[aria-pressed='true'] ~ #lyricsSearchLink { display: inline-flex; }
+#tabExtendBtn { display: none; margin-left: auto; }
+#scratchTabTab[aria-pressed='true'] ~ #tabExtendBtn, #scratchTabDrums[aria-pressed='true'] ~ #tabExtendBtn { display: inline-flex; }
 .live-meter { width: 70px; height: 8px; border-radius: 4px; background: var(--panel); overflow: hidden; }
 .live-meter i { display: block; height: 100%; width: 0; background: var(--ok); }
 .tool .snap { margin-left: auto; }
@@ -262,7 +289,23 @@ details.more[open] summary { color: var(--text); }
 .lane { display: grid; grid-template-columns: 236px 1fr; gap: 10px; align-items: stretch; }
 .lane.selected .lane-ctl { outline: 2px solid var(--c); outline-offset: -1px; }
 .lane.selected .wave { outline: 2px solid var(--c); outline-offset: -2px; }
-.lane-ctl { display: grid; grid-template-columns: auto auto auto auto 1fr; gap: 6px; align-items: center; background: var(--panel-2); border-radius: 9px; padding: 6px 8px; border-left: 3px solid var(--c); }
+.lane.recording .lane-ctl { animation: rec-pulse 1.4s ease-in-out infinite; }
+.lane.recording .wave { outline: 2px solid var(--c); outline-offset: -2px; }
+.take-strip { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 4px; }
+.take-row { display: flex; align-items: center; gap: 4px; }
+.take-chip {
+  flex: 1; text-align: left; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line);
+  background: var(--panel); color: var(--muted); font-size: 12px; cursor: pointer;
+}
+.take-chip:hover { border-color: var(--c); color: var(--text); }
+.take-del { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 2px 7px; border-radius: 4px; font-size: 14px; line-height: 1; }
+.take-del:hover { color: var(--bad); background: var(--panel); }
+.take-badge { font-weight: 400; }
+.take-note { flex: 1; text-align: left; padding: 4px 8px; border-radius: 6px; border: 1px dashed var(--line); background: none; color: var(--muted); font-size: 11px; font-style: italic; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.take-note:hover { border-color: var(--c); color: var(--text); }
+.take-note-edit { flex: 1; min-width: 0; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--accent); background: var(--panel); color: var(--text); font-size: 11px; }
+.take-chip.current { flex: 0 0 auto; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--c); color: var(--c); font-size: 12px; font-weight: 600; }
+.lane-ctl { display: grid; grid-template-columns: auto auto auto auto 1fr; align-content: start; gap: 6px; align-items: center; background: var(--panel-2); border-radius: 9px; padding: 6px 8px; border-left: 3px solid var(--c); }
 .lane-ctl input[type='range'] { accent-color: var(--c); }
 .lane-ctl .name { font-weight: 600; text-transform: capitalize; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; grid-column: 1 / -1; border: 0; background: transparent; padding: 0; text-align: left; cursor: text; color: inherit; font-size: inherit; }
 .lane-ctl .name-edit { grid-column: 1 / -1; width: 100%; border: 0; outline: 1px solid var(--accent); background: var(--panel); border-radius: 4px; font-size: 13px; font-weight: 600; padding: 2px 6px; }
@@ -270,6 +313,8 @@ details.more[open] summary { color: var(--text); }
 .lane-ctl .mini.vol span { display: none; }
 .lane-ctl .mini { grid-column: 1 / -1; display: grid; grid-template-columns: 26px 1fr 30px; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
 .lane-ctl .mini output { font-size: 11px; text-align: right; }
+/* Pan adds a full extra row to .lane-ctl; grow the waveform to match so the two columns stay level. */
+.lanes.show-pan .lane:not(.x-lane) .wave { height: 88px; }
 .ms { width: 26px; height: 24px; border-radius: 6px; border: 1px solid var(--line); background: transparent; cursor: pointer; font-size: 11px; font-weight: 700; }
 .ms.m[aria-pressed='true'] { background: var(--warn); color: #111; border-color: var(--warn); }
 .ms.s[aria-pressed='true'] { background: var(--ok); color: #111; border-color: var(--ok); }
@@ -306,6 +351,7 @@ details.more[open] summary { color: var(--text); }
 #viewScroll[hidden] { display: block !important; visibility: hidden; } /* keep its space so nothing jumps when zooming */
 .markers-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: -6px; }
 .zoom { display: inline-flex; gap: 2px; }
+.overview .zoom { position: absolute; right: 6px; bottom: 6px; z-index: 2; background: color-mix(in srgb, var(--panel) 75%, transparent); border-radius: 8px; padding: 2px; }
 .markers { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
 .marker-chip { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 99px; background: var(--panel-2); font-size: 12px; overflow: hidden; }
 .marker-chip.here { border-color: var(--accent); }
@@ -354,6 +400,8 @@ details.more[open] summary { color: var(--text); }
 .tool .btn, .markers-bar .btn { padding: 0 12px; font-size: 13px; line-height: 1; }
 .tool select { padding: 0 8px; }
 .tool input[type='number'] { padding: 0 6px; }
+.tool label.takes { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.tool label.takes input[type='number'] { width: 48px; }
 .tool .btn.toggle#loopBtn { font-size: 13px; }
 .trainer-cfg { gap: 4px; }
 .bpm { display: inline-flex; align-items: center; line-height: 1; }
@@ -365,7 +413,7 @@ details.more[open] summary { color: var(--text); }
 /* ---------- dialog & toasts ---------- */
 dialog {
   width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 64px); border: 1px solid var(--line); border-radius: 14px;
-  background: var(--panel); color: var(--text); padding: 18px; box-shadow: var(--shadow);
+  background: var(--panel); color: var(--text); padding: 18px; box-shadow: var(--shadow); overflow-y: auto;
 }
 dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
 .dlg-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
@@ -374,6 +422,16 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
 .m-group-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
 .m-group h3 { margin: 0; font-size: 14px; }
 .m-browse { font-size: 12px; color: var(--accent-2); text-decoration: none; white-space: nowrap; }
+
+/* ---------- keyboard shortcuts help ---------- */
+.kb-list { display: flex; flex-direction: column; gap: 8px; }
+.kb-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.kb-row span { color: var(--muted); font-size: 13px; margin-left: 4px; }
+kbd {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 6px;
+  border-radius: 6px; border: 1px solid var(--line); background: var(--panel-2); box-shadow: 0 1px 0 var(--line);
+  font: 12px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--text);
+}
 
 /* ---------- "From YouTube" dialog ---------- */
 .yt-search { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }

@@ -1,6 +1,6 @@
 import { ALL_FILES, MODELS, type ModelFile } from '../models.ts';
 import { deleteModel, downloadModel, hasModel, importModel } from '../modelstore.ts';
-import { $, fmtMB, h, toast } from './dom.ts';
+import { $, fmtMB, h, openDialog, toast } from './dom.ts';
 
 type Listener = (key: string, loaded: number, total: number) => void;
 const inflight = new Map<string, Promise<void>>();
@@ -91,7 +91,7 @@ export function initModelsDialog() {
 
   $('modelsBtn').onclick = () => {
     render();
-    dlg.showModal();
+    openDialog(dlg);
   };
   $<HTMLInputElement>('importModel').onchange = async (e) => {
     const input = e.target as HTMLInputElement;

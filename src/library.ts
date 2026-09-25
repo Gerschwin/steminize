@@ -14,6 +14,22 @@ export interface Analysis {
   key?: KeyResult;
 }
 
+export interface TakeMeta {
+  id: string; // display id within its group, e.g. "take-1" — not unique across groups on its own
+  scale: number;
+  note?: string;
+}
+
+/** One recorded source (e.g. "Bass", "Guitar") and every take made for it. `id` is an internal,
+ * stable, never-shown key: takes are stored as `<groupId>-<takeId>.flac`, since two groups could
+ * otherwise both produce a "take-1" and collide in the same song folder. The group's own display
+ * name is just its lane's `label`, saved the same way any other track's rename already is. */
+export interface TakeGroupMeta {
+  id: string;
+  takes: TakeMeta[];
+  activeTake?: string;
+}
+
 export interface LibMeta {
   id: string;
   title: string;
@@ -26,6 +42,8 @@ export interface LibMeta {
   bytes: number;
   analysis?: Analysis;
   state?: unknown; // player state (mixer, EQ, loop, practice), owned by the deck
+  /** Live-recorded takes (see the Live input drawer), saved as extra files alongside the stems. */
+  takeGroups?: TakeGroupMeta[];
 }
 
 export const libraryAvailable = () => typeof navigator !== 'undefined' && !!navigator.storage?.getDirectory;
@@ -101,6 +119,34 @@ export async function loadStems(meta: LibMeta): Promise<{ name: string; data: St
 
 export async function deleteSong(id: string) {
   await (await libRoot()).removeEntry(id, { recursive: true });
+}
+
+/** Adds one take's audio as a new file in an already-saved song's folder, and updates its meta.json (bumping `meta.takeGroups` first is the caller's job, same as the rest of LibMeta). */
+export async function addTake(meta: LibMeta, groupId: string, take: { id: string; data: Stereo; note?: string }): Promise<TakeMeta> {
+  let peak = 0;
+  for (const c of take.data) for (let i = 0; i < c.length; i++) peak = Math.max(peak, Math.abs(c[i]));
+  const scale = peak > 0.999 ? 0.999 / peak : 1;
+  await encoder.run({ type: 'lib-add-file', dir: meta.id, name: `${groupId}-${take.id}`, data: take.data, scale, meta: JSON.stringify(meta) });
+  return { id: take.id, scale, note: take.note };
+}
+
+/** Removes one take's audio file from a song's folder. Caller updates `meta.takeGroups` first. */
+export async function removeTake(meta: LibMeta, groupId: string, takeId: string) {
+  await encoder.run({ type: 'lib-remove-file', dir: meta.id, name: `${groupId}-${takeId}`, meta: JSON.stringify(meta) });
+}
+
+export async function loadTake(songId: string, groupId: string, take: TakeMeta): Promise<Stereo> {
+  const dir = await (await libRoot()).getDirectoryHandle(songId);
+  const ctx = new OfflineAudioContext(2, 1, 44100);
+  const file = await (await dir.getFileHandle(`${groupId}-${take.id}.flac`)).getFile();
+  const buf = await ctx.decodeAudioData(await file.arrayBuffer());
+  const k = 1 / take.scale;
+  const ch = (i: number) => {
+    const a = buf.getChannelData(Math.min(i, buf.numberOfChannels - 1)).slice();
+    if (k !== 1) for (let j = 0; j < a.length; j++) a[j] *= k;
+    return a;
+  };
+  return [ch(0), ch(1)];
 }
 
 /** Zips the whole library (as stored: FLAC stems + meta.json per song) for backup. */

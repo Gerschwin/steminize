@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Steminize</title>
     <meta name="description" content="Split songs into vocals, drums, bass and more. Runs entirely on your device." />
-    <meta name="theme-color" content="#0f1115" />
+    <meta name="theme-color" content="#09090d" id="themeColorMeta" />
     <link rel="icon" href="./icon.svg" type="image/svg+xml" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="apple-touch-icon" href="./icon-192.png" />
@@ -23,7 +23,14 @@
       </div>
       <div class="top-actions">
         <button class="btn ghost" id="installBtn" hidden>Install app</button>
+        <button class="btn ghost icon" id="themeBtn" type="button" title="Switch to light theme">
+          <svg class="i-moon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M20.354 15.354A9 9 0 0 1 8.646 3.646 9.003 9.003 0 1 0 20.354 15.354Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <svg class="i-sun" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </button>
         <button class="btn ghost" id="modelsBtn">Models</button>
+        <button class="btn ghost icon" id="helpBtn" type="button" title="Keyboard shortcuts">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9.5 9.2a2.5 2.5 0 1 1 3.7 2.2c-.9.5-1.2 1-1.2 1.9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="12" cy="17" r="1" fill="currentColor" stroke="none"/></svg>
+        </button>
       </div>
     </header>
 
@@ -182,7 +189,14 @@
 
           <div class="transport">
             <div class="ov-col">
-              <div class="overview" id="overviewWrap"><canvas id="overview"></canvas></div>
+              <div class="overview" id="overviewWrap">
+                <canvas id="overview"></canvas>
+                <div class="zoom">
+                  <button class="btn tiny ghost" id="zoomOut" title="Zoom out (−)">−</button>
+                  <button class="btn tiny ghost" id="zoomIn" title="Zoom in (+). Or scroll over the waveform">+</button>
+                  <button class="btn tiny ghost" id="zoomFit" title="Whole song (0)">Fit</button>
+                </div>
+              </div>
               <input type="range" id="viewScroll" min="0" max="1000" value="0" hidden aria-label="Scroll the zoomed waveform" />
             </div>
             <div class="transport-bar">
@@ -202,16 +216,20 @@
               <button class="btn tbtn" id="toEndBtn" type="button" title="Jump to the end" aria-label="Jump to the end">
                 <svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM5 5v14l11-7z"/></svg>
               </button>
+              <div class="tool loop">
+                <button class="btn toggle" id="loopBtn" aria-pressed="false" title="Loop (L)">Loop</button>
+                <button class="btn tiny ghost" id="setA" title="Loop start at playhead ([)">Set A</button>
+                <button class="btn tiny ghost" id="setB" title="Loop end at playhead (])">Set B</button>
+                <span class="muted small" id="loopInfo">Drag across the waveform to pick a section</span>
+                <label class="snap">Snap
+                  <select id="snap"><option value="off">Off</option><option value="beat">Beat</option><option value="bar">Bar</option></select>
+                </label>
+              </div>
               <div class="time"><span id="timeNow">0:00</span><span class="muted"> / <span id="timeTotal">0:00</span></span></div>
             </div>
           </div>
 
           <div class="markers-bar">
-            <div class="zoom">
-              <button class="btn tiny ghost" id="zoomOut" title="Zoom out (−)">−</button>
-              <button class="btn tiny ghost" id="zoomIn" title="Zoom in (+). Or scroll over the waveform">+</button>
-              <button class="btn tiny ghost" id="zoomFit" title="Whole song (0)">Fit</button>
-            </div>
             <div class="markers" id="markers"></div>
             <button class="btn tiny ghost" id="addMarker" title="Add a section marker at the playhead (M)">+ Marker</button>
             <span class="x-toggles">
@@ -221,15 +239,6 @@
           </div>
 
           <div class="tools">
-            <div class="tool loop">
-              <button class="btn toggle" id="loopBtn" aria-pressed="false" title="Loop (L)">Loop</button>
-              <button class="btn tiny ghost" id="setA" title="Loop start at playhead ([)">Set A</button>
-              <button class="btn tiny ghost" id="setB" title="Loop end at playhead (])">Set B</button>
-              <span class="muted small" id="loopInfo">Drag across the waveform to pick a section</span>
-              <label class="snap">Snap
-                <select id="snap"><option value="off">Off</option><option value="beat">Beat</option><option value="bar">Bar</option></select>
-              </label>
-            </div>
             <div class="tool">
               <label>Tempo <output id="tempoOut">100%</output></label>
               <input type="range" id="tempo" min="0.5" max="1.5" step="0.01" value="1" />
@@ -304,11 +313,15 @@
               </div>
               <div class="dpane" data-pane="live" hidden>
                 <div class="tool live">
-                  <button class="btn tiny toggle" id="liveBtn" type="button" aria-pressed="false" title="Play a real instrument or mic live alongside the tracks (not recorded)">Monitor</button>
+                  <button class="btn tiny toggle" id="liveBtn" type="button" aria-pressed="false" title="Play a real instrument or mic live alongside the tracks">Monitor</button>
                   <select id="liveDevice" title="Input device" hidden></select>
                   <div class="live-meter" id="liveMeter" hidden><i id="liveMeterBar"></i></div>
                   <label class="mini vol" id="liveVolWrap" hidden><span>Level</span><input type="range" id="liveVol" min="0" max="1.5" step="0.01" value="0.8" /></label>
                   <label class="mini pan" id="livePanWrap" hidden title="Pan (double-click to centre)"><span>Pan</span><input type="range" id="livePan" min="-1" max="1" step="0.05" value="0" /><output id="livePanOut">C</output></label>
+                  <select id="liveRecordTarget" title="Which track to record into" hidden></select>
+                  <button class="btn tiny toggle rec" id="liveRecordBtn" type="button" aria-pressed="false" title="Record your own take while monitoring, saved as a local audio file" hidden>● Record</button>
+                  <span class="muted small" id="liveRecordTime" hidden>0:00</span>
+                  <label class="mini takes" title="Oldest take is dropped once you go over this, both here and from the library">Keep last <input type="number" id="liveMaxTakes" min="1" max="20" step="1" value="5" /> takes</label>
                   <span class="muted small" id="liveStatus"></span>
                 </div>
               </div>
@@ -329,10 +342,12 @@
                   <button class="btn tiny ghost toggle" type="button" id="scratchTabTab" aria-pressed="false">Tab</button>
                   <button class="btn tiny ghost toggle" type="button" id="scratchTabDrums" aria-pressed="false">Drum tab</button>
                   <button class="btn tiny ghost toggle" type="button" id="scratchTabNotes" aria-pressed="false">Notes</button>
+                  <a class="btn tiny ghost" id="lyricsSearchLink" href="https://genius.com/search" target="_blank" rel="noopener noreferrer" title="Search Genius for lyrics, to copy in yourself">Search lyrics ↗</a>
+                  <button class="btn tiny ghost" type="button" id="tabExtendBtn" title="Add more bars to every line, still lined up (or just press Tab in the box)">Extend line</button>
                 </div>
                 <textarea class="scratch-area" id="scratchLyrics" placeholder="Lyrics…" spellcheck="true"></textarea>
                 <textarea class="scratch-area mono" id="scratchTab" placeholder="e|--------------------|&#10;B|--------------------|&#10;G|--------------------|&#10;D|--------------------|&#10;A|--------------------|&#10;E|--------------------|" spellcheck="false" wrap="off" hidden></textarea>
-                <textarea class="scratch-area mono" id="scratchDrums" placeholder="Hh|x-x-x-x-x-x-x-x-|&#10;Sn|----o-------o---|&#10;Bd|o-------o-------|" spellcheck="false" wrap="off" hidden></textarea>
+                <textarea class="scratch-area mono" id="scratchDrums" placeholder="CC|--------------------|&#10;HH|--------------------|&#10;SN|--------------------|&#10;HT|--------------------|&#10;FT|--------------------|&#10;BD|--------------------|" spellcheck="false" wrap="off" hidden></textarea>
                 <textarea class="scratch-area" id="scratchNotes" placeholder="Notes, song sections, anything else…" spellcheck="true" hidden></textarea>
               </div>
             </div>
@@ -374,6 +389,67 @@
       <p class="muted small">Downloads run locally via yt-dlp, straight into the import queue. You're responsible for having the right to use anything you download.</p>
       <p class="muted small" id="ytStatus"></p>
       <div class="yt-results" id="ytResults"></div>
+    </dialog>
+
+    <dialog id="helpDlg">
+      <form method="dialog" class="dlg-head">
+        <h2>Keyboard shortcuts</h2>
+        <button class="btn tiny ghost" aria-label="Close">Close</button>
+      </form>
+      <p class="muted small">Ignored while typing in a text field. A song needs to be open for most of these.</p>
+
+      <div class="m-group">
+        <div class="m-group-head"><h3>Playback</h3></div>
+        <div class="kb-list">
+          <div class="kb-row"><kbd>Space</kbd><span>Play / pause</span></div>
+          <div class="kb-row"><kbd>Page&nbsp;Down</kbd><span>Play / pause</span></div>
+          <div class="kb-row"><kbd>Page&nbsp;Up</kbd><span>Restart the section (or the song, with no section)</span></div>
+          <div class="kb-row"><kbd>Home</kbd><span>Restart the section (or the song, with no section)</span></div>
+          <div class="kb-row"><kbd>←</kbd><span>Skip back 5 seconds</span></div>
+          <div class="kb-row"><kbd>→</kbd><span>Skip forward 5 seconds</span></div>
+        </div>
+      </div>
+
+      <div class="m-group">
+        <div class="m-group-head"><h3>Loop &amp; markers</h3></div>
+        <div class="kb-list">
+          <div class="kb-row"><kbd>L</kbd><span>Toggle loop</span></div>
+          <div class="kb-row"><kbd>[</kbd><span>Set loop point A at the playhead (turns loop on)</span></div>
+          <div class="kb-row"><kbd>]</kbd><span>Set loop point B at the playhead (turns loop on)</span></div>
+          <div class="kb-row"><kbd>M</kbd><span>Add a section marker at the playhead</span></div>
+          <div class="kb-row"><kbd>F</kbd><span>Freeze (Notes view): hold the sound at the playhead</span></div>
+        </div>
+      </div>
+
+      <div class="m-group">
+        <div class="m-group-head"><h3>Zoom &amp; tracks</h3></div>
+        <div class="kb-list">
+          <div class="kb-row"><kbd>+</kbd><span>Zoom in</span></div>
+          <div class="kb-row"><kbd>−</kbd><span>Zoom out</span></div>
+          <div class="kb-row"><kbd>0</kbd><span>Zoom to fit</span></div>
+          <div class="kb-row"><kbd>Shift</kbd><kbd>+</kbd><span>Make every track taller</span></div>
+          <div class="kb-row"><kbd>Shift</kbd><kbd>−</kbd><span>Make every track shorter</span></div>
+          <div class="kb-row"><kbd>1</kbd>–<kbd>6</kbd><span>Mute track 1 through 6</span></div>
+        </div>
+      </div>
+
+      <div class="m-group">
+        <div class="m-group-head"><h3>Notes view: computer keyboard as a piano</h3></div>
+        <p class="muted small">While the Notes panel is open, laid out like a real piano: the bottom row is the white keys, the row above sits over the gaps for the black keys.</p>
+        <div class="kb-list">
+          <div class="kb-row"><kbd>Z</kbd><kbd>X</kbd><kbd>C</kbd><kbd>V</kbd><kbd>B</kbd><kbd>N</kbd><kbd>M</kbd><kbd>,</kbd><kbd>.</kbd><kbd>/</kbd><span>White keys</span></div>
+          <div class="kb-row"><kbd>S</kbd><kbd>D</kbd><kbd>G</kbd><kbd>H</kbd><kbd>J</kbd><kbd>L</kbd><kbd>;</kbd><span>Black keys</span></div>
+        </div>
+      </div>
+
+      <div class="m-group">
+        <div class="m-group-head"><h3>Hands-free</h3></div>
+        <div class="kb-list">
+          <div class="kb-row"><kbd>Page&nbsp;Down</kbd><span>Play / pause — works with most Bluetooth page-turner pedals</span></div>
+          <div class="kb-row"><kbd>Page&nbsp;Up</kbd><span>Restart the section</span></div>
+          <div class="kb-row"><span class="muted small">With "Foot pedal mode" on (below the tracks): → / ↓ / Enter play, ← / ↑ restart the section.</span></div>
+        </div>
+      </div>
     </dialog>
 
     <div class="toasts" id="toasts" aria-live="polite"></div>

@@ -37,7 +37,7 @@ self.addEventListener('fetch', (e) => {
         // Network first for the page itself so updates arrive; cache as fallback.
         try {
           const res = await fetch(req);
-          if (res.ok) cache.put(req, res.clone());
+          if (res.ok) cache.put(req, res.clone()).catch(() => {});
           return isolate(res);
         } catch {
           return isolate((await cache.match(req)) || (await cache.match('./')));
@@ -47,7 +47,7 @@ self.addEventListener('fetch', (e) => {
       const hit = await cache.match(req);
       if (hit) return isolate(hit);
       const res = await fetch(req);
-      if (res.ok) cache.put(req, res.clone());
+      if (res.ok) cache.put(req, res.clone()).catch(() => {});
       return isolate(res);
     })(),
   );

@@ -4,6 +4,8 @@ import type { EqParams } from './eq.ts';
 
 export type PlayerMsg =
   | { type: 'load'; stems: Stereo[]; gains: number[] }
+  | { type: 'addTrack'; stem: Stereo }
+  | { type: 'replaceTrack'; index: number; stem: Stereo }
   | { type: 'gains'; gains: number[]; pans?: number[]; eqs?: (EqParams | undefined)[] }
   | { type: 'play' }
   | { type: 'pause' }
@@ -44,6 +46,20 @@ class StemPlayer extends AudioWorkletProcessor {
       this.t.setLoop(this.loop.on, this.loop.start, this.loop.end);
       this.t.setPractice(this.practice);
       this.playing = false;
+      this.report();
+      return;
+    }
+    if (m.type === 'addTrack' && this.t) {
+      // gains/pans/eqs are read with a `?? 0`/`?? undefined` fallback for any index past their
+      // own length (see MixSource.extract), so this is safe even before the gains message that
+      // always follows it from the main thread catches the arrays up to the new stem count.
+      this.t.r.src.stems.push(m.stem);
+      this.report();
+      return;
+    }
+    if (m.type === 'replaceTrack' && this.t) {
+      // Swapping in a different take at the same mixer slot, rather than adding a new one.
+      if (this.t.r.src.stems[m.index]) this.t.r.src.stems[m.index] = m.stem;
       this.report();
       return;
     }

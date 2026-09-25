@@ -48,6 +48,24 @@ export const fmtMB = (b: number) => (b >= 1e9 ? `${(b / 1024 ** 3).toFixed(2)} G
 
 export const pressed = (el: Element, on: boolean) => el.setAttribute('aria-pressed', String(on));
 
+/**
+ * showModal() traps focus and clicks on the backdrop, but not the mouse wheel: the page behind
+ * a dialog can still scroll unless something locks it. Use this instead of calling showModal()
+ * directly, and it stays locked correctly even if dialogs are ever opened over one another.
+ */
+export function openDialog(dlg: HTMLDialogElement) {
+  document.body.classList.add('modal-open');
+  dlg.showModal();
+}
+// 'close' doesn't bubble, so this needs capture phase to catch it via delegation on document.
+document.addEventListener(
+  'close',
+  (e) => {
+    if (e.target instanceof HTMLDialogElement && !document.querySelector('dialog[open]')) document.body.classList.remove('modal-open');
+  },
+  true,
+);
+
 /** Size a canvas to its CSS box at device resolution; returns the 2D context. */
 export function fitCanvas(c: HTMLCanvasElement) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);

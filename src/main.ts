@@ -5,14 +5,16 @@ import { MODELS, neededFiles } from './models.ts';
 import { isTauri, pickFolderFiles } from './platform.ts';
 import { loadSettings, type Settings } from './settings.ts';
 import { Deck, type Result } from './ui/deck.ts';
-import { $, fmtDuration, fmtEta, fmtTime, h, toast } from './ui/dom.ts';
+import { $, fmtDuration, fmtEta, fmtTime, h, openDialog, toast } from './ui/dom.ts';
 import { ensureDownloaded, initModelsDialog, onModelsChanged } from './ui/modelsDialog.ts';
 import { SettingsPanel } from './ui/settingsPanel.ts';
 import { initLibrary } from './ui/libraryPanel.ts';
 import { initYoutubeDialog } from './ui/youtubeDialog.ts';
+import { initTheme } from './theme.ts';
 
 // ---------------------------------------------------------------- setup
 registerServiceWorker();
+initTheme($<HTMLButtonElement>('themeBtn'), $<HTMLMetaElement>('themeColorMeta'));
 const settings = new SettingsPanel(loadSettings());
 const deck = new Deck(() => settings.s);
 const library = initLibrary(deck);
@@ -20,6 +22,7 @@ library.onOpen = () => refreshQueue();
 const engine = new Engine();
 initModelsDialog();
 onModelsChanged.add(() => settings.render());
+$('helpBtn').onclick = () => openDialog($<HTMLDialogElement>('helpDlg'));
 
 const chip = $('backendChip');
 chip.textContent = 'Checking device…';

@@ -30,6 +30,10 @@ export type EncodeReq =
   /** Save stems (16-bit FLAC) + meta.json into the library folder `dir`. */
   | { type: 'lib-save'; id: number; dir: string; meta: string; stems: { name: string; data: Stereo; scale: number }[] }
   | { type: 'lib-meta'; id: number; dir: string; meta: string }
+  /** Adds one extra audio file (a live-recorded take) to an already-saved song's folder. */
+  | { type: 'lib-add-file'; id: number; dir: string; name: string; data: Stereo; scale: number; meta: string }
+  /** Removes one file (a take being discarded) from a song's folder. */
+  | { type: 'lib-remove-file'; id: number; dir: string; name: string; meta: string }
   /** Zip the whole library (every song folder, as stored) for backup. */
   | { type: 'lib-export'; id: number }
   /** Unzip a backup, adding any song folders not already in the library. */
@@ -103,6 +107,15 @@ async function handle(m: EncodeReq) {
     post({ id: m.id, type: 'result', value: total });
   } else if (m.type === 'lib-meta') {
     await writeFile(await libDir(m.dir), 'meta.json', new TextEncoder().encode(m.meta));
+  } else if (m.type === 'lib-add-file') {
+    const dir = await libDir(m.dir);
+    const scaled: Stereo = m.scale === 1 ? m.data : [m.data[0].map((v) => v * m.scale), m.data[1].map((v) => v * m.scale)];
+    await writeFile(dir, `${m.name}.flac`, encodeFlac(scaled, 16, 44100));
+    await writeFile(dir, 'meta.json', new TextEncoder().encode(m.meta));
+  } else if (m.type === 'lib-remove-file') {
+    const dir = await libDir(m.dir);
+    await dir.removeEntry(`${m.name}.flac`).catch(() => {});
+    await writeFile(dir, 'meta.json', new TextEncoder().encode(m.meta));
   } else if (m.type === 'lib-export') {
     const lib = await libRoot();
     const songs: [string, FileSystemDirectoryHandle][] = [];
