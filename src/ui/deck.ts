@@ -239,6 +239,12 @@ function waveLayer(peaks: Float32Array, w: number, hgt: number, colour: string, 
 
 export class Deck {
   player = new Player();
+  private seekToastAt = 0;
+  private notifySeekBlocked = () => {
+    if (performance.now() - this.seekToastAt < 2000) return;
+    this.seekToastAt = performance.now();
+    toast('Stop recording to move the playhead');
+  };
   private encoder = encoder;
   private pr: PracticeUi = structuredClone(DEFAULT_PR);
   private taps: number[] = [];
@@ -289,6 +295,7 @@ export class Deck {
   private recordDrawTimer = 0;
 
   constructor(private settings: () => Settings) {
+    this.player.onSeekBlocked = this.notifySeekBlocked;
     this.player.onState = (s) => {
       $('playBtn').classList.toggle('on', s.playing);
       // The speed trainer changes tempo inside the player; mirror it here.
@@ -1090,7 +1097,17 @@ export class Deck {
     let recordTimer = 0;
     /** The tempo to restore once recording stops, if it had to be forced to 100% to start it. */
     let restoreTempo: number | null = null;
+    /** True while a loop that was on has been suspended for the take (its wrap would jump the playhead). */
+    let loopSuspended = false;
+    const jumpButtons = ['toStartBtn', 'toEndBtn', 'loopBtn'].map((id) => $<HTMLButtonElement>(id));
+    /** Puts a suspended loop back exactly as it was; the deck's own loop state was never touched. */
+    const resumeLoop = () => {
+      if (!loopSuspended) return;
+      loopSuspended = false;
+      this.player.setLoop(this.loop.on, this.loop.a, this.loop.b);
+    };
     const recordUi = (on: boolean) => {
+      for (const b of jumpButtons) b.disabled = on;
       pressed(recordBtn, on);
       recordBtn.textContent = on ? '■ Stop' : '● Record';
       recordTime.hidden = !on;
@@ -1110,6 +1127,7 @@ export class Deck {
       recordUi(false);
       const take = await this.player.stopRecording();
       await this.finishRecordLane(take?.blob ?? null);
+      resumeLoop();
       if (restoreTempo != null) {
         this.setTempoPitch(restoreTempo, this.pitch);
         restoreTempo = null;
@@ -1141,6 +1159,11 @@ export class Deck {
           // it isn't already, and give a short lead-in — a bar at the song's tempo if known,
           // else a fixed beat — before capture actually starts, so there's time to come in on
           // the beat instead of getting cut off mid-breath.
+          if (this.loop.on) {
+            loopSuspended = true;
+            this.player.setLoop(false, this.loop.a, this.loop.b);
+            toast('Loop paused while recording');
+          }
           if (!this.player.state.playing) await this.player.play();
           const bpm = this.r?.analysis?.bpm;
           const leadInMs = bpm ? Math.max(800, Math.min(4000, (60 / bpm) * this.pr.perBar * 1000)) : 1500;
@@ -1158,6 +1181,7 @@ export class Deck {
           recordBtn.disabled = false;
           // Didn't end up recording after all (lead-in cancelled, or it failed to start): put
           // the tempo back rather than leave it stuck at 100% with nothing to show for it.
+          if (!this.player.recording) resumeLoop();
           if (!this.player.recording && restoreTempo != null) {
             this.setTempoPitch(restoreTempo, this.pitch);
             restoreTempo = null;
@@ -1903,6 +1927,7 @@ export class Deck {
   }
 
   private setLoop(on: boolean) {
+    if (on && this.player.recording) return this.notifySeekBlocked();
     if (on && this.loop.b - this.loop.a < SR / 4) {
       // No section chosen yet: loop 8 s from the playhead.
       this.loop.a = this.player.state.pos;

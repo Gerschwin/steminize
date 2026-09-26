@@ -105,7 +105,15 @@ export class Player {
   pause() {
     this.send({ type: 'pause' });
   }
+  /** Called when a seek is refused because a take is being recorded (the UI shows why). */
+  onSeekBlocked: (() => void) | null = null;
   seek(pos: number) {
+    // A take is laid down in real time from where recording began, so moving the playhead
+    // mid-take would leave everything after the jump out of sync with the song.
+    if (this.recording) {
+      this.onSeekBlocked?.();
+      return;
+    }
     const p = Math.max(0, Math.round(pos));
     this.state = { ...this.state, pos: p }; // update now; the player confirms shortly
     this.send({ type: 'seek', pos: p });
