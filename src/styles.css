@@ -433,6 +433,9 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
 .about-links { display: flex; flex-wrap: wrap; gap: 4px 16px; }
 .about-links a, .about-list a { color: var(--accent-2); }
 .about-support .btn { display: inline-block; text-decoration: none; margin-top: 4px; }
+.about-update { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0 0 8px; }
+.about-update a { color: var(--accent-2); }
+#diagText { width: 100%; box-sizing: border-box; margin-top: 6px; font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px; resize: vertical; user-select: text; }
 .about-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 5px; }
 .about-lic details { margin: 4px 0; }
 .about-lic summary { cursor: pointer; padding: 3px 0; }

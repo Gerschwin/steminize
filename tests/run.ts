@@ -21,6 +21,9 @@ import { BP_PITCHES, BP_WINDOW, bpNotes, bpUnwrap, bpWindows, singleLine } from 
 import { decimate2 } from '../src/analysis/resample.ts';
 import { writeMidi } from '../src/encode/midi.ts';
 import { detectPitch, freqToNote } from '../src/analysis/pitch.ts';
+import { isNewer, parseVersion } from '../src/version.ts';
+import { detectLatency } from '../src/player/latency.ts';
+import { placeTake } from '../src/player/placement.ts';
 
 let failed = 0;
 const ok = (name: string, cond: boolean, detail = '') => {
@@ -450,6 +453,59 @@ if (hasFfmpeg) {
   const probe = execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration:stream=bit_rate,channels', '-of', 'csv=p=0', mp3]).toString();
   const dur = parseFloat(probe.trim().split('\n').pop()!);
   ok('MP3 decodes with right duration', Math.abs(dur - x[0].length / SR) < 0.1, probe.trim().replace(/\n/g, ' | '));
+}
+
+
+// ---- update check: version comparison
+ok('version: parses v-prefixed tags', JSON.stringify(parseVersion('v1.12.1')) === '[1,12,1]');
+ok('version: ignores a pre-release suffix', JSON.stringify(parseVersion('1.13.0-beta.2')) === '[1,13,0]');
+ok('version: newer minor wins over larger patch', isNewer('v1.13.0', '1.12.9'));
+ok('version: same is not newer', !isNewer('v1.12.1', '1.12.1'));
+ok('version: older is not newer', !isNewer('v1.11.0', '1.12.1'));
+ok('version: numeric, not lexical (1.10 > 1.9)', isNewer('1.10.0', '1.9.9'));
+ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1.0.1', 'dev'));
+
+// ---- latency measurement: clicks played at known frames, heard again after a delay
+{
+  const rate = 44100;
+  const click = (buf: Float32Array, at: number, amp = 0.5) => {
+    for (let i = 0; i < 220; i++) if (at + i < buf.length) buf[at + i] += amp * Math.sin(i * 0.9) * (1 - i / 220);
+  };
+  const run = (delayMs: number, noise: number, amp: number, drop: number[] = []) => {
+    const delay = Math.round((delayMs / 1000) * rate);
+    const buf = new Float32Array(rate * 4);
+    let s = 7;
+    for (let i = 0; i < buf.length; i++) buf[i] = noise * (((s = (s * 16807) % 2147483647) / 2147483647) - 0.5);
+    const clicks = [0.5, 1.1, 1.7, 2.3].map((t) => Math.round(t * rate));
+    clicks.forEach((c, i) => { if (!drop.includes(i)) click(buf, c + delay, amp); });
+    return detectLatency(buf, 0, clicks, rate);
+  };
+  const a = run(47, 0.004, 0.5);
+  ok('latency: finds a 47 ms delay', !!a && Math.abs(a.ms - 47) <= 1, `got ${a?.ms}`);
+  const b = run(12, 0.02, 0.4);
+  ok('latency: finds a 12 ms delay in a noisy room', !!b && Math.abs(b.ms - 12) <= 1, `got ${b?.ms}`);
+  const c = run(180, 0.004, 0.5, [1]);
+  ok('latency: copes with one missed click', !!c && Math.abs(c.ms - 180) <= 1 && c.hits === 3, `got ${c?.ms}, ${c?.hits} hits`);
+  ok('latency: no clicks heard gives null (not zero)', run(47, 0.004, 0) === null);
+  ok('latency: clicks buried in noise give null', run(47, 0.5, 0.05) === null);
+}
+
+// ---- take placement: latency shift and punch-out trim
+{
+  const p = placeTake(1000, 500, 0, 10000);
+  ok('placement: no latency starts at the playhead', p.srcStart === 0 && p.dstStart === 500 && p.count === 1000);
+  const q = placeTake(1000, 500, 100, 10000);
+  ok('placement: latency moves the take earlier', q.dstStart === 400 && q.srcStart === 0 && q.count === 1000);
+  const r = placeTake(1000, 50, 200, 10000);
+  ok('placement: a take that would start before 0 drops its lead-in', r.dstStart === 0 && r.srcStart === 150 && r.count === 850);
+  const t = placeTake(5000, 9000, 0, 10000);
+  ok('placement: never runs past the end of the song', t.count === 1000);
+  const u = placeTake(5000, 2000, 0, 10000, 3500);
+  ok('placement: punch-out trims to the end of the loop', u.count === 1500);
+  const v = placeTake(5000, 2000, 300, 10000, 3500);
+  ok('placement: punch-out is in song time, after the latency shift', v.dstStart === 1700 && v.count === 1800);
+  ok('placement: nothing to copy when the punch end is already past', placeTake(100, 2000, 0, 10000, 1000).count === 0);
+  ok('placement: negative latency is ignored', placeTake(100, 500, -50, 10000).dstStart === 500);
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

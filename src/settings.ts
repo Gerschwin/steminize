@@ -56,3 +56,25 @@ export function saveSettings(s: Settings) {
     /* ignore */
   }
 }
+
+/** Round-trip audio delay (ms) taken off recorded takes so they line up with the song; see player/latency.ts. */
+const LATENCY_KEY = 'steminize.recLatencyMs';
+export const MAX_REC_LATENCY_MS = 500;
+
+export function loadRecLatencyMs(): number {
+  try {
+    const v = Number(localStorage.getItem(LATENCY_KEY));
+    if (Number.isFinite(v)) return Math.max(0, Math.min(MAX_REC_LATENCY_MS, Math.round(v)));
+  } catch {
+    /* storage unavailable */
+  }
+  return 0;
+}
+
+export function saveRecLatencyMs(ms: number) {
+  try {
+    localStorage.setItem(LATENCY_KEY, String(Math.max(0, Math.min(MAX_REC_LATENCY_MS, Math.round(ms)))));
+  } catch {
+    /* ignore */
+  }
+}

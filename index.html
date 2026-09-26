@@ -407,6 +407,11 @@
           <div class="muted small" id="aboutBuild"></div>
         </div>
       </div>
+      <div class="about-update" id="aboutUpdate" hidden>
+        <button class="btn tiny ghost" id="updateBtn" type="button">Check for updates</button>
+        <span class="muted small" id="updateStatus" role="status"></span>
+        <a class="small" id="updateLink" href="https://github.com/Gerschwin/steminize/releases" target="_blank" rel="noopener noreferrer" hidden>Get it from GitHub</a>
+      </div>
       <p class="small">Split songs into stems and practise along with them. Everything runs on your own device, and your audio never leaves it.</p>
       <p class="small about-links">
         <a href="https://github.com/Gerschwin/steminize" target="_blank" rel="noopener noreferrer">Project on GitHub</a>
@@ -425,6 +430,7 @@
         <ul class="about-list small muted">
           <li>The first time you choose a separation model it is downloaded from Hugging Face, then kept on this device so it works offline.</li>
           <li>Desktop app only: <b>From YouTube…</b> downloads the yt-dlp tool from GitHub the first time you use it, then fetches the audio you pick from YouTube.</li>
+          <li>Desktop app only: <b>Check for updates</b> asks GitHub for the latest release number, and only when you press it.</li>
           <li>Nothing else is sent anywhere. There is no account, tracking or analytics.</li>
         </ul>
       </div>
@@ -442,6 +448,14 @@
           <li>Desktop app: <a href="https://tauri.app" target="_blank" rel="noopener noreferrer">Tauri</a> <span class="muted">· MIT / Apache-2.0</span> and <a href="https://github.com/yt-dlp/yt-dlp" target="_blank" rel="noopener noreferrer">yt-dlp</a> <span class="muted">· Unlicense</span></li>
         </ul>
         <p class="muted small">SoundTouchJS and lamejs are used unmodified from npm; you can swap in your own build of either.</p>
+      </div>
+
+      <div class="m-group">
+        <div class="m-group-head"><h3>Troubleshooting</h3></div>
+        <p class="small muted">If something isn't working, copy this and paste it into a bug report. It describes your setup and any recent errors. It contains no songs, file names or personal information, and nothing is sent anywhere.</p>
+        <button class="btn tiny" id="diagBtn" type="button">Copy diagnostic info</button>
+        <span class="muted small" id="diagStatus" role="status"></span>
+        <details><summary class="small">Show what will be copied</summary><textarea id="diagText" readonly rows="10" spellcheck="false"></textarea></details>
       </div>
 
       <div class="m-group about-lic">

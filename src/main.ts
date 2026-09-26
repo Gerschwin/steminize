@@ -12,8 +12,10 @@ import { initLibrary } from './ui/libraryPanel.ts';
 import { initYoutubeDialog } from './ui/youtubeDialog.ts';
 import { initTheme } from './theme.ts';
 import { initAbout } from './ui/about.ts';
+import { installErrorLog, setBackendInfo } from './ui/diagnostics.ts';
 
 // ---------------------------------------------------------------- setup
+installErrorLog();
 registerServiceWorker();
 initTheme($<HTMLButtonElement>('themeBtn'), $<HTMLMetaElement>('themeColorMeta'));
 const settings = new SettingsPanel(loadSettings());
@@ -43,6 +45,7 @@ chip.textContent = 'Checking device…';
   }
 })();
 engine.onBackend = ({ backend, threads, note }) => {
+  setBackendInfo({ backend, threads, note });
   chip.textContent = backend === 'webgpu' ? 'Running on GPU' : `Running on CPU · ${threads} thread${threads > 1 ? 's' : ''}`;
   chip.className = `chip${backend === 'webgpu' ? ' gpu' : ''}`;
   if (note) toast(note, true);
