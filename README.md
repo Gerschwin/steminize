@@ -144,6 +144,10 @@ The float64 conversion is done by `src/engine/fixfloat64.ts`, which rewrites tho
 - **Fine-tuned + two-stem mode** runs only the one specialist model it needs and computes "everything else" as *original minus stem*. That's 4× faster, but not bit-identical to the Demucs CLI, which sums the other three stems.
 - **Shifts** use random offsets, as in Demucs, so two runs with shifts > 1 differ very slightly.
 
+## Support
+
+Steminize is free and open source, and nothing is held back behind a payment. If it's useful to you, an optional contribution helps keep it maintained: [contribute via PayPal](https://www.paypal.com/ncp/payment/FZTNXUUZ3QWH6).
+
 ## Credits and licences
 
 - **Demucs** by Alexandre Défossez, Simon Rouard, Francisco Massa and Meta AI, MIT licence: https://github.com/adefossez/demucs

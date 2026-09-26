@@ -432,6 +432,7 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
 .about-name span { font-size: 13px; font-weight: 500; color: var(--muted); margin-left: 4px; }
 .about-links { display: flex; flex-wrap: wrap; gap: 4px 16px; }
 .about-links a, .about-list a { color: var(--accent-2); }
+.about-support .btn { display: inline-block; text-decoration: none; margin-top: 4px; }
 .about-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 5px; }
 .about-lic details { margin: 4px 0; }
 .about-lic summary { cursor: pointer; padding: 3px 0; }

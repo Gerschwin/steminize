@@ -3,7 +3,7 @@
 // dead in the desktop app. The webview asks through this command instead, and only https links to
 // the sites the app itself links to are honoured, so a page can't use it to launch anything else.
 
-const ALLOWED_HOSTS: &[&str] = &["github.com", "huggingface.co", "onnxruntime.ai", "tauri.app", "genius.com"];
+const ALLOWED_HOSTS: &[&str] = &["github.com", "huggingface.co", "onnxruntime.ai", "tauri.app", "genius.com", "www.paypal.com"];
 
 fn allowed(url: &str) -> bool {
     let Some(rest) = url.strip_prefix("https://") else { return false };
@@ -48,6 +48,9 @@ mod tests {
         assert!(allowed("https://github.com/Gerschwin/steminize/releases"));
         assert!(allowed("https://genius.com/search?q=some%20song"));
         assert!(allowed("https://huggingface.co/StemSplitio/htdemucs-onnx"));
+        assert!(allowed("https://www.paypal.com/ncp/payment/FZTNXUUZ3QWH6"));
+        assert!(!allowed("https://www.paypal.com.evil.example/ncp/payment/x"));
+        assert!(!allowed("https://paypal.com/x")); // only the exact hosts we link to
         assert!(!allowed("http://github.com/x"));
         assert!(!allowed("file:///etc/passwd"));
         assert!(!allowed("https://evil.example/https://github.com"));
