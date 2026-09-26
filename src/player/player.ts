@@ -1,4 +1,6 @@
 import workletUrl from './worklet.ts?worker&url';
+import probeUrl from './inputProbe.ts?worker&url';
+import { detectLatency, type LatencyResult } from './latency.ts';
 import type { PlayerMsg, PlayerReport } from './worklet.ts';
 import type { Practice } from './transport.ts';
 import type { Stereo } from './mixcore.ts';
@@ -328,6 +330,59 @@ export class Player {
       };
       rec.stop();
     });
+  }
+
+  private probeLoaded = false;
+
+  /**
+   * Plays a few clicks and listens for them on the input, returning the round-trip delay (output to
+   * speakers or a cable, and back in), or null if they weren't heard clearly. Monitoring must be on,
+   * and the monitor is muted for the duration so the clicks aren't fed back into themselves.
+   */
+  async measureLatency(): Promise<LatencyResult | null> {
+    const ctx = this.ctx;
+    const source = this.monitorSource;
+    if (!ctx || !source) throw new Error('Start monitoring first.');
+    if (!this.probeLoaded) {
+      await ctx.audioWorklet.addModule(probeUrl);
+      this.probeLoaded = true;
+    }
+    const rate = ctx.sampleRate;
+    const probe = new AudioWorkletNode(ctx, 'input-probe', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+    const mute = ctx.createGain(); // the probe has to be pulled by something to run; nothing audible comes out
+    mute.gain.value = 0;
+    const blocks: { frame: number; samples: Float32Array }[] = [];
+    probe.port.onmessage = (e) => blocks.push(e.data);
+    source.connect(probe);
+    probe.connect(mute).connect(ctx.destination);
+    const before = this.monitorGain?.gain.value ?? 0;
+    if (this.monitorGain) this.monitorGain.gain.value = 0;
+    try {
+      // A short two-tone burst: sharp enough to find the start of, and heard through small speakers and mics.
+      const click = ctx.createBuffer(1, 256, rate);
+      const d = click.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = 0.35 * (Math.sin(i * 0.14) + Math.sin(i * 0.4)) * (1 - i / d.length);
+      const first = ctx.currentTime + 0.5;
+      const offsets = [0, 0.6, 1.2, 1.8, 2.4];
+      for (const o of offsets) {
+        const s = ctx.createBufferSource();
+        s.buffer = click;
+        s.connect(ctx.destination);
+        s.start(first + o);
+      }
+      await new Promise((r) => setTimeout(r, (first - ctx.currentTime + offsets[offsets.length - 1] + 0.9) * 1000));
+      if (!blocks.length) return null;
+      const start = blocks[0].frame;
+      const last = blocks[blocks.length - 1];
+      const all = new Float32Array(last.frame + last.samples.length - start);
+      for (const b of blocks) all.set(b.samples, b.frame - start);
+      return detectLatency(all, start, offsets.map((o) => Math.round((first + o) * rate)), rate);
+    } finally {
+      if (this.monitorGain) this.monitorGain.gain.value = before;
+      source.disconnect(probe);
+      probe.disconnect();
+      probe.port.onmessage = null;
+    }
   }
 
   setMonitorGain(v: number) {

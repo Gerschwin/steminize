@@ -8,7 +8,8 @@ import type { Trainer } from '../player/transport.ts';
 import { extensionFor, mimeFor } from '../encode/meta.ts';
 import { stemColour, MODELS } from '../models.ts';
 import { openSink, safeName, saveFile } from '../platform.ts';
-import type { Settings } from '../settings.ts';
+import { MAX_REC_LATENCY_MS, loadRecLatencyMs, saveRecLatencyMs, type Settings } from '../settings.ts';
+import { placeTake } from '../player/placement.ts';
 import { isFlat, type EqParams } from '../player/eq.ts';
 import { eqPanel, type EqPanel } from './eqPanel.ts';
 import { $, fitCanvas, fmtDuration, fmtTime, h, pressed, toast } from './dom.ts';
@@ -292,6 +293,8 @@ export class Deck {
   // ---- a live recording being drawn in as its own track while it's captured ----
   private recordLane: Lane | null = null;
   private recordStartPos = 0;
+  /** Song frame a punch-in take must stop at (the end of the loop), or null for an ordinary take. */
+  private recordPunchEnd: number | null = null;
   private recordDrawTimer = 0;
 
   constructor(private settings: () => Settings) {
@@ -634,11 +637,12 @@ export class Deck {
       const ch = (i: number) => audio.getChannelData(Math.min(i, audio.numberOfChannels - 1));
       const raw: Stereo = [ch(0), ch(1)];
       const data: Stereo = [new Float32Array(this.length), new Float32Array(this.length)];
-      const offset = Math.min(this.length, Math.max(0, this.recordStartPos));
-      const n = Math.min(raw[0].length, this.length - offset);
-      if (n > 0) {
-        data[0].set(raw[0].subarray(0, n), offset);
-        data[1].set(raw[1].subarray(0, n), offset);
+      // The take lands behind the song by the round-trip audio delay; put it back where it was played.
+      const at = placeTake(raw[0].length, this.recordStartPos, Math.round((loadRecLatencyMs() / 1000) * SR), this.length, this.recordPunchEnd);
+      this.recordPunchEnd = null;
+      if (at.count > 0) {
+        data[0].set(raw[0].subarray(at.srcStart, at.srcStart + at.count), at.dstStart);
+        data[1].set(raw[1].subarray(at.srcStart, at.srcStart + at.count), at.dstStart);
       }
       const take: Take = { id: `take-${takes.length + 1}`, data, peaks: peaksOf(data) };
       lane.takes = [...takes, take];
@@ -1072,7 +1076,38 @@ export class Deck {
     const recordBtn = $<HTMLButtonElement>('liveRecordBtn');
     const recordTime = $('liveRecordTime');
     const status = $('liveStatus');
+    const latencyWrap = $('liveLatencyWrap');
+    const latencyInput = $<HTMLInputElement>('liveLatency');
+    const latencyBtn = $<HTMLButtonElement>('liveLatencyBtn');
     const sum = $('sumLive');
+
+    const applyLatency = (ms: number) => {
+      const v = Math.max(0, Math.min(MAX_REC_LATENCY_MS, Math.round(ms) || 0));
+      latencyInput.value = String(v);
+      saveRecLatencyMs(v);
+    };
+    latencyInput.value = String(loadRecLatencyMs());
+    latencyInput.onchange = () => applyLatency(Number(latencyInput.value));
+    latencyBtn.onclick = async () => {
+      if (!this.player.monitoring || this.player.recording) return;
+      latencyBtn.disabled = true;
+      recordBtn.disabled = true;
+      status.textContent = 'Measuring… clicks will play through your speakers. Keep the room quiet.';
+      try {
+        const r = await this.player.measureLatency();
+        if (r) {
+          applyLatency(r.ms);
+          status.textContent = `Measured ${r.ms} ms (${r.hits} of ${r.total} clicks). Takes are now shifted earlier by that much.`;
+        } else {
+          status.textContent = "Couldn't hear the clicks. Turn the volume up and put the microphone near the speakers, or connect the output to the input with a cable. Headphones won't work.";
+        }
+      } catch (e) {
+        status.textContent = `Couldn't measure: ${(e as Error).message}`;
+      } finally {
+        latencyBtn.disabled = false;
+        recordBtn.disabled = false;
+      }
+    };
 
     const maxTakesInput = $<HTMLInputElement>('liveMaxTakes');
     maxTakesInput.value = String(this.maxTakes());
@@ -1133,6 +1168,8 @@ export class Deck {
       panWrap.hidden = !on;
       meter.hidden = !on;
       recordBtn.hidden = !on;
+      latencyWrap.hidden = !on;
+      latencyBtn.hidden = !on;
       if (on) refreshRecordTargets();
       else recordTarget.hidden = true;
       if (on) {
