@@ -620,6 +620,8 @@ export class Deck {
     clearInterval(this.recordDrawTimer);
     const lane = this.recordLane;
     this.recordLane = null;
+    const punchEnd = this.recordPunchEnd;
+    this.recordPunchEnd = null;
     if (!lane) return;
     lane.el.classList.remove('recording');
     const takes = lane.takes ?? [];
@@ -638,8 +640,7 @@ export class Deck {
       const raw: Stereo = [ch(0), ch(1)];
       const data: Stereo = [new Float32Array(this.length), new Float32Array(this.length)];
       // The take lands behind the song by the round-trip audio delay; put it back where it was played.
-      const at = placeTake(raw[0].length, this.recordStartPos, Math.round((loadRecLatencyMs() / 1000) * SR), this.length, this.recordPunchEnd);
-      this.recordPunchEnd = null;
+      const at = placeTake(raw[0].length, this.recordStartPos, Math.round((loadRecLatencyMs() / 1000) * SR), this.length, punchEnd);
       if (at.count > 0) {
         data[0].set(raw[0].subarray(at.srcStart, at.srcStart + at.count), at.dstStart);
         data[1].set(raw[1].subarray(at.srcStart, at.srcStart + at.count), at.dstStart);
@@ -1077,6 +1078,8 @@ export class Deck {
     const recordTime = $('liveRecordTime');
     const status = $('liveStatus');
     const latencyWrap = $('liveLatencyWrap');
+    const punchWrap = $('livePunchWrap');
+    const punchBox = $<HTMLInputElement>('livePunch');
     const latencyInput = $<HTMLInputElement>('liveLatency');
     const latencyBtn = $<HTMLButtonElement>('liveLatencyBtn');
     const sum = $('sumLive');
@@ -1169,6 +1172,7 @@ export class Deck {
       meter.hidden = !on;
       recordBtn.hidden = !on;
       latencyWrap.hidden = !on;
+      punchWrap.hidden = !on;
       latencyBtn.hidden = !on;
       if (on) refreshRecordTargets();
       else recordTarget.hidden = true;
@@ -1185,6 +1189,8 @@ export class Deck {
     // ---- recording your own take while monitoring, as a new track alongside the others ----
     let recordStart = 0;
     let recordTimer = 0;
+    /** Polls the playhead during a punch-in take to stop it at the end of the loop. */
+    let punchWatch = 0;
     /** The tempo to restore once recording stops, if it had to be forced to 100% to start it. */
     let restoreTempo: number | null = null;
     /** True while a loop that was on has been suspended for the take (its wrap would jump the playhead). */
@@ -1207,6 +1213,7 @@ export class Deck {
         recordTimer = window.setInterval(() => (recordTime.textContent = fmtTime((performance.now() - recordStart) / 1000)), 500);
       } else {
         clearInterval(recordTimer);
+        clearInterval(punchWatch);
       }
     };
     /** Stops an in-progress recording (if any) and turns it into a track. Used by the Record
@@ -1231,6 +1238,11 @@ export class Deck {
       // Which track this take goes into is decided now, before the lead-in, not after.
       const targetIdx = recordTarget.hidden || recordTarget.value === 'new' ? NaN : Number(recordTarget.value);
       const target = Number.isFinite(targetIdx) ? this.lanes[targetIdx] : undefined;
+      const punch = punchBox.checked;
+      if (punch && !(this.loop.b > this.loop.a)) {
+        toast('Punch-in needs a loop section: drag across the waveform, or use Set A and Set B.', true);
+        return;
+      }
       void (async () => {
         recordBtn.disabled = true;
         try {
@@ -1254,24 +1266,53 @@ export class Deck {
             this.player.setLoop(false, this.loop.a, this.loop.b);
             toast('Loop paused while recording');
           }
-          if (!this.player.state.playing) await this.player.play();
           const bpm = this.r?.analysis?.bpm;
-          const leadInMs = bpm ? Math.max(800, Math.min(4000, (60 / bpm) * this.pr.perBar * 1000)) : 1500;
-          status.textContent = 'Get ready…';
-          await new Promise((res) => setTimeout(res, leadInMs));
-          if (!this.player.monitoring) return; // monitoring stopped during the lead-in
+          let punchEnd: number | null = null;
+          if (punch) {
+            // Punch in: play from a bar before the section and record from A to B. The playhead is
+            // the timing, so there's no separate lead-in.
+            const a = this.loop.a;
+            const from = Math.max(0, a - (bpm ? Math.round((60 / bpm) * this.pr.perBar * SR) : 3 * SR));
+            status.textContent = 'Pre-roll…';
+            this.player.seek(from);
+            await this.player.play();
+            const arrived = await this.waitForPlayhead(a, ((a - from) / SR) * 1000 + 3000);
+            if (!arrived || !this.player.monitoring) {
+              status.textContent = '';
+              return; // cancelled, or the playhead never got there
+            }
+            punchEnd = this.loop.b;
+          } else {
+            if (!this.player.state.playing) await this.player.play();
+            const leadInMs = bpm ? Math.max(800, Math.min(4000, (60 / bpm) * this.pr.perBar * 1000)) : 1500;
+            status.textContent = 'Get ready…';
+            await new Promise((res) => setTimeout(res, leadInMs));
+            if (!this.player.monitoring) return; // monitoring stopped during the lead-in
+          }
           status.textContent = '';
+          this.recordPunchEnd = punchEnd;
           this.player.startRecording();
           this.beginRecordLane(target);
           refreshRecordTargets();
           recordUi(true);
+          if (punchEnd != null) {
+            const end = punchEnd;
+            punchWatch = window.setInterval(() => {
+              if (this.player.state.pos < end) return;
+              clearInterval(punchWatch);
+              void finishRecording().then(() => this.player.pause());
+            }, 15);
+          }
         } catch (e) {
           toast(`Couldn't start recording: ${(e as Error).message}`, true);
         } finally {
           recordBtn.disabled = false;
           // Didn't end up recording after all (lead-in cancelled, or it failed to start): put
           // the tempo back rather than leave it stuck at 100% with nothing to show for it.
-          if (!this.player.recording) resumeLoop();
+          if (!this.player.recording) {
+            resumeLoop();
+            this.recordPunchEnd = null;
+          }
           if (!this.player.recording && restoreTempo != null) {
             this.setTempoPitch(restoreTempo, this.pitch);
             restoreTempo = null;
@@ -2031,6 +2072,22 @@ export class Deck {
     }
     this.updateLoopUi();
     this.emit();
+  }
+
+  /** Resolves true once the playhead reaches `frame`, or false if it hasn't within `timeoutMs`. */
+  private waitForPlayhead(frame: number, timeoutMs: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const t0 = performance.now();
+      const id = window.setInterval(() => {
+        if (this.player.state.pos >= frame) {
+          clearInterval(id);
+          resolve(true);
+        } else if (performance.now() - t0 > timeoutMs) {
+          clearInterval(id);
+          resolve(false);
+        }
+      }, 10);
+    });
   }
 
   /** Which loop edge (if any) sits under x, so grabbing it resizes the section instead of drawing a new one. */
