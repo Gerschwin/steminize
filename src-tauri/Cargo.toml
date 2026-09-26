@@ -23,6 +23,11 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["process", "io-util", "rt"] }
 
+# Linux only: the webview (WebKitGTK) denies microphone access unless the host app allows it.
+# Same version Tauri's own webview layer already builds against.
+[target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = "2"
+
 [profile.release]
 lto = true
 opt-level = "s"

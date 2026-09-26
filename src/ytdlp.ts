@@ -23,8 +23,8 @@ export async function downloadYoutube(id: string, title: string, onProgress: (fr
   let path: string | undefined;
   try {
     path = await invoke<string>('ytdlp_download', { id });
-    const { readFile } = await import('@tauri-apps/plugin-fs');
-    const bytes = await readFile(path);
+    // Read through our own command: the webview has no fs scope for the temp dir.
+    const bytes = await invoke<ArrayBuffer>('ytdlp_read', { path });
     const ext = path.slice(path.lastIndexOf('.') + 1) || 'm4a';
     return new File([bytes as BlobPart], `${safeName(title)}.${ext}`);
   } finally {

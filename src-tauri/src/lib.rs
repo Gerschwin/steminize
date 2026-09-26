@@ -18,9 +18,39 @@ pub fn run() {
     }
 
     tauri::Builder::default()
+        .setup(|_app| {
+            // WebKitGTK denies getUserMedia unless the host allows it, which broke the Live input
+            // drawer with "The request is not allowed by the user agent". Allow audio capture only.
+            #[cfg(target_os = "linux")]
+            {
+                use tauri::Manager;
+                if let Some(window) = _app.get_webview_window("main") {
+                    let _ = window.with_webview(|webview| {
+                        use webkit2gtk::glib::prelude::Cast;
+                        use webkit2gtk::{PermissionRequestExt, SettingsExt, UserMediaPermissionRequest, UserMediaPermissionRequestExt, WebViewExt};
+                        let view = webview.inner();
+                        if let Some(settings) = WebViewExt::settings(&view) {
+                            settings.set_enable_media_stream(true);
+                        }
+                        view.connect_permission_request(|_, request| {
+                            let Some(media) = request.downcast_ref::<UserMediaPermissionRequest>() else {
+                                return false; // anything else keeps WebKit's default (deny)
+                            };
+                            if media.is_for_video_device() {
+                                request.deny();
+                            } else {
+                                request.allow();
+                            }
+                            true
+                        });
+                    });
+                }
+            }
+            Ok(())
+        })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .invoke_handler(tauri::generate_handler![ytdlp::ytdlp_search, ytdlp::ytdlp_download, ytdlp::ytdlp_cleanup])
+        .invoke_handler(tauri::generate_handler![ytdlp::ytdlp_search, ytdlp::ytdlp_download, ytdlp::ytdlp_read, ytdlp::ytdlp_cleanup])
         .run(tauri::generate_context!())
         .expect("error while running Steminize");
 }

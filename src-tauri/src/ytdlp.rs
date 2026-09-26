@@ -197,6 +197,22 @@ pub async fn ytdlp_download(app: AppHandle, id: String) -> Result<String, String
     Ok(file.path().to_string_lossy().to_string())
 }
 
+/// Returns the bytes of a file this module downloaded. The webview has no filesystem scope for the
+/// system temp dir (and shouldn't), so it reads the download through here instead of `plugin-fs`.
+/// Only `<temp>/steminize-yt-*/<file>` is readable: anything else is refused.
+#[tauri::command]
+pub async fn ytdlp_read(path: String) -> Result<tauri::ipc::Response, String> {
+    let file = std::fs::canonicalize(&path).map_err(|e| e.to_string())?;
+    let temp = std::fs::canonicalize(std::env::temp_dir()).map_err(|e| e.to_string())?;
+    let dir = file.parent().ok_or("not a download")?;
+    let is_ours = dir.parent() == Some(temp.as_path())
+        && dir.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("steminize-yt-"));
+    if !is_ours {
+        return Err("refusing to read a file that isn't a YouTube download".into());
+    }
+    std::fs::read(&file).map(tauri::ipc::Response::new).map_err(|e| e.to_string())
+}
+
 /// Removes a temp dir this module created (guarded by its own naming prefix, so this can
 /// only ever clean up its own downloads, not an arbitrary path).
 #[tauri::command]
