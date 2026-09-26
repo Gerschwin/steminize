@@ -453,7 +453,47 @@ export class Deck {
     pan.oninput = () => setPan(Number(pan.value));
     pan.ondblclick = () => setPan(0);
     dl.onclick = () => this.saveStem(this.lanes.indexOf(lane));
+    // Click seeks; dragging across the lane marks a loop section, like the overview strip does
+    // (the section is marked but the loop is left off, so scanning for a part doesn't yank playback).
+    // Mouse/pen only: on touch a drag has to keep scrolling the page.
+    const laneFrame = (e: PointerEvent) => {
+      const view = lane.ownView ?? this.view;
+      const f = Math.max(0, Math.min(1, (e.clientX - wave.getBoundingClientRect().left) / wave.clientWidth));
+      return { f, frame: view.start + f * (view.end - view.start) };
+    };
+    let laneDrag: { f0: number; frame0: number; moved: boolean } | null = null;
+    let swallowClick = false; // a drag ends in a click event; don't let it also seek
+    wave.addEventListener('pointerdown', (e) => {
+      swallowClick = false; // a drag that produced no click must not eat the next real one
+      if (e.button !== 0 || e.pointerType === 'touch') return;
+      wave.setPointerCapture(e.pointerId);
+      const { f, frame } = laneFrame(e);
+      laneDrag = { f0: f, frame0: frame, moved: false };
+    });
+    wave.addEventListener('pointermove', (e) => {
+      if (!laneDrag) return;
+      const { f, frame } = laneFrame(e);
+      if (Math.abs(f - laneDrag.f0) * wave.clientWidth > 6) laneDrag.moved = true;
+      if (!laneDrag.moved) return;
+      this.loop.a = Math.round(Math.min(laneDrag.frame0, frame));
+      this.loop.b = Math.round(Math.max(laneDrag.frame0, frame));
+      this.dirty = true;
+    });
+    wave.addEventListener('pointerup', () => {
+      if (laneDrag?.moved) {
+        swallowClick = true;
+        this.snapLoop();
+        this.updateLoopUi();
+        this.emit();
+      }
+      laneDrag = null;
+    });
+    wave.addEventListener('pointercancel', () => (laneDrag = null));
     wave.onclick = (e) => {
+      if (swallowClick) {
+        swallowClick = false;
+        return;
+      }
       const view = lane.ownView ?? this.view;
       const f = Math.max(0, Math.min(1, e.offsetX / wave.clientWidth));
       this.player.seek(view.start + f * (view.end - view.start));
