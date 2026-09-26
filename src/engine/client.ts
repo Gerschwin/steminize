@@ -20,7 +20,10 @@ export class Engine {
   }
 
   private start() {
-    this.worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
+    // The entry must be chosen synchronously: ONNX Runtime re-loads this same script for its threads.
+    this.worker = (navigator as any).gpu
+      ? new Worker(new URL('./workerGpu.ts', import.meta.url), { type: 'module' })
+      : new Worker(new URL('./workerCpu.ts', import.meta.url), { type: 'module' });
     this.worker.onmessage = async (e: MessageEvent<WorkerOut>) => {
       const m = e.data;
       if (m.type === 'need-model') {

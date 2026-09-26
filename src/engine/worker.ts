@@ -1,7 +1,8 @@
 /// <reference lib="webworker" />
 // Separation worker: owns ONNX Runtime sessions and runs the model off the UI thread.
 
-import * as ort from 'onnxruntime-web/webgpu';
+// The ONNX Runtime build is injected by workerGpu.ts / workerCpu.ts (see initWorker).
+import type * as OrtT from 'onnxruntime-web/webgpu';
 import { MODELS, neededFiles, type ModelFile, type ModelId, type Precision } from '../models.ts';
 import { fixFloat64 } from './fixfloat64.ts';
 import { CancelledError, SEGMENT, pickStems, separate, type Member, type Stereo } from './separate.ts';
@@ -31,9 +32,19 @@ export type WorkerOut =
 
 const post = (m: WorkerOut, transfer: Transferable[] = []) => (self as DedicatedWorkerGlobalScope).postMessage(m, transfer);
 
+let ort: typeof OrtT;
 const isolated = (self as any).crossOriginIsolated === true;
-ort.env.wasm.numThreads = isolated ? Math.min(8, Math.max(1, navigator.hardwareConcurrency || 4)) : 1;
-ort.env.logLevel = 'error';
+
+/**
+ * Called by the entry file once it has imported an ONNX Runtime build. Two builds exist because the
+ * WebGPU one ships an asyncify-instrumented WASM binary that makes WebKitGTK (the Linux desktop
+ * webview, which has no WebGPU) allocate without bound while creating a session, and get OOM-killed.
+ */
+export function initWorker(o: typeof OrtT) {
+  ort = o;
+  ort.env.wasm.numThreads = isolated ? Math.min(8, Math.max(1, navigator.hardwareConcurrency || 4)) : 1;
+  ort.env.logLevel = 'error';
+}
 
 // ---- model bytes come from the main thread (which owns the cache/download UI)
 const pending = new Map<string, (b: ArrayBuffer | null) => void>();
@@ -65,14 +76,14 @@ async function chooseBackend(pref: Device): Promise<'webgpu' | 'wasm'> {
 // Graph optimisation must stay off: ONNX Runtime's constant folding expands
 // these Demucs exports from ~1.2 GB to ~4.3 GB peak, past the 4 GB WASM limit
 // ("std::bad_alloc"). Measured cost of leaving it off: ~30% slower.
-const SESSION_OPTS: ort.InferenceSession.SessionOptions = { graphOptimizationLevel: 'disabled' };
+const SESSION_OPTS: OrtT.InferenceSession.SessionOptions = { graphOptimizationLevel: 'disabled' };
 
 // ---- session cache (keep several on big machines, one on small ones)
-const sessions = new Map<string, ort.InferenceSession>();
+const sessions = new Map<string, OrtT.InferenceSession>();
 const maxSessions = ((navigator as any).deviceMemory ?? 4) >= 8 ? 4 : 1;
 let lastBackend = '';
 
-async function getSession(f: ModelFile, backend: 'webgpu' | 'wasm'): Promise<{ s: ort.InferenceSession; backend: 'webgpu' | 'wasm' }> {
+async function getSession(f: ModelFile, backend: 'webgpu' | 'wasm'): Promise<{ s: OrtT.InferenceSession; backend: 'webgpu' | 'wasm' }> {
   const id = `${f.key}|${backend}`;
   const hit = sessions.get(id);
   if (hit) {
@@ -89,7 +100,7 @@ async function getSession(f: ModelFile, backend: 'webgpu' | 'wasm'): Promise<{ s
   if (!raw) throw new Error(`Model ${f.key} is not downloaded`);
   // Some exports use float64 maths the browser engine lacks; convert to float32.
   const bytes = fixFloat64(new Uint8Array(raw)).bytes;
-  let s: ort.InferenceSession;
+  let s: OrtT.InferenceSession;
   let used = backend;
   let note: string | undefined;
   try {
@@ -109,7 +120,7 @@ async function getSession(f: ModelFile, backend: 'webgpu' | 'wasm'): Promise<{ s
   return { s, backend: used };
 }
 
-function runner(s: ort.InferenceSession) {
+function runner(s: OrtT.InferenceSession) {
   const inName = s.inputNames[0];
   const outName = s.outputNames[0];
   return async (input: Float32Array) => {
