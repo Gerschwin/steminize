@@ -317,6 +317,7 @@ export class Deck {
     $('loopBtn').onclick = () => this.setLoop(!this.loop.on);
     $('setA').onclick = () => this.setPoint('a');
     $('setB').onclick = () => this.setPoint('b');
+    $('clearLoop').onclick = () => this.clearLoop();
     $('saveAllBtn').onclick = () => this.saveAll();
     $('exportMixBtn').onclick = () => this.exportMix();
     $('rerunBtn').onclick = () => this.onRerun();
@@ -1983,6 +1984,13 @@ export class Deck {
     this.emit();
   }
 
+  /** Removes the A/B section entirely (the Loop button only switches it off and leaves the region). */
+  private clearLoop() {
+    this.loop.a = 0;
+    this.loop.b = 0;
+    this.setLoop(false); // also stops the practice trainer, tells the player, and refreshes the UI
+  }
+
   private setPoint(which: 'a' | 'b') {
     this.loop[which] = this.snap(this.player.state.pos);
     if (this.loop.b <= this.loop.a) {
@@ -1995,6 +2003,7 @@ export class Deck {
   private updateLoopUi() {
     if (!$('keyPanel').hidden) this.refreshKeySectionBtn();
     pressed($('loopBtn'), this.loop.on);
+    $('clearLoop').hidden = !(this.loop.b > this.loop.a);
     $('loopInfo').textContent =
       this.loop.b > this.loop.a
         ? `${fmtTime(this.loop.a / SR)} – ${fmtTime(this.loop.b / SR)}${this.loop.on ? '' : ' (off)'}`
@@ -2086,8 +2095,15 @@ export class Deck {
     const x = (f: number) => ((f - view.start) / (view.end - view.start)) * w;
     const px = Math.max(-2, Math.min(w + 2, x(pos)));
     if (showLoop && this.loop.b > this.loop.a) {
-      g.fillStyle = this.loop.on ? 'rgba(139,124,246,0.18)' : 'rgba(139,124,246,0.08)';
-      g.fillRect(x(this.loop.a), 0, x(this.loop.b) - x(this.loop.a), hh);
+      const xa = x(this.loop.a);
+      const xb = x(this.loop.b);
+      g.fillStyle = this.loop.on ? 'rgba(139,124,246,0.30)' : 'rgba(139,124,246,0.18)';
+      g.fillRect(xa, 0, xb - xa, hh);
+      // Edge lines mark exactly where A and B are, so a marked-but-off section is still obvious.
+      const edge = Math.max(2, Math.round(devicePixelRatio * 2));
+      g.fillStyle = this.loop.on ? 'rgba(139,124,246,0.95)' : 'rgba(139,124,246,0.65)';
+      g.fillRect(Math.round(xa), 0, edge, hh);
+      g.fillRect(Math.round(xb) - edge, 0, edge, hh);
     }
     g.drawImage(layers[0], 0, 0);
     g.save();
