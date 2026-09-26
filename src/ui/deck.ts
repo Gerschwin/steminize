@@ -1,4 +1,5 @@
 import { Player } from '../player/player.ts';
+import { MediaSessionBridge } from './mediaSession.ts';
 import type { Stereo } from '../player/mixcore.ts';
 import { encoder } from '../encode/client.ts';
 import type { Analysis } from '../library.ts';
@@ -241,6 +242,14 @@ function waveLayer(peaks: Float32Array, w: number, hgt: number, colour: string, 
 export class Deck {
   player = new Player();
   private seekToastAt = 0;
+  /** OS media keys / lock-screen controls, and keeping the screen awake while a song plays. */
+  private media = new MediaSessionBridge({
+    play: () => void this.player.play(),
+    pause: () => this.player.pause(),
+    restart: () => this.restart(),
+    skip: (s) => this.skip(s),
+    seek: (s) => this.player.seek(s * SR),
+  });
   private notifySeekBlocked = () => {
     if (performance.now() - this.seekToastAt < 2000) return;
     this.seekToastAt = performance.now();
@@ -301,6 +310,7 @@ export class Deck {
     this.player.onSeekBlocked = this.notifySeekBlocked;
     this.player.onState = (s) => {
       $('playBtn').classList.toggle('on', s.playing);
+      this.media.setPlaying(s.playing);
       // The speed trainer changes tempo inside the player; mirror it here.
       if (Math.abs(s.tempo - this.tempo) > 1e-6) {
         this.tempo = s.tempo;
@@ -812,6 +822,7 @@ export class Deck {
     $('welcome').hidden = true;
     $('deck').hidden = false;
     $('trackTitle').textContent = r.title;
+    this.media.setSong(r.title);
     this.updateLyricsLink();
     const s = r.settings;
     const extras =
@@ -1686,6 +1697,7 @@ export class Deck {
     this.stopLiveInputUi();
     this.player.pause();
     this.r = null;
+    this.media.setSong(null);
     this.lanes = [];
     $('deck').hidden = true;
     $('welcome').hidden = false;
@@ -1783,6 +1795,7 @@ export class Deck {
         this.onRename(val);
       }
       heading.textContent = this.r?.title ?? '';
+      if (this.r) this.media.setSong(this.r.title);
       input.replaceWith(heading);
       this.updateLyricsLink();
     };
