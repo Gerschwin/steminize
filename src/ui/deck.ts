@@ -284,7 +284,7 @@ export class Deck {
   private tempo = 1;
   private pitch = 0;
   private dirty = true;
-  private drag: { x0: number; moved: boolean } | null = null;
+  private drag: { x0: number; moved: boolean; edge?: 'a' | 'b' } | null = null;
   onRerun: () => void = () => {};
   private tx: Transcribe;
   private scratch: ScratchState = {};
@@ -462,18 +462,27 @@ export class Deck {
       const f = Math.max(0, Math.min(1, (e.clientX - wave.getBoundingClientRect().left) / wave.clientWidth));
       return { f, frame: view.start + f * (view.end - view.start) };
     };
-    let laneDrag: { f0: number; frame0: number; moved: boolean } | null = null;
+    let laneDrag: { f0: number; frame0: number; moved: boolean; edge?: 'a' | 'b' } | null = null;
     let swallowClick = false; // a drag ends in a click event; don't let it also seek
     wave.addEventListener('pointerdown', (e) => {
       swallowClick = false; // a drag that produced no click must not eat the next real one
       if (e.button !== 0 || e.pointerType === 'touch') return;
       wave.setPointerCapture(e.pointerId);
       const { f, frame } = laneFrame(e);
-      laneDrag = { f0: f, frame0: frame, moved: false };
+      const edge = this.loopEdgeAt(f * wave.clientWidth, wave.clientWidth, lane.ownView ?? this.view);
+      laneDrag = { f0: f, frame0: frame, moved: false, edge: edge ?? undefined };
     });
     wave.addEventListener('pointermove', (e) => {
-      if (!laneDrag) return;
       const { f, frame } = laneFrame(e);
+      if (!laneDrag) {
+        wave.style.cursor = this.loopEdgeAt(f * wave.clientWidth, wave.clientWidth, lane.ownView ?? this.view) ? 'ew-resize' : '';
+        return;
+      }
+      if (laneDrag.edge) {
+        if (Math.abs(f - laneDrag.f0) * wave.clientWidth > 3) laneDrag.moved = true;
+        if (laneDrag.moved) this.dragLoopEdge(laneDrag.edge, frame);
+        return;
+      }
       if (Math.abs(f - laneDrag.f0) * wave.clientWidth > 6) laneDrag.moved = true;
       if (!laneDrag.moved) return;
       this.loop.a = Math.round(Math.min(laneDrag.frame0, frame));
@@ -483,9 +492,12 @@ export class Deck {
     wave.addEventListener('pointerup', () => {
       if (laneDrag?.moved) {
         swallowClick = true;
-        this.snapLoop();
-        this.updateLoopUi();
-        this.emit();
+        if (laneDrag.edge) this.finishLoopEdgeDrag();
+        else {
+          this.snapLoop();
+          this.updateLoopUi();
+          this.emit();
+        }
       }
       laneDrag = null;
     });
@@ -1984,6 +1996,32 @@ export class Deck {
     this.emit();
   }
 
+  /** Which loop edge (if any) sits under x, so grabbing it resizes the section instead of drawing a new one. */
+  private loopEdgeAt(px: number, width: number, view: { start: number; end: number }): 'a' | 'b' | null {
+    if (!(this.loop.b > this.loop.a) || width <= 0) return null;
+    const span = view.end - view.start || 1;
+    const da = Math.abs(px - ((this.loop.a - view.start) / span) * width);
+    const db = Math.abs(px - ((this.loop.b - view.start) / span) * width);
+    if (da > 7 && db > 7) return null;
+    return da <= db ? 'a' : 'b';
+  }
+
+  /** Moves one loop edge, never closer to the other than a quarter second. */
+  private dragLoopEdge(edge: 'a' | 'b', frame: number) {
+    const gap = Math.round(SR / 4);
+    if (edge === 'a') this.loop.a = Math.round(Math.max(0, Math.min(frame, this.loop.b - gap)));
+    else this.loop.b = Math.round(Math.min(this.length, Math.max(frame, this.loop.a + gap)));
+    this.dirty = true;
+  }
+
+  private finishLoopEdgeDrag() {
+    this.snapLoop();
+    // While recording, a loop that is on has been suspended; the player is told again when the take ends.
+    if (this.loop.on && !this.player.recording) this.player.setLoop(true, this.loop.a, this.loop.b);
+    this.updateLoopUi();
+    this.emit();
+  }
+
   /** Removes the A/B section entirely (the Loop button only switches it off and leaves the region). */
   private clearLoop() {
     this.loop.a = 0;
@@ -2018,11 +2056,20 @@ export class Deck {
     wrap.addEventListener('pointerdown', (e) => {
       if ((e.target as HTMLElement).closest('button')) return; // let the zoom overlay's buttons handle their own clicks
       wrap.setPointerCapture(e.pointerId);
-      this.drag = { x0: frac(e), moved: false };
+      const edge = this.loopEdgeAt(frac(e) * wrap.clientWidth, wrap.clientWidth, this.view);
+      this.drag = { x0: frac(e), moved: false, edge: edge ?? undefined };
     });
     wrap.addEventListener('pointermove', (e) => {
-      if (!this.drag) return;
+      if (!this.drag) {
+        wrap.style.cursor = this.loopEdgeAt(frac(e) * wrap.clientWidth, wrap.clientWidth, this.view) ? 'ew-resize' : '';
+        return;
+      }
       const f = frac(e);
+      if (this.drag.edge) {
+        if (Math.abs(f - this.drag.x0) * wrap.clientWidth > 3) this.drag.moved = true;
+        if (this.drag.moved) this.dragLoopEdge(this.drag.edge, this.frameAt(f));
+        return;
+      }
       if (Math.abs(f - this.drag.x0) * wrap.clientWidth > 6) this.drag.moved = true;
       if (this.drag.moved) {
         const [a, b] = [this.drag.x0, f].sort((x, y) => x - y);
@@ -2035,7 +2082,8 @@ export class Deck {
     });
     wrap.addEventListener('pointerup', (e) => {
       if (!this.drag) return;
-      if (this.drag.moved) {
+      if (this.drag.edge && this.drag.moved) this.finishLoopEdgeDrag();
+      else if (this.drag.moved) {
         // Mark the section but leave the loop off and playback where scrubbing left it:
         // dragging is also how you scan the song to find a part, and forcing the loop on
         // (jumping back to its start) would undo that. Press Loop to actually use the section.
