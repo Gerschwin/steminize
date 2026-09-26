@@ -426,6 +426,17 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
 .m-group h3 { margin: 0; font-size: 14px; }
 .m-browse { font-size: 12px; color: var(--accent-2); text-decoration: none; white-space: nowrap; }
 
+/* ---------- about ---------- */
+.about-hero { display: flex; align-items: center; gap: 12px; margin: 6px 0 10px; }
+.about-name { font-size: 20px; font-weight: 700; }
+.about-name span { font-size: 13px; font-weight: 500; color: var(--muted); margin-left: 4px; }
+.about-links { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.about-links a, .about-list a { color: var(--accent-2); }
+.about-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 5px; }
+.about-lic details { margin: 4px 0; }
+.about-lic summary { cursor: pointer; padding: 3px 0; }
+.about-lic pre { white-space: pre-wrap; font-size: 11px; line-height: 1.45; max-height: 220px; overflow: auto; background: var(--panel-2); border-radius: 8px; padding: 10px; margin: 6px 0; user-select: text; }
+
 /* ---------- keyboard shortcuts help ---------- */
 .kb-list { display: flex; flex-direction: column; gap: 8px; }
 .kb-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }

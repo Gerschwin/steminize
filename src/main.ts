@@ -11,6 +11,7 @@ import { SettingsPanel } from './ui/settingsPanel.ts';
 import { initLibrary } from './ui/libraryPanel.ts';
 import { initYoutubeDialog } from './ui/youtubeDialog.ts';
 import { initTheme } from './theme.ts';
+import { initAbout } from './ui/about.ts';
 
 // ---------------------------------------------------------------- setup
 registerServiceWorker();
@@ -21,6 +22,7 @@ const library = initLibrary(deck);
 library.onOpen = () => refreshQueue();
 const engine = new Engine();
 initModelsDialog();
+initAbout();
 onModelsChanged.add(() => settings.render());
 $('helpBtn').onclick = () => openDialog($<HTMLDialogElement>('helpDlg'));
 
