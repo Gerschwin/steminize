@@ -297,6 +297,8 @@ async function processTrack(t: Track) {
       { id: t.id, mix, model: s.model, precision: s.precision, device: s.device, shifts: s.shifts, overlap: s.overlap, twoStems: s.twoStems, skip: s.skipStems },
       (p) => {
         if (p.done < 0) return set('separating', `${p.stage}…`, -1);
+        // The model is loaded and the first pass is running: say so, rather than leave "Loading model…" up for it.
+        if (p.done === 0) return set('separating', 'Separating…', -1);
         if (p.stage !== stage || !t0) [stage, t0] = [p.stage, performance.now()];
         const eta = p.done > 1 ? ((performance.now() - t0) / 1000 / p.done) * (p.total - p.done) : NaN;
         set('separating', [`${Math.round((100 * p.done) / p.total)}%`, fmtEta(eta)].filter(Boolean).join(' · '), p.done / p.total);

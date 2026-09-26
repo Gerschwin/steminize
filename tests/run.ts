@@ -83,6 +83,21 @@ for (const [len, overlap, shifts] of [
   ok(`  run count matches progress`, calls.n === countRuns(len, opts) && lastDone === calls.n, `${calls.n} runs`);
 }
 
+// ---- 1b. the memory-lean paths give exactly the same answer
+{
+  const mix = signal(Math.round(SEGMENT * 1.7), 21);
+  const run = (over: object) => separate(mix, { members: [fakeMember(W, [0, 1, 2, 3])], numSources: 4, shifts: 1, overlap: 0.25, ...over });
+  const plain = await run({});
+  let allocated = 0;
+  const viaAlloc = await run({ alloc: (n: number) => (allocated++, new Float32Array(n)) });
+  ok('alloc: result rows come from the caller (4 sources x 2 channels)', allocated === 8, `${allocated} arrays`);
+  ok('alloc: identical output', plain.every((src, k) => src.every((ch, c) => maxErr(ch, (i) => viaAlloc[k][c][i]) === 0)));
+  // A single-model, no-shift run writes straight into the result; a shifted one sums via a second set. Same physics.
+  const progress: number[] = [];
+  await run({ onProgress: (d: number) => progress.push(d) });
+  ok('progress: reports 0 once the model is loaded, before the first pass', progress[0] === 0 && progress[1] === 1, progress.slice(0, 3).join(','));
+}
+
 // ---- 2. bags take each row only from its specialist
 {
   const mix = signal(50_000, 7);

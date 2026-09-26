@@ -137,7 +137,7 @@ function runner(s: OrtT.InferenceSession) {
 const cancelled = new Set<string>();
 
 function share(a: Float32Array): Float32Array {
-  if (!isolated) return a;
+  if (!isolated || a.buffer instanceof SharedArrayBuffer) return a; // already shared (see alloc below): no second copy
   const s = new Float32Array(new SharedArrayBuffer(a.byteLength));
   s.set(a);
   return s;
@@ -174,6 +174,9 @@ async function run(job: SeparateJob) {
     shifts: job.shifts,
     overlap: job.overlap,
     isCancelled: () => cancelled.has(job.id),
+    // When isolated the finished stems are handed back as shared memory. Allocating the result that way from
+    // the start avoids a second full copy of every stem at the moment memory is already at its peak.
+    alloc: isolated ? (n) => new Float32Array(new SharedArrayBuffer(n * 4)) : undefined,
     onProgress: (done, total) => post({ type: 'progress', id: job.id, done, total, stage }),
   });
   const computed = chosen.flatMap((f) => f.rows);
