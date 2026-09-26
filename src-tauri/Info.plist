@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Merged into the macOS app's Info.plist by Tauri. Without this macOS refuses microphone access outright. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Steminize uses the microphone so you can play along with a song and record takes. Audio never leaves your computer.</string>
+</dict>
+</plist>

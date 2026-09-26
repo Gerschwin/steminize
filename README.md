@@ -9,7 +9,7 @@ It runs as a web app (installable on desktop and phone) and as a desktop app (Wi
 - **Models:** HT Demucs (fast), HT Demucs Fine-tuned (best, about 4× slower) and HT Demucs 6-stem (adds guitar and piano — the default). Each comes in a compact (fp16) or full (fp32) download.
 - **The Demucs command-line options:** two-stem/karaoke mode (`--two-stems`), shifts (`--shifts`), overlap (`--overlap`), clip mode (`--clip-mode`), and output as WAV 16/24/32-bit float, FLAC 16/24 or MP3 128–320 kbps.
 - **Batch queue:** drop in several songs; each shows progress and time left.
-- **Practice player:** mute, solo, set the level and pan (left–right) of each stem, plus a per-stem EQ with presets (Kick, Snare, Hi-hats, Bass on small speakers, Vocal clarity) and manual low-cut, high-cut and focus band; loop a section (drag across the waveform); change tempo (50–150%) and pitch (±12 semitones) without affecting the other.
+- **Practice player:** mute, solo, set the level and pan (left–right) of each stem, plus a per-stem EQ with presets (Kick, Snare, Hi-hats, Bass on small speakers, Vocal clarity) and manual low-cut, high-cut and focus band; loop a section (drag across the overview strip or any track's waveform, or use Set A / Set B; drag the A or B edge to fine-tune it, and **Clear** removes it; the section shows in cyan); change tempo (50–150%) and pitch (±12 semitones) without affecting the other.
 - **Open multitrack:** already have separate tracks (a band's parts, DAW exports, rehearsal multitracks)? Open the files or a whole folder and each file becomes a lane: no separation, all the same tools. Tracks line up from their start, so export every part from the same point (e.g. bar 1). With a shared folder (Syncthing, Google Drive for desktop, Dropbox) this doubles as a simple way for a band to share parts.
 - **Library:** separated songs are kept on your computer (16-bit FLAC in the browser's private storage) with their mixer, EQ, loop and practice settings, so they reopen instantly. **Back up / restore** the whole library as one zip file, e.g. to move it to another browser or computer; restoring skips songs you already have.
 - **Practice tools:** tempo (BPM) and bar detection from the drum stem, with ½×/2×/tap correction; loop snapping to beats or bars; speed trainer (e.g. 70% → 100%, +5% per pass); gap between passes; one-bar count-in; metronome click that stays in step with slowed-down audio.
@@ -20,7 +20,11 @@ It runs as a web app (installable on desktop and phone) and as a desktop app (Wi
   - **Chords:** detected per beat along the bar grid, using the separated bass to find the root. Click a chord to correct it (suggestions, any root/type, slash bass, split in two); corrections are marked and kept. **Chart ⤓** saves a text chord chart in bars, using your markers as sections, transposed if you've shifted the pitch.
   - **To MIDI:** turns a stem (or all parts) into notes with Spotify's Basic Pitch, drawn over the notes view. Lead vocals and bass are kept to one note at a time. **MIDI ⤓** saves every part you've transcribed as one MIDI file, at the song's tempo.
   - How good: the notes view is reliable (it's measurement, not guessing). Chords are a first draft: expect roughly 60–75% right on real songs, better on simple pop/rock with a separated bass, worse on jazz chords, and fix the rest by ear. MIDI is good on bass and single-note melodies, fair on piano, messy on strummed guitar or a full mix.
-- **Live input** (in the **Live input** drawer): play a real instrument or mic live alongside the tracks, through whatever's plugged into your computer (built-in mic or a USB audio interface, picked from a device list). It's monitoring only — nothing is recorded or exported — with its own level and pan sliders and a small meter so you can see it's actually receiving signal. Browser audio has some inherent latency (roughly 10–50 ms depending on your OS/hardware), so it's for practicing along, not sample-accurate like an ASIO-based DAW.
+- **Live input** (in the **Live input** drawer): play a real instrument or mic live alongside the tracks, through whatever's plugged into your computer (built-in mic or a USB audio interface, picked from a device list), with its own level and pan sliders and a small meter so you can see it's actually receiving signal.
+  - **Record** captures your playing as a take on a new track, or into one you already recorded. Playback starts if it isn't running, after a short lead-in of about a bar, and the tempo is held at 100% for the take so it stays in step. While a take is recording the playhead can't be moved and a running loop is paused, because either would knock it out of sync with the song. Each track keeps its last few takes (**Keep last**), you can switch between them, and takes are saved with the song in the library.
+  - **Punch in on loop** records only across the marked A–B section: playback starts a bar before it, recording runs from A to B, then stops and pauses.
+  - **Latency:** there is a delay between what you hear and what gets recorded, so a take lands behind the song by that much (roughly 20–100 ms with a USB interface). Press **Measure** to play a few clicks and listen for them on the input (put the speakers near the mic, or connect an output to the input with a cable; headphones can't work), and takes are shifted earlier by the result. You can also type a value. It starts at 0, which shifts nothing. Browser audio is still not sample-accurate like an ASIO-based DAW, so this is for practising along and rough takes.
+- **About** (the ⓘ button in the top bar): the version, what uses the network, credits and licences, and a **Support** link. The desktop app also has **Check for updates** (asks GitHub for the latest release, only when you press it). **Copy diagnostic info** copies a plain-text summary of your setup and recent errors to paste into a bug report; it contains no songs, file names or personal information, and nothing is sent anywhere.
 - **Tuner** (in the **Tuner** drawer): a needle tuner for the live input or any stem/track, showing the detected note, Hz and cents sharp/flat. Works best on a single sustained note (a bass or guitar open string, a held vocal note); it ignores silence and chords rather than guessing. Follows any pitch shift you've applied, so it reads correctly against a shifted stem.
 - **Scratchpad** (in the **Scratchpad** drawer): plain-text notes per song, in four tabs — Lyrics, Tab, Drum tab and Notes. The Tab and Drum tab boxes use a monospace font with no line-wrap, so ASCII tab (`e|--0-1-3--|`) stays aligned as you type or paste it in. Sections already have their own markers (name, jump, loop); this is just free text alongside them.
 - **Hands-free:** PageDown plays/pauses and PageUp restarts the section, which suits most Bluetooth page-turner pedals; "Foot pedal mode" maps arrow-key pedals the same way.
@@ -30,7 +34,7 @@ It runs as a web app (installable on desktop and phone) and as a desktop app (Wi
 
 ## Running it on your computer (development)
 
-You need [Node.js 22 or newer](https://nodejs.org).
+You need [Node.js 22 or newer](https://nodejs.org). The repository pins it in `.nvmrc`, so with [nvm](https://github.com/nvm-sh/nvm) just run `nvm use` (an older Node fails with an error about `styleText`).
 
 ```bash
 npm install
@@ -41,7 +45,7 @@ Open http://localhost:5173. Other commands:
 
 | Command | What it does |
 |---|---|
-| `npm test` | Checks the separation maths and the WAV/FLAC/MP3 encoders (needs `ffmpeg` on your PATH for the encoder checks) |
+| `npm test` | Checks the separation maths, the WAV/FLAC/MP3 encoders (needs `ffmpeg` on your PATH for those), latency measurement, take placement and version comparison |
 | `npm run build` | Production build into `dist/` |
 | `npm run preview` | Serves the production build at http://localhost:4173 |
 
@@ -96,6 +100,14 @@ sudo apt install gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0
 
 Next to **Open multitrack…** / **Open folder…**, the desktop app has a **From YouTube…** button: enter a song name and artist, pick from the search results, and it downloads the audio straight into the import queue. Desktop-only, because a browser tab has no way to download from YouTube itself; the native side shells out to a standalone [yt-dlp](https://github.com/yt-dlp/yt-dlp) binary, fetched once on first use and cached (no ffmpeg needed — it downloads an audio-only stream directly, no re-encoding or muxing). Everything still runs on your own machine; nothing is uploaded anywhere. You're responsible for having the right to use anything you download, same as with yt-dlp generally.
 
+### Microphone (Live input)
+
+On Linux the desktop app allows audio capture for the Live input drawer without a system prompt (camera and other permissions stay denied). On macOS the app declares why it wants the microphone so the system can ask the first time, and on Windows the webview asks for itself (neither of these has been tested by the maintainer yet). If Live input says the request "is not allowed", check the system's microphone privacy settings.
+
+### Links
+
+The desktop app opens links (the About dialog, the Models "browse" link, lyrics search, Support) in your default browser. It only opens `https` links to a short list of sites it links to itself.
+
 ### Unsigned-app warnings
 
 The installers aren't code-signed, so people will see warnings the first time:
@@ -138,7 +150,7 @@ The float64 conversion is done by `src/engine/fixfloat64.ts`, which rewrites tho
 
 - **CPU speed, measured:** with a model of the same architecture, one 7.8 s segment took about 13 s on 2 CPU threads in Chrome. A 4-minute song is about 42 segments, so roughly 9 minutes on 2 threads; expect several minutes on a typical 8-thread laptop, and 4× that for Fine-tuned.
 - **Speed is hardware-bound.** WebGPU on a recent GPU is quick. CPU-only (older machines, Linux desktop app, many phones) is much slower, and fine-tuned mode is about 4× slower again. Try one song first.
-- **The Linux desktop app runs on CPU only**, because its webview (WebKitGTK) has no WebGPU. On Linux, Chrome or Edge running the web app is faster.
+- **The Linux desktop app runs on CPU only**, because its webview (WebKitGTK) has no WebGPU. It does use all your CPU threads: WebKitGTK hides `SharedArrayBuffer` by default, which silently limits ONNX Runtime to one thread, so the app switches it on. Measured on one 8-thread laptop, the default 6-stem model took about 3× the song's length. On Linux, Chrome or Edge with WebGPU is faster still.
 - **Memory:** a 4-minute song needs roughly 1–2 GB of RAM during separation. Very long files or 6-stem mode on phones can run out. Use the compact model and shorter files there.
 - **iPhone/iPad:** works in recent Safari, but iOS may stop the app if you switch away during processing. Keep it in the foreground.
 - **Fine-tuned + two-stem mode** runs only the one specialist model it needs and computes "everything else" as *original minus stem*. That's 4× faster, but not bit-identical to the Demucs CLI, which sums the other three stems.
