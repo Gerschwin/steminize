@@ -1,7 +1,9 @@
 /// <reference lib="webworker" />
 // Audio-to-MIDI worker: runs Basic Pitch (bundled, ~230 KB) on one part at a time.
+// Uses the CPU-only ONNX Runtime build: it only runs on WASM, and the WebGPU build's asyncify
+// binary misbehaves in WebKitGTK (see engine/worker.ts).
 
-import * as ort from 'onnxruntime-web/webgpu';
+import * as ort from 'onnxruntime-web/wasm';
 import { BP_PITCHES, BP_WINDOW, bpNotes, bpUnwrap, bpWindows, type NoteEvent, type NoteOptions } from './basicPitch.ts';
 import { decimate2 } from './resample.ts';
 
