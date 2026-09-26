@@ -350,9 +350,17 @@
                   <button class="btn tiny ghost toggle" type="button" id="scratchTabDrums" aria-pressed="false">Drum tab</button>
                   <button class="btn tiny ghost toggle" type="button" id="scratchTabNotes" aria-pressed="false">Notes</button>
                   <a class="btn tiny ghost" id="lyricsSearchLink" href="https://genius.com/search" target="_blank" rel="noopener noreferrer" title="Search Genius for lyrics, to copy in yourself">Search lyrics ↗</a>
+                  <label class="btn tiny ghost" id="lyricsImportLabel" title="Load a synced lyrics (.lrc) file into the Lyrics box">Import .lrc…<input type="file" id="lyricsImport" accept=".lrc,.txt,text/plain" hidden /></label>
+                  <button class="btn tiny ghost toggle" type="button" id="lyricsFollowBtn" aria-pressed="false" hidden title="Show the lyrics as a follow-along view that highlights the line being sung">Follow along</button>
+                  <span class="lyrics-nudge" id="lyricsNudge" hidden>
+                    <button class="btn tiny ghost" type="button" id="lyricsSooner" title="Show the lyrics a little sooner">−</button>
+                    <span class="muted small" id="lyricsOffsetVal" title="Timing adjustment"></span>
+                    <button class="btn tiny ghost" type="button" id="lyricsLater" title="Show the lyrics a little later">+</button>
+                  </span>
                   <button class="btn tiny ghost" type="button" id="tabExtendBtn" title="Add more bars to every line, still lined up (or just press Tab in the box)">Extend line</button>
                 </div>
-                <textarea class="scratch-area" id="scratchLyrics" placeholder="Lyrics…" spellcheck="true"></textarea>
+                <textarea class="scratch-area" id="scratchLyrics" placeholder="Lyrics… or paste synced lyrics in LRC format ([mm:ss.xx] words) to follow along" spellcheck="true"></textarea>
+                <div class="lyrics-follow" id="lyricsFollow" hidden aria-live="off"></div>
                 <textarea class="scratch-area mono" id="scratchTab" placeholder="e|--------------------|&#10;B|--------------------|&#10;G|--------------------|&#10;D|--------------------|&#10;A|--------------------|&#10;E|--------------------|" spellcheck="false" wrap="off" hidden></textarea>
                 <textarea class="scratch-area mono" id="scratchDrums" placeholder="CC|--------------------|&#10;HH|--------------------|&#10;SN|--------------------|&#10;HT|--------------------|&#10;FT|--------------------|&#10;BD|--------------------|" spellcheck="false" wrap="off" hidden></textarea>
                 <textarea class="scratch-area" id="scratchNotes" placeholder="Notes, song sections, anything else…" spellcheck="true" hidden></textarea>

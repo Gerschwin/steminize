@@ -22,6 +22,7 @@ import { decimate2 } from '../src/analysis/resample.ts';
 import { writeMidi } from '../src/encode/midi.ts';
 import { detectPitch, freqToNote } from '../src/analysis/pitch.ts';
 import { isNewer, parseVersion } from '../src/version.ts';
+import { lineAt, parseLrc } from '../src/lyrics/lrc.ts';
 import { detectLatency } from '../src/player/latency.ts';
 import { placeTake } from '../src/player/placement.ts';
 
@@ -521,6 +522,36 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('placement: punch-out is in song time, after the latency shift', v.dstStart === 1700 && v.count === 1800);
   ok('placement: nothing to copy when the punch end is already past', placeTake(100, 2000, 0, 10000, 1000).count === 0);
   ok('placement: negative latency is ignored', placeTake(100, 500, -50, 10000).dstStart === 500);
+}
+
+
+// ---- synced lyrics (LRC)
+{
+  const basic = parseLrc('[ti:Song]\n[ar:Band]\n[00:12.00]First line\n[00:15.50]Second line\n[01:02.25]Third line\n');
+  ok('lrc: parses timed lines and skips metadata tags', !!basic && basic.lines.length === 3 && basic.lines[0].text === 'First line' && basic.lines[0].t === 12);
+  ok('lrc: minutes and fractions', basic!.lines[1].t === 15.5 && basic!.lines[2].t === 62.25);
+  const multi = parseLrc('[00:10.00][01:30.00]Chorus\n[00:20.00]Verse\n[00:25.00]More\n');
+  ok('lrc: several timestamps on one line repeat it, in time order', !!multi && multi.lines.map((l) => `${l.t}:${l.text}`).join('|') === '10:Chorus|20:Verse|25:More|90:Chorus');
+  const off = parseLrc('[offset:+500]\n[00:10.00]a\n[00:20.00]b\n[00:30.00]c\n');
+  ok('lrc: a positive [offset:] shows lines sooner', off!.lines[0].t === 9.5 && off!.lines[2].t === 29.5);
+  const neg = parseLrc('[offset:-250]\n[00:01.00]a\n[00:02.00]b\n[00:03.00]c\n');
+  ok('lrc: a negative [offset:] shows lines later', neg!.lines[0].t === 1.25);
+  const clamp = parseLrc('[offset:+5000]\n[00:01.00]a\n[00:02.00]b\n[00:03.00]c\n');
+  ok('lrc: never before zero', clamp!.lines[0].t === 0);
+  const enh = parseLrc('[00:05.00]<00:05.00>Word <00:05.40>by <00:05.80>word\n[00:09.00]Two\n[00:12.00]Three\n');
+  ok('lrc: word-level tags are dropped', enh!.lines[0].text === 'Word by word');
+  const frac = parseLrc('[00:01.5]a\n[00:02.05]b\n[00:03.500]c\n[1:00:00.00]hour\n');
+  ok('lrc: 1, 2 and 3 digit fractions, and hours', frac!.lines.map((l) => l.t).join() === '1.5,2.05,3.5,3600');
+  ok('lrc: blank timed lines are kept (instrumental gaps)', parseLrc('[00:01.00]a\n[00:05.00]\n[00:09.00]b\n[00:12.00]c\n')!.lines[1].text === '');
+  ok('lrc: plain lyrics are not LRC', parseLrc('Just some words\nmore words [chorus]\nand more') === null);
+  ok('lrc: too few timed lines is not LRC', parseLrc('[00:01.00]one\n[00:02.00]two\nplain') === null);
+  ok('lrc: Windows line endings', parseLrc('[00:01.00]a\r\n[00:02.00]b\r\n[00:03.00]c\r\n')!.lines.length === 3);
+  const L = basic!.lines;
+  ok('lineAt: before the first line', lineAt(L, 5) === -1);
+  ok('lineAt: exactly on a line', lineAt(L, 12) === 0 && lineAt(L, 15.5) === 1);
+  ok('lineAt: between lines', lineAt(L, 14.99) === 0 && lineAt(L, 60) === 1);
+  ok('lineAt: after the last line', lineAt(L, 9999) === 2);
+  ok('lineAt: empty', lineAt([], 3) === -1);
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

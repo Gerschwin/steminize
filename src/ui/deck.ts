@@ -11,6 +11,7 @@ import { stemColour, MODELS } from '../models.ts';
 import { openSink, safeName, saveFile } from '../platform.ts';
 import { MAX_REC_LATENCY_MS, loadRecLatencyMs, saveRecLatencyMs, type Settings } from '../settings.ts';
 import { placeTake } from '../player/placement.ts';
+import { lineAt, parseLrc, type Lrc } from '../lyrics/lrc.ts';
 import { isFlat, type EqParams } from '../player/eq.ts';
 import { eqPanel, type EqPanel } from './eqPanel.ts';
 import { $, fitCanvas, fmtDuration, fmtTime, h, pressed, toast } from './dom.ts';
@@ -85,6 +86,10 @@ export interface DeckState {
 /** Plain-text scratchpad, kept simple on purpose: no per-line structure, just what you paste or type. */
 export interface ScratchState {
   lyrics?: string;
+  /** Show synced (LRC) lyrics as a follow-along view rather than raw text. */
+  lyricsFollow?: boolean;
+  /** Seconds added to every synced lyric's time, to line up a file made for a different recording. */
+  lyricsOffset?: number;
   tab?: string;
   drums?: string;
   notes?: string;
@@ -298,6 +303,11 @@ export class Deck {
   onRerun: () => void = () => {};
   private tx: Transcribe;
   private scratch: ScratchState = {};
+  private scratchTab: 'lyrics' | 'tab' | 'drums' | 'notes' = 'lyrics';
+  /** The lyrics text parsed as LRC, or null if it's plain lyrics. */
+  private lrc: Lrc | null = null;
+  private lyricEls: HTMLElement[] = [];
+  private lyricIdx = -2;
   private scratchAreas!: { lyrics: HTMLTextAreaElement; tab: HTMLTextAreaElement; drums: HTMLTextAreaElement; notes: HTMLTextAreaElement };
   // ---- a live recording being drawn in as its own track while it's captured ----
   private recordLane: Lane | null = null;
@@ -1476,7 +1486,9 @@ export class Deck {
       // shortcuts instead of the text — a "0"/"-" for tab notation would zoom out, "1"-"6" would
       // mute a track, etc. Move focus into the box so typing lands there immediately. A no-op if
       // the pane isn't actually visible yet (e.g. this initial call, before a song is open).
-      areas[name].focus();
+      this.scratchTab = name;
+      this.updateLyricsView();
+      if (!areas[name].hidden) areas[name].focus();
     };
     for (const k of Object.keys(tabBtns) as (keyof typeof tabBtns)[]) tabBtns[k].onclick = () => show(k);
     show('lyrics');
@@ -1501,9 +1513,41 @@ export class Deck {
 
     areas.lyrics.oninput = () => {
       this.scratch.lyrics = areas.lyrics.value;
+      this.setLyricsText(areas.lyrics.value);
       this.updateScratchSummary();
       this.emit();
     };
+    // Synced lyrics: load an .lrc file, follow along, and nudge the timing.
+    ($('lyricsImport') as HTMLInputElement).onchange = async (e) => {
+      const input = e.target as HTMLInputElement;
+      const file = input.files?.[0];
+      input.value = '';
+      if (!file) return;
+      if (areas.lyrics.value.trim() && !confirm('Replace the lyrics for this song with the contents of this file?')) return;
+      const text = await file.text();
+      areas.lyrics.value = text;
+      this.scratch.lyrics = text;
+      this.setLyricsText(text);
+      if (this.lrc) this.scratch.lyricsFollow = true;
+      else toast("That file has no [mm:ss.xx] timestamps, so it's loaded as plain lyrics and can't follow along.", true);
+      this.updateLyricsView();
+      this.updateScratchSummary();
+      this.emit();
+    };
+    $('lyricsFollowBtn').onclick = () => {
+      this.scratch.lyricsFollow = !this.scratch.lyricsFollow;
+      this.updateLyricsView();
+      this.emit();
+    };
+    const nudge = (d: number) => {
+      this.scratch.lyricsOffset = Math.round(((this.scratch.lyricsOffset ?? 0) + d) * 10) / 10;
+      this.lyricIdx = -2; // re-highlight for the new timing
+      this.updateLyricsView();
+      this.dirty = true;
+      this.emit();
+    };
+    $('lyricsSooner').onclick = () => nudge(-0.2);
+    $('lyricsLater').onclick = () => nudge(0.2);
     areas.tab.oninput = () => {
       this.scratch.tab = areas.tab.value;
       this.updateScratchSummary();
@@ -1523,7 +1567,10 @@ export class Deck {
 
   private applyScratch(s?: ScratchState) {
     this.scratch = { lyrics: s?.lyrics ?? '', tab: s?.tab ?? '', drums: s?.drums ?? '', notes: s?.notes ?? '' };
+    if (s?.lyricsFollow) this.scratch.lyricsFollow = true;
+    if (s?.lyricsOffset) this.scratch.lyricsOffset = s.lyricsOffset;
     this.scratchAreas.lyrics.value = this.scratch.lyrics ?? '';
+    this.setLyricsText(this.scratch.lyrics ?? '');
     // Tab/Drum tab start with the blank string/beat template actually typed in (not just a
     // placeholder hint), so there's something to type fret numbers or hits onto directly. Only
     // for a song that has nothing saved yet; this.scratch itself stays empty until they edit it,
@@ -1532,6 +1579,56 @@ export class Deck {
     this.scratchAreas.drums.value = this.scratch.drums || this.scratchAreas.drums.placeholder;
     this.scratchAreas.notes.value = this.scratch.notes ?? '';
     this.updateScratchSummary();
+  }
+
+  /** Re-reads the lyrics text: synced (LRC) lyrics get a follow-along view, plain ones don't. */
+  private setLyricsText(text: string) {
+    this.lrc = parseLrc(text);
+    const box = $('lyricsFollow');
+    box.replaceChildren();
+    this.lyricEls = [];
+    this.lyricIdx = -2;
+    for (const [i, line] of (this.lrc?.lines ?? []).entries()) {
+      const el = h('div', { class: 'lyric-line' }, line.text || '\u00a0');
+      el.onclick = () => this.player.seek((line.t + (this.scratch.lyricsOffset ?? 0)) * SR);
+      el.title = `Jump to ${fmtTime(line.t + (this.scratch.lyricsOffset ?? 0))}`;
+      el.dataset.i = String(i);
+      this.lyricEls.push(el);
+      box.append(el);
+    }
+    this.updateLyricsView();
+    this.dirty = true;
+  }
+
+  /** Shows the raw text box or the follow-along view, and the controls that go with it, for the open tab. */
+  private updateLyricsView() {
+    const onLyrics = this.scratchTab === 'lyrics';
+    const synced = !!this.lrc;
+    const follow = synced && !!this.scratch.lyricsFollow;
+    $('lyricsImportLabel').hidden = !onLyrics;
+    $('lyricsFollowBtn').hidden = !(onLyrics && synced);
+    pressed($('lyricsFollowBtn'), follow);
+    $('lyricsNudge').hidden = !(onLyrics && follow);
+    const off = this.scratch.lyricsOffset ?? 0;
+    $('lyricsOffsetVal').textContent = off === 0 ? 'timing 0 s' : `timing ${off > 0 ? '+' : ''}${off.toFixed(1)} s`;
+    $('lyricsFollow').hidden = !(onLyrics && follow);
+    this.scratchAreas.lyrics.hidden = !onLyrics || follow;
+  }
+
+  /** Highlights the line being sung and keeps it in view; called every frame, but only touches the page when the line changes. */
+  private updateLyricsFollow(pos: number) {
+    if (!this.lrc || $('lyricsFollow').hidden) return;
+    const idx = lineAt(this.lrc.lines, pos / SR - (this.scratch.lyricsOffset ?? 0));
+    if (idx === this.lyricIdx) return;
+    this.lyricIdx = idx;
+    this.lyricEls.forEach((el, i) => {
+      el.classList.toggle('current', i === idx);
+      el.classList.toggle('past', i < idx);
+    });
+    const box = $('lyricsFollow');
+    const el = this.lyricEls[idx];
+    // Scroll the lyrics box itself, not the page, so the rest of the deck doesn't jump around.
+    if (el) box.scrollTo({ top: el.offsetTop - box.clientHeight / 2 + el.clientHeight / 2, behavior: 'smooth' });
   }
 
   private updateScratchSummary() {
@@ -2304,6 +2401,7 @@ export class Deck {
     this.dirty = false;
     const pos = this.player.state.pos;
     $('timeNow').textContent = fmtTime(pos / SR);
+    this.updateLyricsFollow(pos);
     // Keep the playhead in view while zoomed in.
     const span = this.view.end - this.view.start;
     if (this.player.state.playing && span < this.length - 1 && (pos > this.view.end || pos < this.view.start)) this.setView(pos - span * 0.1, pos + span * 0.9);
