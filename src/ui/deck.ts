@@ -266,6 +266,8 @@ export class Deck {
   private quiet = false; // suppress state-change events while restoring a song
   /** Called (often) whenever the player setup changes; the caller debounces saving. */
   onStateChange: (s: DeckState) => void = () => {};
+  /** The song played through to its end (not a loop coming round). */
+  onEnded: () => void = () => {};
   /** Called when a tempo correction changes the song's analysis. */
   onAnalysisChange: (r: Result) => void = () => {};
   /** Called when the song is renamed, so the library entry (if any) can be updated. */
@@ -321,6 +323,7 @@ export class Deck {
     this.player.onState = (s) => {
       $('playBtn').classList.toggle('on', s.playing);
       this.media.setPlaying(s.playing);
+      if (s.ended) this.onEnded();
       // The speed trainer changes tempo inside the player; mirror it here.
       if (Math.abs(s.tempo - this.tempo) > 1e-6) {
         this.tempo = s.tempo;

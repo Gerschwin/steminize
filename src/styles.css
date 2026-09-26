@@ -432,6 +432,20 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
 .about-name span { font-size: 13px; font-weight: 500; color: var(--muted); margin-left: 4px; }
 .about-links { display: flex; flex-wrap: wrap; gap: 4px 16px; }
 .about-links a, .about-list a { color: var(--accent-2); }
+/* ---------- setlist ---------- */
+#setlistCard .card-head select { max-width: 60%; }
+.sl-bar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.sl-list { margin-bottom: 6px; }
+.sl-ctl { grid-row: 1 / span 2; grid-column: 2; display: flex; gap: 2px; align-items: center; }
+.sl-mv { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 4px 6px; border-radius: 6px; font-size: 14px; line-height: 1; }
+.sl-mv:hover:not(:disabled) { color: var(--text); background: var(--line); }
+.sl-mv:disabled { opacity: 0.3; cursor: default; }
+.sl-add select { width: 100%; }
+.sl-transport { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.sl-buttons, .sl-auto { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.sl-row .t-sub { color: var(--muted); }
+#slDelete.confirm { color: var(--bad); font-weight: 600; }
+
 /* ---------- synced lyrics ---------- */
 .lyrics-nudge { display: inline-flex; align-items: center; gap: 4px; }
 .lyrics-follow { max-height: 260px; overflow-y: auto; background: var(--panel-2); border-radius: 10px; padding: 14px 10px; margin-top: 8px; text-align: center; scroll-behavior: smooth; }

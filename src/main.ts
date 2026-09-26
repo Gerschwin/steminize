@@ -9,6 +9,7 @@ import { $, fmtDuration, fmtEta, fmtTime, h, openDialog, toast } from './ui/dom.
 import { ensureDownloaded, initModelsDialog, onModelsChanged } from './ui/modelsDialog.ts';
 import { SettingsPanel } from './ui/settingsPanel.ts';
 import { initLibrary } from './ui/libraryPanel.ts';
+import { initSetlists } from './ui/setlistPanel.ts';
 import { initYoutubeDialog } from './ui/youtubeDialog.ts';
 import { initTheme } from './theme.ts';
 import { initAbout } from './ui/about.ts';
@@ -22,6 +23,7 @@ const settings = new SettingsPanel(loadSettings());
 const deck = new Deck(() => settings.s);
 const library = initLibrary(deck);
 library.onOpen = () => refreshQueue();
+initSetlists(deck, library);
 const engine = new Engine();
 initModelsDialog();
 initAbout();

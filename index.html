@@ -86,6 +86,31 @@
             <label class="btn tiny ghost" title="Add songs from a backup zip. Songs already in the library are left alone.">Restore…<input type="file" id="libImport" accept=".zip,application/zip" hidden /></label>
           </div>
         </section>
+        <section class="card" id="setlistCard">
+          <div class="card-head">
+            <h2>Setlist</h2>
+            <select id="slSelect" aria-label="Setlist" hidden></select>
+          </div>
+          <div class="sl-bar">
+            <button class="btn tiny ghost" id="slNew" type="button" title="Start a new setlist">New</button>
+            <button class="btn tiny ghost" id="slRename" type="button" hidden>Rename</button>
+            <button class="btn tiny ghost" id="slDelete" type="button" hidden title="Delete this setlist (the songs stay in your library)">Delete</button>
+          </div>
+          <ol class="queue lib sl-list" id="slList" hidden></ol>
+          <p class="muted small empty" id="slInfo"></p>
+          <div class="sl-add" id="slAddRow" hidden><select id="slAdd" aria-label="Add a song to the setlist"></select></div>
+          <div class="sl-transport" id="slTransport" hidden>
+            <div class="sl-buttons">
+              <button class="btn tiny ghost" id="slPrev" type="button" title="Previous song">◀ Prev</button>
+              <button class="btn tiny primary" id="slPlay" type="button" title="Start from the first song">▶ Play setlist</button>
+              <button class="btn tiny ghost" id="slNext" type="button" title="Next song">Next ▶</button>
+            </div>
+            <div class="sl-auto">
+              <label class="switch" title="Start the next song by itself when one ends"><input type="checkbox" id="slAuto" /> Auto-advance</label>
+              <select id="slGap" aria-label="Gap between songs"></select>
+            </div>
+          </div>
+        </section>
         </div>
         <div class="side-pane" data-sidepane="settings" hidden>
         <section class="card settings" id="settings">

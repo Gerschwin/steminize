@@ -23,6 +23,7 @@ import { writeMidi } from '../src/encode/midi.ts';
 import { detectPitch, freqToNote } from '../src/analysis/pitch.ts';
 import { isNewer, parseVersion } from '../src/version.ts';
 import { lineAt, parseLrc } from '../src/lyrics/lrc.ts';
+import { moveItem, nextSong, parseSetlists, prevSong, pruneSongs, totalSeconds, uniqueName, type Setlist } from '../src/setlists.ts';
 import { detectLatency } from '../src/player/latency.ts';
 import { placeTake } from '../src/player/placement.ts';
 
@@ -552,6 +553,26 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('lineAt: between lines', lineAt(L, 14.99) === 0 && lineAt(L, 60) === 1);
   ok('lineAt: after the last line', lineAt(L, 9999) === 2);
   ok('lineAt: empty', lineAt([], 3) === -1);
+}
+
+
+// ---- setlists
+{
+  const A = ['a', 'b', 'c', 'd'];
+  ok('setlist: move a song down', moveItem(A, 0, 2).join() === 'b,c,a,d');
+  ok('setlist: move a song up', moveItem(A, 3, 1).join() === 'a,d,b,c');
+  ok('setlist: out-of-range moves change nothing (and never alias)', moveItem(A, 0, 9).join() === 'a,b,c,d' && moveItem(A, -1, 2) !== A);
+  ok('setlist: next song, and the end', nextSong(0, 3) === 1 && nextSong(2, 3) === null && nextSong(-1, 3) === null);
+  ok('setlist: previous song stays on the first', prevSong(2) === 1 && prevSong(0) === 0);
+  ok('setlist: names are made unique', uniqueName('Setlist', []) === 'Setlist' && uniqueName('Setlist', ['Setlist', 'Setlist 2']) === 'Setlist 3');
+  const sl: Setlist = { id: 'x', name: 'Gig', songs: ['a', 'b', 'gone', 'c'], auto: true, gap: 2 };
+  const pruned = pruneSongs(sl, new Set(['a', 'b', 'c']));
+  ok('setlist: songs deleted from the library are dropped', pruned.songs.join() === 'a,b,c');
+  ok('setlist: nothing to prune returns the same object', pruneSongs(pruned, new Set(['a', 'b', 'c'])) === pruned);
+  ok('setlist: total running time', totalSeconds(sl, (id) => ({ a: 100, b: 50, c: 30 } as Record<string, number>)[id]) === 180);
+  ok('setlist: parses saved data', parseSetlists('[{"id":"1","name":"Gig","songs":["a","b","a"],"auto":false,"gap":5}]').map((l) => `${l.name}:${l.songs.join('')}:${l.auto}:${l.gap}`).join() === 'Gig:ab:false:5');
+  ok('setlist: garbage in storage gives no setlists', parseSetlists('nope').length === 0 && parseSetlists('{"a":1}').length === 0 && parseSetlists(null).length === 0);
+  ok('setlist: bad entries are skipped, bad gaps defaulted', parseSetlists('[{"id":1},{"id":"2","name":"ok","songs":[],"gap":7}]').map((l) => `${l.id}:${l.gap}:${l.auto}`).join() === '2:2:true');
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

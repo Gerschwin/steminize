@@ -136,6 +136,8 @@ export function initLibrary(deck: Deck) {
   const exportBtn = $<HTMLButtonElement>('libExport');
   const importInput = $<HTMLInputElement>('libImport');
 
+  let onChange: () => void = () => {};
+
   function render() {
     const songs = [...metas.values()].sort((a, b) => b.created - a.created);
     list.replaceChildren(...songs.map(item));
@@ -144,6 +146,7 @@ export function initLibrary(deck: Deck) {
       ? `${songs.length} song${songs.length > 1 ? 's' : ''} · ${fmtMB(total)} on this computer`
       : "Separated songs are kept here so you don't have to wait again.";
     exportBtn.disabled = !songs.length;
+    onChange();
   }
 
   exportBtn.onclick = async () => {
@@ -240,38 +243,47 @@ export function initLibrary(deck: Deck) {
       clearTimeout(openTimer);
       openTimer = window.setTimeout(async () => {
         sub.textContent = 'Opening…';
-        try {
-          const stems = await loadStems(m);
-          const takeGroups = m.takeGroups?.length
-            ? await Promise.all(
-                m.takeGroups.map(async (g: TakeGroupMeta) => ({
-                  id: g.id,
-                  activeTake: g.activeTake,
-                  takes: await Promise.all(g.takes.map(async (t) => ({ id: t.id, data: await loadTake(m.id, g.id, t), note: t.note }))),
-                })),
-              )
-            : undefined;
-          const r: Result = { title: m.title, stems, settings: m.settings, seconds: m.seconds, took: m.took, libId: m.id, analysis: m.analysis, kind: m.kind, takeGroups };
-          deck.open(r, m.state as DeckState | undefined);
-          onOpen(r);
-          // Songs saved before key detection existed: work it out now, keep any tempo corrections.
-          if (m.analysis && !m.analysis.key) {
-            void analyse(r).then((a) => {
-              if (!a.key || !r.analysis) return;
-              r.analysis = { ...r.analysis, key: a.key };
-              r.onsets ??= { env: a.env, low: a.low };
-              m.analysis = r.analysis;
-              if (deck.current === r) deck.setAnalysis(r.analysis);
-              writeMeta(m).catch(() => {});
-            });
-          }
-        } catch (err) {
-          toast(`Couldn't open ${m.title}: ${(err as Error).message}`, true);
-        }
+        await openSong(m.id);
         render();
       }, 250);
     };
     return li;
+  }
+
+  /** Loads a library song into the deck, restoring its saved mixer, tempo, pitch, loop and lyrics. False if it couldn't be opened. */
+  async function openSong(id: string): Promise<boolean> {
+    const m = metas.get(id);
+    if (!m) return false;
+    try {
+      const stems = await loadStems(m);
+      const takeGroups = m.takeGroups?.length
+        ? await Promise.all(
+            m.takeGroups.map(async (g: TakeGroupMeta) => ({
+              id: g.id,
+              activeTake: g.activeTake,
+              takes: await Promise.all(g.takes.map(async (t) => ({ id: t.id, data: await loadTake(m.id, g.id, t), note: t.note }))),
+            })),
+          )
+        : undefined;
+      const r: Result = { title: m.title, stems, settings: m.settings, seconds: m.seconds, took: m.took, libId: m.id, analysis: m.analysis, kind: m.kind, takeGroups };
+      deck.open(r, m.state as DeckState | undefined);
+      onOpen(r);
+      // Songs saved before key detection existed: work it out now, keep any tempo corrections.
+      if (m.analysis && !m.analysis.key) {
+        void analyse(r).then((a) => {
+          if (!a.key || !r.analysis) return;
+          r.analysis = { ...r.analysis, key: a.key };
+          r.onsets ??= { env: a.env, low: a.low };
+          m.analysis = r.analysis;
+          if (deck.current === r) deck.setAnalysis(r.analysis);
+          writeMeta(m).catch(() => {});
+        });
+      }
+      return true;
+    } catch (err) {
+      toast(`Couldn't open ${m.title}: ${(err as Error).message}`, true);
+      return false;
+    }
   }
 
   let onOpen: (r: Result) => void = () => {};
@@ -306,9 +318,12 @@ export function initLibrary(deck: Deck) {
     }
   }
 
+  /** True once the stored songs have been read; before that the list is empty only because it hasn't arrived. */
+  let loaded = false;
   async function load() {
     try {
       for (const m of await listSongs()) metas.set(m.id, m);
+      loaded = true;
     } catch (e) {
       console.warn('Library unavailable', e);
     }
@@ -322,6 +337,13 @@ export function initLibrary(deck: Deck) {
     set onOpen(f: (r: Result) => void) {
       onOpen = f;
     },
+    /** Called whenever the list of songs (or their settings shown in it) changes. */
+    set onChange(f: () => void) {
+      onChange = f;
+    },
+    songs: () => [...metas.values()],
+    loaded: () => loaded,
+    openSong,
     refresh: render,
   };
 }
