@@ -2097,13 +2097,16 @@ export class Deck {
     if (showLoop && this.loop.b > this.loop.a) {
       const xa = x(this.loop.a);
       const xb = x(this.loop.b);
-      g.fillStyle = this.loop.on ? 'rgba(139,124,246,0.30)' : 'rgba(139,124,246,0.18)';
+      g.save();
+      g.fillStyle = getComputedStyle(document.body).getPropertyValue('--loop').trim() || '#22d3ee';
+      g.globalAlpha = this.loop.on ? 0.3 : 0.2;
       g.fillRect(xa, 0, xb - xa, hh);
       // Edge lines mark exactly where A and B are, so a marked-but-off section is still obvious.
       const edge = Math.max(2, Math.round(devicePixelRatio * 2));
-      g.fillStyle = this.loop.on ? 'rgba(139,124,246,0.95)' : 'rgba(139,124,246,0.65)';
+      g.globalAlpha = this.loop.on ? 1 : 0.75;
       g.fillRect(Math.round(xa), 0, edge, hh);
       g.fillRect(Math.round(xb) - edge, 0, edge, hh);
+      g.restore();
     }
     g.drawImage(layers[0], 0, 0);
     g.save();
