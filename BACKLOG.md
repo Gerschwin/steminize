@@ -6,6 +6,8 @@ Parked: band collaboration "Session mode" (watch a synced folder, versions, comm
 
 Ideas not yet chosen: record yourself over the track, tuner, setlists, practice notes per song.
 
+Scrolling tab in time with the recording: manually-typed tab (the Scratchpad's Tab pane), not auto-transcribed — see the line above about why that's not planned. Tab doesn't have lyrics' one-line-per-moment structure (a tab "line" is several stacked string-rows per bar, and useful granularity is per-column/beat, not per line), so the existing LRC lyrics-follow mechanism can't just be reused as-is. Most practical approach discussed: tap along to mark bar-starts while playing (like the existing Tap-tempo button/markers), store those as timestamp anchors against character positions in the tab, and interpolate scroll between anchors — running through the same tempo-adjustment math the lyrics follow-along needs so scroll speed still tracks when the song is slowed down. Real feature (new data model + tap-align UI + interpolated scroll), not a small extension of lyrics-follow; needs a manual sync pass per song like LRC lyrics already do.
+
 Transcription, not planned: guitar tab (string/fret guessing is poor) and sheet music (needs a big notation library; automatic rhythms need too much fixing).
 
 ## Done
