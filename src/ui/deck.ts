@@ -1689,7 +1689,11 @@ export class Deck {
    * stays up regardless of drawer navigation, instead of being confined to the drawer's own space. */
   private initScratchFloat() {
     const pane = document.querySelector<HTMLElement>('.dpane[data-pane="scratch"]')!;
-    const handle = $('scratchFloatHandle');
+    // The whole bar is the drag surface (like a native window title bar), not just the small
+    // "⠿ Scratchpad" text inside it — that text span only covers its own width, so dragging from
+    // the rest of the bar (which visually looks just as draggable, via its own cursor:move CSS)
+    // fell through to the page underneath and dragged/selected text there instead.
+    const handle = $('scratchFloatBar');
     const resizeHandle = $('scratchResizeHandle');
     const KEY = 'steminize.scratchFloat';
     const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), Math.max(lo, hi));
@@ -1763,6 +1767,7 @@ export class Deck {
     // on that relationship being reliable — they keep working even if capture itself misbehaves.
     let drag: { x: number; y: number; left: number; top: number } | null = null;
     handle.addEventListener('pointerdown', (e) => {
+      if ((e.target as HTMLElement).closest('button')) return; // let the Dock button handle its own click
       e.preventDefault();
       // Capture is a nice-to-have (keeps events coming even if the pointer leaves the handle mid-
       // drag); the document-level listeners above don't depend on it, so a browser that refuses it
