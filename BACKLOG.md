@@ -10,6 +10,8 @@ Scrolling tab in time with the recording: manually-typed tab (the Scratchpad's T
 
 Transcription, not planned: guitar tab (string/fret guessing is poor) and sheet music (needs a big notation library; automatic rhythms need too much fixing).
 
+Possible UI change: pin the drop zone (+ Songs/Settings tabs, already sticky) at the top of the left pane so "add a song" is always in view, letting only the Library/Setlist area scroll underneath — same idea as the deck-top/lanes split on the right. Smaller win than the right pane though: the Library card already caps itself at a 260px internal scroll, so it doesn't blow out the page the way an open song's lane count does; what mostly drives `.side` scrolling is a short window height, not song count, and pinning the full static block (drop zone, "Open multitrack/folder" buttons, format row) would eat a chunk of a short viewport permanently. Only worth doing if it turns out to be an actual annoyance, not proactively.
+
 ## Done
 - [x] Transcription tools: notes view with keyboard, freeze, editable chord lane + chord chart, audio to MIDI with Basic Pitch (v1.10.0)
 - [x] Linux desktop fixes from first AppImage testing: "Open folder…" used Tauri's native folder dialog instead of the unsupported `webkitdirectory` picker; window opens maximised to the screen instead of a fixed 1280×860; a stuck "Reading audio…" (missing GStreamer codecs) now times out with a clear error instead of hanging forever (v1.9.1)
