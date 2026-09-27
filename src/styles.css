@@ -307,6 +307,31 @@ details.more[open] summary { color: var(--text); }
   font: inherit; resize: vertical;
 }
 .scratch-area.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.5; white-space: pre; overflow-x: auto; }
+
+/* ---------- Scratchpad, popped out into a free-floating window ----------
+   position:fixed escapes .stage's scroll clipping and positions relative to the viewport, since
+   nothing between here and <body> uses transform/filter/contain (any of those would break that). */
+.scratch-float-bar {
+  display: none; align-items: center; justify-content: space-between; gap: 8px;
+  margin: -10px -10px 0; padding: 7px 8px 7px 12px; border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--panel-2); cursor: move; user-select: none; touch-action: none;
+}
+.scratch-float-handle { font-size: 13px; font-weight: 600; color: var(--muted); letter-spacing: 0.02em; }
+.dpane[data-pane='scratch'].floating {
+  position: fixed; z-index: 30; width: 420px; height: 480px; min-width: 300px; min-height: 240px;
+  margin: 0; padding: 10px; resize: both; overflow: auto;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.dpane[data-pane='scratch'].floating .scratch-float-bar { display: flex; }
+/* The window itself is resizable (above); let the text areas fill whatever room that gives them,
+   rather than each keeping its own fixed min-height and separate resize handle. */
+.dpane[data-pane='scratch'].floating .scratch-area { flex: 1; min-height: 0; resize: none; }
+@media (max-width: 900px) {
+  /* A free-floating, draggable window doesn't fit a phone-width single column: dock it there instead. */
+  .dpane[data-pane='scratch'].floating { position: static; width: auto; height: auto; inset: auto; resize: none; overflow: visible; box-shadow: none; }
+  .dpane[data-pane='scratch'].floating .scratch-float-bar { display: none; }
+  .dpane[data-pane='scratch'].floating .scratch-area { flex: none; min-height: 180px; resize: vertical; }
+}
 #lyricsSearchLink { display: none; margin-left: auto; text-decoration: none; }
 #scratchTabLyrics[aria-pressed='true'] ~ #lyricsSearchLink { display: inline-flex; }
 #tabExtendBtn { display: none; margin-left: auto; }

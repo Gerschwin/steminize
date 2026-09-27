@@ -247,6 +247,9 @@ function waveLayer(peaks: Float32Array, w: number, hgt: number, colour: string, 
 export class Deck {
   player = new Player();
   private seekToastAt = 0;
+  /** Reapplies a floating Scratchpad's saved position once #deck is actually visible to measure into
+   * (set by initScratchFloat(); a no-op call before then, in case something races the constructor). */
+  private restoreScratchFloat: () => void = () => {};
   /** OS media keys / lock-screen controls, and keeping the screen awake while a song plays. */
   private media = new MediaSessionBridge({
     play: () => void this.player.play(),
@@ -383,6 +386,7 @@ export class Deck {
     this.initMarkersAndZoom();
     this.initKeyPanel();
     this.initDrawer();
+    this.initScratchFloat();
     this.initOverview();
     this.initKeys();
     this.initLiveInput();
@@ -833,6 +837,9 @@ export class Deck {
     this.pitch = 0;
     $('welcome').hidden = true;
     $('deck').hidden = false;
+    // Only now, not at construction: before a song is open, #deck (and everything in it, including
+    // a floating Scratchpad) is display:none, so it has no measurable size/position to restore into.
+    this.restoreScratchFloat();
     this.setTitleText(r.title);
     this.media.setSong(r.title);
     this.updateLyricsLink();
@@ -1656,7 +1663,12 @@ export class Deck {
     const tabs = [...document.querySelectorAll<HTMLButtonElement>('.dtab')];
     const open = (name: string | null) => {
       for (const t of tabs) t.setAttribute('aria-expanded', String(t.dataset.tab === name));
-      for (const p of document.querySelectorAll<HTMLElement>('.dpane')) p.hidden = p.dataset.pane !== name;
+      for (const p of document.querySelectorAll<HTMLElement>('.dpane')) {
+        // A floating Scratchpad is a separate window at this point (position:fixed, not part of the
+        // drawer's normal layout); it stays up regardless of which drawer tab is open underneath it.
+        if (p.dataset.pane === 'scratch' && p.classList.contains('floating')) continue;
+        p.hidden = p.dataset.pane !== name;
+      }
       try {
         localStorage.setItem('steminize.drawer', name ?? '');
       } catch {
@@ -1671,6 +1683,87 @@ export class Deck {
       /* ignore */
     }
     open(saved || null);
+  }
+
+  /** Scratchpad, popped out into a free-floating, draggable, resizable window (position:fixed) that
+   * stays up regardless of drawer navigation, instead of being confined to the drawer's own space. */
+  private initScratchFloat() {
+    const pane = document.querySelector<HTMLElement>('.dpane[data-pane="scratch"]')!;
+    const handle = $('scratchFloatHandle');
+    const KEY = 'steminize.scratchFloat';
+    const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), Math.max(lo, hi));
+
+    const place = (left: number, top: number) => {
+      pane.style.left = `${clamp(left, 8, innerWidth - pane.offsetWidth - 8)}px`;
+      pane.style.top = `${clamp(top, 8, innerHeight - pane.offsetHeight - 8)}px`;
+    };
+    const save = () => {
+      try {
+        const floating = pane.classList.contains('floating');
+        // Only overwrite the saved position/size while actually floating and rendered (offsetWidth
+        // is 0 otherwise — hidden, or #deck itself not open yet); keep the last good ones the rest
+        // of the time, so docking (or a call before there's anything to measure) doesn't zero them
+        // out and leave the next Float click restoring to a zero-sized panel in the corner.
+        const geo =
+          floating && pane.offsetWidth > 0
+            ? { left: pane.offsetLeft, top: pane.offsetTop, width: pane.offsetWidth, height: pane.offsetHeight }
+            : { left: load()?.left ?? 0, top: load()?.top ?? 0, width: load()?.width ?? 420, height: load()?.height ?? 480 };
+        localStorage.setItem(KEY, JSON.stringify({ floating, ...geo }));
+      } catch {
+        /* ignore */
+      }
+    };
+    const load = (): { floating: boolean; left: number; top: number; width: number; height: number } | null => {
+      try {
+        const raw = localStorage.getItem(KEY);
+        return raw ? JSON.parse(raw) : null;
+      } catch {
+        return null;
+      }
+    };
+
+    const setFloating = (on: boolean) => {
+      pane.classList.toggle('floating', on);
+      if (on) {
+        const s = load();
+        pane.style.width = `${s?.width ?? 420}px`;
+        pane.style.height = `${s?.height ?? 480}px`;
+        pane.hidden = false;
+        place(s?.left ?? innerWidth - 460, s?.top ?? 100);
+      } else {
+        pane.style.left = pane.style.top = pane.style.width = pane.style.height = '';
+        // Undocking makes it an ordinary drawer pane again: only actually showing if its tab is the open one.
+        pane.hidden = document.querySelector('.dtab[data-tab="scratch"]')?.getAttribute('aria-expanded') !== 'true';
+      }
+      save();
+    };
+    $('scratchFloatBtn').onclick = () => setFloating(true);
+    $('scratchDockBtn').onclick = () => setFloating(false);
+
+    let drag: { x: number; y: number; left: number; top: number } | null = null;
+    handle.addEventListener('pointerdown', (e) => {
+      handle.setPointerCapture(e.pointerId);
+      drag = { x: e.clientX, y: e.clientY, left: pane.offsetLeft, top: pane.offsetTop };
+    });
+    handle.addEventListener('pointermove', (e) => {
+      if (drag) place(drag.left + (e.clientX - drag.x), drag.top + (e.clientY - drag.y));
+    });
+    const endDrag = () => {
+      if (!drag) return;
+      drag = null;
+      save();
+    };
+    handle.addEventListener('pointerup', endDrag);
+    handle.addEventListener('pointercancel', endDrag);
+
+    // A resize via the panel's own native resize handle, or the window changing size under it: keep
+    // both the saved size current and the panel from being left stranded off-screen.
+    new ResizeObserver(() => pane.classList.contains('floating') && save()).observe(pane);
+    window.addEventListener('resize', () => pane.classList.contains('floating') && place(pane.offsetLeft, pane.offsetTop));
+
+    this.restoreScratchFloat = () => {
+      if (load()?.floating) setFloating(true);
+    };
   }
 
   /** One-line summaries on the drawer tabs, so closed panels still show what's on. */
