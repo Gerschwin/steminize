@@ -184,17 +184,22 @@ html, body { min-width: 320px; }
      transport, loop, markers, tempo/pitch/volume and the tool drawer) stays put while just the
      lanes scroll underneath. An open drawer pane (Scratchpad especially) makes this tall, leaving
      less room for tracks below it — a deliberate trade-off, not an oversight.
-     margin/padding: -18px pulls it flush with .deck's own padding on all sides before adding that
-     18px back as its own padding — otherwise .deck's padding sits *above* the sticky element, so
-     the first ~18px of scrolling drags it along before it "catches" and sticks, instead of holding
-     still from the first pixel. overflow-x:hidden avoids the same auto-on-both-axes trap as above:
-     without it, content too wide for the pane (rare, but possible with a tall drawer's own scrollbar
-     narrowing things further) opened a confusing second, horizontal scrollbar on top of the vertical
-     one instead of just being clipped — there's no useful reason to scroll this row sideways. */
+     margin-top/padding-top: -19px pulls it flush with .deck's own top border+padding (1px + 18px)
+     before adding that back as its own padding — otherwise .deck's border and padding sit *above*
+     the sticky element, so the first ~19px of scrolling drags it along before it "catches" and
+     sticks, instead of holding still from the first pixel. Deliberately top-only, not all four
+     sides: doing the same left/right would pull .deck-top flush with .deck's rounded outer corners
+     too, and being a plain rectangular box (no border-radius of its own) it would then square off
+     what should be a rounded card. overflow-x:hidden avoids the same auto-on-both-axes trap as
+     above: without it, content too wide for the pane (rare, but possible with a tall drawer's own
+     scrollbar narrowing things further) opened a confusing second, horizontal scrollbar on top of
+     the vertical one instead of just being clipped — there's no useful reason to scroll this row
+     sideways. */
   .deck-top {
     position: sticky; top: 0; z-index: 2; background: var(--panel);
     max-height: calc(100vh - 40px); overflow-y: auto; overflow-x: hidden;
-    margin: -18px -18px -12px; padding: 18px 18px 12px; border-bottom: 1px solid var(--line);
+    margin-top: -19px; padding-top: 19px; margin-bottom: -12px; padding-bottom: 12px;
+    border-bottom: 1px solid var(--line);
   }
 }
 
