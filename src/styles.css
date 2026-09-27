@@ -173,14 +173,29 @@ html, body { min-width: 320px; }
   html, body { height: 100%; overflow: hidden; }
   body { display: flex; flex-direction: column; }
   .layout { flex: 1; min-height: 0; overflow: hidden; }
-  .side, .stage { height: 100%; overflow-y: auto; }
+  /* Only vertical scrolling is ever intended here (that's the whole point of splitting the two
+     panes) — overflow-x:hidden stops a stray wide child from silently opting these into a second,
+     horizontal scrollbar too, since setting overflow-y alone makes a browser treat overflow-x as
+     auto rather than its default visible. */
+  .side, .stage { height: 100%; overflow-y: auto; overflow-x: hidden; }
   /* Stays put at the top of its own pane while the song list scrolls under it, same as .top does for the page. */
   .side-tabs { position: sticky; top: 0; z-index: 1; background: var(--bg); }
   /* Same idea for the open song: everything above the actual tracks (title, waveform overview,
      transport, loop, markers, tempo/pitch/volume and the tool drawer) stays put while just the
      lanes scroll underneath. An open drawer pane (Scratchpad especially) makes this tall, leaving
-     less room for tracks below it — a deliberate trade-off, not an oversight. */
-  .deck-top { position: sticky; top: 0; z-index: 2; background: var(--panel); max-height: calc(100vh - 40px); overflow-y: auto; padding-bottom: 12px; margin-bottom: -12px; border-bottom: 1px solid var(--line); }
+     less room for tracks below it — a deliberate trade-off, not an oversight.
+     margin/padding: -18px pulls it flush with .deck's own padding on all sides before adding that
+     18px back as its own padding — otherwise .deck's padding sits *above* the sticky element, so
+     the first ~18px of scrolling drags it along before it "catches" and sticks, instead of holding
+     still from the first pixel. overflow-x:hidden avoids the same auto-on-both-axes trap as above:
+     without it, content too wide for the pane (rare, but possible with a tall drawer's own scrollbar
+     narrowing things further) opened a confusing second, horizontal scrollbar on top of the vertical
+     one instead of just being clipped — there's no useful reason to scroll this row sideways. */
+  .deck-top {
+    position: sticky; top: 0; z-index: 2; background: var(--panel);
+    max-height: calc(100vh - 40px); overflow-y: auto; overflow-x: hidden;
+    margin: -18px -18px -12px; padding: 18px 18px 12px; border-bottom: 1px solid var(--line);
+  }
 }
 
 /* ---------- drop zone ---------- */
