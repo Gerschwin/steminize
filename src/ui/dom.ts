@@ -2,7 +2,7 @@ export const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.g
 
 export function h<K extends keyof HTMLElementTagNameMap>(
   tag: K,
-  props: Partial<Omit<HTMLElementTagNameMap[K], 'style'>> & { class?: string; style?: string; [k: `data-${string}`]: string } = {},
+  props: Partial<Omit<HTMLElementTagNameMap[K], 'style'>> & { class?: string; style?: string; [k: `data-${string}` | `aria-${string}`]: string } = {},
   ...children: (Node | string | null | false | undefined)[]
 ): HTMLElementTagNameMap[K] {
   const el = document.createElement(tag);

@@ -89,7 +89,7 @@
         <section class="card" id="setlistCard">
           <div class="card-head">
             <h2>Setlist</h2>
-            <select id="slSelect" aria-label="Setlist" hidden></select>
+            <span id="slSelect" hidden></span>
           </div>
           <div class="sl-bar">
             <button class="btn tiny ghost" id="slNew" type="button" title="Start a new setlist">New</button>
@@ -98,7 +98,7 @@
           </div>
           <ol class="queue lib sl-list" id="slList" hidden></ol>
           <p class="muted small empty" id="slInfo"></p>
-          <div class="sl-add" id="slAddRow" hidden><select id="slAdd" aria-label="Add a song to the setlist"></select></div>
+          <div class="sl-add" id="slAddRow" hidden><span id="slAdd"></span></div>
           <div class="sl-transport" id="slTransport" hidden>
             <div class="sl-buttons">
               <button class="btn tiny ghost" id="slPrev" type="button" title="Previous song">◀ Prev</button>
@@ -107,7 +107,7 @@
             </div>
             <div class="sl-auto">
               <label class="switch" title="Start the next song by itself when one ends"><input type="checkbox" id="slAuto" /> Auto-advance</label>
-              <select id="slGap" aria-label="Gap between songs"></select>
+              <span id="slGap"></span>
             </div>
           </div>
         </section>

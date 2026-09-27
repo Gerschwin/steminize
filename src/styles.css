@@ -111,6 +111,31 @@ select {
   width: 100%; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line);
   background: var(--panel-2);
 }
+
+/* ---------- custom dropdown (createDropdown in ui/dropdown.ts) ----------
+   A same-look-everywhere stand-in for <select>: a real <select>'s open list is drawn by the OS,
+   not the page, so it doesn't take the theme (checked in both Chromium and WebKitGTK — plain
+   white either way). Used only where that actually matters (currently just the Setlist card). */
+.dd { position: relative; width: 100%; }
+.dd-btn {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; text-align: left;
+  padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); color: inherit;
+  font: inherit; cursor: pointer;
+}
+.dd-btn:disabled { opacity: 0.5; cursor: default; }
+.dd-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.dd-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dd-chev { flex: none; opacity: 0.7; }
+.dd-list {
+  position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 4px; list-style: none;
+  max-height: 260px; overflow-y: auto; border-radius: 10px; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.dd-list.dd-up { top: auto; bottom: calc(100% + 4px); }
+.dd-opt { padding: 7px 9px; border-radius: 7px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dd-opt.hl { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.dd-opt[aria-selected='true'] { font-weight: 600; }
+.dd-opt.disabled { opacity: 0.5; cursor: default; }
 input[type='range'] { width: 100%; accent-color: var(--accent); }
 output { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
 
@@ -433,14 +458,13 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
 .about-links { display: flex; flex-wrap: wrap; gap: 4px 16px; }
 .about-links a, .about-list a { color: var(--accent-2); }
 /* ---------- setlist ---------- */
-#setlistCard .card-head select { max-width: 60%; }
+#setlistCard .card-head .dd { max-width: 60%; }
 .sl-bar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .sl-list { margin-bottom: 6px; }
 .sl-ctl { grid-row: 1 / span 2; grid-column: 2; display: flex; gap: 2px; align-items: center; }
 .sl-mv { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 4px 6px; border-radius: 6px; font-size: 14px; line-height: 1; }
 .sl-mv:hover:not(:disabled) { color: var(--text); background: var(--line); }
 .sl-mv:disabled { opacity: 0.3; cursor: default; }
-.sl-add select { width: 100%; }
 .sl-transport { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
 .sl-buttons, .sl-auto { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .sl-row .t-sub { color: var(--muted); }

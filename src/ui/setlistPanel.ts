@@ -7,6 +7,7 @@ import type { LibMeta } from '../library.ts';
 import { GAPS, loadSetlists, moveItem, newSetlist, nextSong, prevSong, pruneSongs, saveSetlists, totalSeconds, uniqueName, type Setlist } from '../setlists.ts';
 import type { Deck, DeckState } from './deck.ts';
 import { $, fmtTime, h, toast } from './dom.ts';
+import { createDropdown } from './dropdown.ts';
 import type { initLibrary } from './libraryPanel.ts';
 
 type Library = ReturnType<typeof initLibrary>;
@@ -23,14 +24,24 @@ export function initSetlists(deck: Deck, library: Library) {
   let metas = new Map<string, LibMeta>();
   let pending: { timer: number; tick: number } | null = null;
 
-  const select = $<HTMLSelectElement>('slSelect');
+  // Real <select>s: their open list is drawn by the OS and mostly ignores page CSS (plain white
+  // regardless of theme, confirmed in Chromium and WebKitGTK alike), so these three use a custom
+  // dropdown instead (see ui/dropdown.ts) that actually looks like the rest of the app.
+  const mount = (id: string, dd: ReturnType<typeof createDropdown>) => {
+    const placeholder = $(id);
+    dd.el.id = id;
+    dd.el.hidden = placeholder.hidden;
+    placeholder.replaceWith(dd.el);
+    return dd;
+  };
+  const select = mount('slSelect', createDropdown());
   const listEl = $('slList');
   const info = $('slInfo');
   const addRow = $('slAddRow');
-  const addSel = $<HTMLSelectElement>('slAdd');
+  const addSel = mount('slAdd', createDropdown());
   const transport = $('slTransport');
   const autoBox = $<HTMLInputElement>('slAuto');
-  const gapSel = $<HTMLSelectElement>('slGap');
+  const gapSel = mount('slGap', createDropdown(GAPS.map((g) => ({ value: String(g), label: g ? `${g} s gap` : 'No gap' }))));
   const newBtn = $<HTMLButtonElement>('slNew');
   const renameBtn = $<HTMLButtonElement>('slRename');
   const delBtn = $<HTMLButtonElement>('slDelete');
@@ -135,15 +146,16 @@ export function initSetlists(deck: Deck, library: Library) {
     if (!lists.some((l) => l.id === activeId)) activeId = lists[0]?.id ?? null;
 
     const sl = ready ? active() : null;
-    select.replaceChildren(...lists.map((l) => h('option', { value: l.id, selected: l.id === activeId }, `${l.name} (${l.songs.length})`)));
-    select.hidden = !lists.length;
+    select.setOptions(lists.map((l) => ({ value: l.id, label: `${l.name} (${l.songs.length})` })));
+    select.value = activeId ?? '';
+    select.el.hidden = !lists.length;
     renameBtn.hidden = delBtn.hidden = !sl;
     listEl.replaceChildren(...(sl ? sl.songs.map((id, i) => row(sl, id, i)) : []));
     listEl.hidden = !sl?.songs.length;
 
     addRow.hidden = !sl;
     const free = [...metas.values()].filter((m) => !sl?.songs.includes(m.id)).sort((a, b) => a.title.localeCompare(b.title));
-    addSel.replaceChildren(h('option', { value: '' }, free.length ? 'Add a song…' : metas.size ? 'Every library song is in this setlist' : 'No songs in your library yet'), ...free.map((m) => h('option', { value: m.id }, m.title)));
+    addSel.setOptions([{ value: '', label: free.length ? 'Add a song…' : metas.size ? 'Every library song is in this setlist' : 'No songs in your library yet' }, ...free.map((m) => ({ value: m.id, label: m.title }))]);
     addSel.disabled = !free.length;
 
     transport.hidden = !sl?.songs.length;
@@ -166,8 +178,8 @@ export function initSetlists(deck: Deck, library: Library) {
   }
 
   // ---- managing setlists
-  select.onchange = () => {
-    activeId = select.value;
+  select.onChange = (v) => {
+    activeId = v;
     try {
       localStorage.setItem(ACTIVE_KEY, activeId);
     } catch {
@@ -189,7 +201,7 @@ export function initSetlists(deck: Deck, library: Library) {
         sl.name = uniqueName(v, lists.filter((l) => l !== sl).map((l) => l.name));
         persist();
       }
-      input.replaceWith(select);
+      input.replaceWith(select.el);
       render();
     };
     input.onkeydown = (e) => {
@@ -198,7 +210,7 @@ export function initSetlists(deck: Deck, library: Library) {
       if (e.key === 'Escape') finish(false);
     };
     input.onblur = () => finish(true);
-    select.replaceWith(input);
+    select.el.replaceWith(input);
     input.focus();
     input.select();
   }
@@ -207,7 +219,7 @@ export function initSetlists(deck: Deck, library: Library) {
     lists.push(sl);
     activeId = sl.id;
     persist();
-    select.hidden = false;
+    select.el.hidden = false;
     render();
     startRename();
   };
@@ -230,10 +242,10 @@ export function initSetlists(deck: Deck, library: Library) {
     cancelPending();
     render();
   };
-  addSel.onchange = () => {
+  addSel.onChange = (v) => {
     const sl = active();
-    if (!sl || !addSel.value) return;
-    sl.songs.push(addSel.value);
+    if (!sl || !v) return;
+    sl.songs.push(v);
     persist();
     render();
   };
@@ -245,11 +257,10 @@ export function initSetlists(deck: Deck, library: Library) {
     if (!sl.auto) cancelPending();
     render();
   };
-  gapSel.replaceChildren(...GAPS.map((g) => h('option', { value: String(g) }, g ? `${g} s gap` : 'No gap')));
-  gapSel.onchange = () => {
+  gapSel.onChange = (v) => {
     const sl = active();
     if (!sl) return;
-    sl.gap = Number(gapSel.value);
+    sl.gap = Number(v);
     persist();
   };
 
