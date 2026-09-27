@@ -176,6 +176,10 @@ html, body { min-width: 320px; }
   .side, .stage { height: 100%; overflow-y: auto; }
   /* Stays put at the top of its own pane while the song list scrolls under it, same as .top does for the page. */
   .side-tabs { position: sticky; top: 0; z-index: 1; background: var(--bg); }
+  /* Same idea for the open song: title, waveform overview, transport and loop controls stay put while
+     its tracks scroll underneath. Markers/tempo/pitch/volume/the tool drawer scroll away with them —
+     pinning those too (the drawer especially, several times taller open) would eat most of the pane. */
+  .deck-top { position: sticky; top: 0; z-index: 2; background: var(--panel); padding-bottom: 12px; margin-bottom: -12px; border-bottom: 1px solid var(--line); }
 }
 
 /* ---------- drop zone ---------- */
@@ -264,6 +268,7 @@ details.more[open] summary { color: var(--text); }
 
 /* ---------- deck ---------- */
 .deck { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; display: flex; flex-direction: column; gap: 16px; }
+.deck-top { display: flex; flex-direction: column; gap: 16px; }
 .deck-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
 .deck-head h1 { overflow-wrap: anywhere; cursor: text; }
 .title-edit { font-size: 22px; font-weight: 650; width: 100%; max-width: 480px; border: 0; outline: 1px solid var(--accent); background: var(--panel-2); border-radius: 6px; padding: 2px 8px; color: inherit; }

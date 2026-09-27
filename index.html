@@ -203,58 +203,60 @@
         </div>
 
         <div class="deck" id="deck" hidden>
-          <div class="deck-head">
-            <div>
-              <h1 id="trackTitle"></h1>
-              <p class="muted" id="trackMeta"></p>
+          <div class="deck-top">
+            <div class="deck-head">
+              <div>
+                <h1 id="trackTitle"></h1>
+                <p class="muted" id="trackMeta"></p>
+              </div>
+              <div class="deck-actions">
+                <button class="btn ghost" id="rerunBtn" title="Separate again with the current settings">Re-run</button>
+                <button class="btn ghost" id="exportMixBtn" title="Save what you hear: mutes, levels, tempo and pitch">Export mix</button>
+                <button class="btn primary" id="saveAllBtn">Save all stems</button>
+              </div>
             </div>
-            <div class="deck-actions">
-              <button class="btn ghost" id="rerunBtn" title="Separate again with the current settings">Re-run</button>
-              <button class="btn ghost" id="exportMixBtn" title="Save what you hear: mutes, levels, tempo and pitch">Export mix</button>
-              <button class="btn primary" id="saveAllBtn">Save all stems</button>
-            </div>
-          </div>
 
-          <div class="transport">
-            <div class="ov-col">
-              <div class="overview" id="overviewWrap">
-                <canvas id="overview"></canvas>
-                <div class="zoom">
-                  <button class="btn tiny ghost" id="zoomOut" title="Zoom out (−)">−</button>
-                  <button class="btn tiny ghost" id="zoomIn" title="Zoom in (+). Or scroll over the waveform">+</button>
-                  <button class="btn tiny ghost" id="zoomFit" title="Whole song (0)">Fit</button>
+            <div class="transport">
+              <div class="ov-col">
+                <div class="overview" id="overviewWrap">
+                  <canvas id="overview"></canvas>
+                  <div class="zoom">
+                    <button class="btn tiny ghost" id="zoomOut" title="Zoom out (−)">−</button>
+                    <button class="btn tiny ghost" id="zoomIn" title="Zoom in (+). Or scroll over the waveform">+</button>
+                    <button class="btn tiny ghost" id="zoomFit" title="Whole song (0)">Fit</button>
+                  </div>
                 </div>
+                <input type="range" id="viewScroll" min="0" max="1000" value="0" hidden aria-label="Scroll the zoomed waveform" />
               </div>
-              <input type="range" id="viewScroll" min="0" max="1000" value="0" hidden aria-label="Scroll the zoomed waveform" />
-            </div>
-            <div class="transport-bar">
-              <button class="btn tbtn" id="toStartBtn" type="button" title="Jump to the start" aria-label="Jump to the start">
-                <svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM19 5v14l-11-7z"/></svg>
-              </button>
-              <button class="btn tbtn" id="rewindBtn" type="button" title="Skip back 5 s" aria-label="Skip back 5 s">
-                <svg viewBox="0 0 24 24"><path d="M20 6v12l-8-6zM12 6v12l-8-6z"/></svg>
-              </button>
-              <button class="play" id="playBtn" aria-label="Play">
-                <svg viewBox="0 0 24 24" class="i-play"><path d="M8 5v14l11-7z"/></svg>
-                <svg viewBox="0 0 24 24" class="i-pause"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
-              </button>
-              <button class="btn tbtn" id="ffBtn" type="button" title="Skip forward 5 s" aria-label="Skip forward 5 s">
-                <svg viewBox="0 0 24 24"><path d="M4 6v12l8-6zM12 6v12l8-6z"/></svg>
-              </button>
-              <button class="btn tbtn" id="toEndBtn" type="button" title="Jump to the end" aria-label="Jump to the end">
-                <svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM5 5v14l11-7z"/></svg>
-              </button>
-              <div class="tool loop">
-                <button class="btn toggle" id="loopBtn" aria-pressed="false" title="Loop (L)">Loop</button>
-                <button class="btn tiny ghost" id="setA" title="Loop start at playhead ([)">Set A</button>
-                <button class="btn tiny ghost" id="setB" title="Loop end at playhead (])">Set B</button>
-                <button class="btn tiny ghost" id="clearLoop" title="Remove the loop section (A and B)" hidden>Clear</button>
-                <span class="muted small" id="loopInfo">Drag across the waveform to pick a section</span>
-                <label class="snap">Snap
-                  <select id="snap"><option value="off">Off</option><option value="beat">Beat</option><option value="bar">Bar</option></select>
-                </label>
+              <div class="transport-bar">
+                <button class="btn tbtn" id="toStartBtn" type="button" title="Jump to the start" aria-label="Jump to the start">
+                  <svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM19 5v14l-11-7z"/></svg>
+                </button>
+                <button class="btn tbtn" id="rewindBtn" type="button" title="Skip back 5 s" aria-label="Skip back 5 s">
+                  <svg viewBox="0 0 24 24"><path d="M20 6v12l-8-6zM12 6v12l-8-6z"/></svg>
+                </button>
+                <button class="play" id="playBtn" aria-label="Play">
+                  <svg viewBox="0 0 24 24" class="i-play"><path d="M8 5v14l11-7z"/></svg>
+                  <svg viewBox="0 0 24 24" class="i-pause"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
+                </button>
+                <button class="btn tbtn" id="ffBtn" type="button" title="Skip forward 5 s" aria-label="Skip forward 5 s">
+                  <svg viewBox="0 0 24 24"><path d="M4 6v12l8-6zM12 6v12l8-6z"/></svg>
+                </button>
+                <button class="btn tbtn" id="toEndBtn" type="button" title="Jump to the end" aria-label="Jump to the end">
+                  <svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM5 5v14l11-7z"/></svg>
+                </button>
+                <div class="tool loop">
+                  <button class="btn toggle" id="loopBtn" aria-pressed="false" title="Loop (L)">Loop</button>
+                  <button class="btn tiny ghost" id="setA" title="Loop start at playhead ([)">Set A</button>
+                  <button class="btn tiny ghost" id="setB" title="Loop end at playhead (])">Set B</button>
+                  <button class="btn tiny ghost" id="clearLoop" title="Remove the loop section (A and B)" hidden>Clear</button>
+                  <span class="muted small" id="loopInfo">Drag across the waveform to pick a section</span>
+                  <label class="snap">Snap
+                    <select id="snap"><option value="off">Off</option><option value="beat">Beat</option><option value="bar">Bar</option></select>
+                  </label>
+                </div>
+                <div class="time"><span id="timeNow">0:00</span><span class="muted"> / <span id="timeTotal">0:00</span></span></div>
               </div>
-              <div class="time"><span id="timeNow">0:00</span><span class="muted"> / <span id="timeTotal">0:00</span></span></div>
             </div>
           </div>
 
