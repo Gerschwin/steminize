@@ -258,18 +258,17 @@
                 <div class="time"><span id="timeNow">0:00</span><span class="muted"> / <span id="timeTotal">0:00</span></span></div>
               </div>
             </div>
-          </div>
 
-          <div class="markers-bar">
-            <div class="markers" id="markers"></div>
-            <button class="btn tiny ghost" id="addMarker" title="Add a section marker at the playhead (M)">+ Marker</button>
-            <span class="x-toggles">
-              <button class="btn tiny ghost toggle" id="chordsBtn" type="button" aria-pressed="false" title="Show the chords (detected, editable)">Chords</button>
-              <button class="btn tiny ghost toggle" id="notesBtn" type="button" aria-pressed="false" title="Show which notes are sounding, freeze the sound, make MIDI">Notes</button>
-            </span>
-          </div>
+            <div class="markers-bar">
+              <div class="markers" id="markers"></div>
+              <button class="btn tiny ghost" id="addMarker" title="Add a section marker at the playhead (M)">+ Marker</button>
+              <span class="x-toggles">
+                <button class="btn tiny ghost toggle" id="chordsBtn" type="button" aria-pressed="false" title="Show the chords (detected, editable)">Chords</button>
+                <button class="btn tiny ghost toggle" id="notesBtn" type="button" aria-pressed="false" title="Show which notes are sounding, freeze the sound, make MIDI">Notes</button>
+              </span>
+            </div>
 
-          <div class="tools">
+            <div class="tools">
             <div class="tool">
               <label>Tempo <output id="tempoOut">100%</output></label>
               <input type="range" id="tempo" min="0.5" max="1.5" step="0.01" value="1" />
@@ -393,6 +392,7 @@
                 <textarea class="scratch-area" id="scratchNotes" placeholder="Notes, song sections, anything else…" spellcheck="true" hidden></textarea>
               </div>
             </div>
+          </div>
           </div>
 
           <div class="lanes xlanes" id="xlanes"></div>
