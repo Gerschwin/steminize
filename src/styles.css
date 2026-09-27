@@ -330,6 +330,57 @@ details.more[open] summary { color: var(--text); }
 .tool label { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .tool input[type='range'] { flex: 1; min-width: 80px; }
 .tool.loop { grid-column: 1 / -1; }
+
+/* Above 900px (where .layout is two columns — see the other @media(min-width:901px) block for the
+   independent-scroll panes and the sticky .deck-top), the deck's always-visible chrome stays on one
+   line instead of wrapping. This must come after every base rule above that it overrides, since a
+   later same-specificity rule wins regardless of which one is in a media query. Below 900px this
+   is untouched: the original wrapping behaviour, which is what a phone-width single column needs. */
+@media (min-width: 901px) {
+  /* Title truncates with an ellipsis (it's still fully visible via its tooltip — see setTitleText()
+     in deck.ts — and double-click-to-rename still works); the action buttons never move. */
+  .deck-head { flex-wrap: nowrap; }
+  .deck-head > div:first-child { min-width: 0; overflow: hidden; }
+  .deck-head h1 { overflow-wrap: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .deck-head p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .deck-actions { flex-wrap: nowrap; flex-shrink: 0; }
+
+  /* Everything in the transport row stays fixed size except loopInfo, which truncates instead (see
+     .tool.loop below) — the row's own width never needs to grow past what the buttons need. */
+  .transport-bar { flex-wrap: nowrap; }
+  .transport-bar > *:not(.tool.loop) { flex-shrink: 0; }
+  /* Without an explicit floor, flexbox lets .tool.loop get squeezed by its shrink:0 siblings below
+     what it can actually fit even with #loopInfo at its own min-width, which just makes .tool.loop
+     itself overflow instead of the row growing to fit it (measured floor with Clear visible: ~413px). */
+  .transport-bar > .tool.loop { min-width: 420px; }
+  .tool.loop { flex-wrap: nowrap; grid-column: auto; }
+  /* The one bit of free text in the always-visible controls: shrinks and truncates instead of
+     wrapping or forcing the row wider. Its default text is a full sentence, the widest single item here. */
+  .tool.loop #loopInfo { flex: 1 1 auto; min-width: 40px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tool.loop > *:not(#loopInfo) { flex-shrink: 0; }
+
+  /* Tempo/Pitch/Volume + the drawer stay in one row (each can shrink a bit before the row would
+     need to grow) instead of the auto-fit grid, which wrapped them onto extra rows once narrow. */
+  .tools { display: flex; flex-wrap: nowrap; }
+  .tools > .tool { flex: 1 1 160px; min-width: 0; grid-column: auto; }
+  .tools > .drawer { flex: 2 1 320px; min-width: 0; }
+  /* The drawer's own tabs stay one row (see the note by .drawer-tabs's own rule for the one
+     exception); what a tab's pane contains once open is varied and sometimes dense (e.g. Live
+     input), so those keep wrapping like a normal settings panel. */
+  .tool.practice, .tool.beat, .tool.live, .tool.tuner, .tool.scratch-tabs { flex-wrap: wrap; }
+  /* The one exception to "nothing wraps": with Live input showing (its widest case), these 5 tab
+     buttons need ~660px on their own, which would push the app's minimum width past what most
+     screens can show. Letting just this row wrap to a second line if it must is a much smaller
+     trade-off than the one it avoids. */
+  .dtab { flex-shrink: 0; }
+
+  /* +Marker/Chords/Notes never move; the marker chips scroll sideways instead of wrapping once
+     there are enough of them to not fit (there's no fixed limit on how many a song can have). */
+  .markers-bar { flex-wrap: nowrap; }
+  .markers-bar > .markers { flex: 1 1 auto; min-width: 40px; overflow-x: auto; flex-wrap: nowrap; }
+  .markers-bar > .x-toggles { flex-shrink: 0; }
+}
+
 .lanes { display: flex; flex-direction: column; gap: 6px; }
 .lane { display: grid; grid-template-columns: 236px 1fr; gap: 10px; align-items: stretch; }
 .lane.selected .lane-ctl { outline: 2px solid var(--c); outline-offset: -1px; }

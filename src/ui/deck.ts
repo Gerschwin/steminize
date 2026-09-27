@@ -333,7 +333,6 @@ export class Deck {
       this.updateTrainerInfo(s.passes, s.countingIn);
       this.dirty = true;
     };
-    $('trackTitle').title = 'Double-click to rename';
     $('trackTitle').ondblclick = () => this.renameSong();
     $('playBtn').onclick = () => this.toggle();
     $('toStartBtn').onclick = () => this.player.seek(0);
@@ -834,7 +833,7 @@ export class Deck {
     this.pitch = 0;
     $('welcome').hidden = true;
     $('deck').hidden = false;
-    $('trackTitle').textContent = r.title;
+    this.setTitleText(r.title);
     this.media.setSong(r.title);
     this.updateLyricsLink();
     const s = r.settings;
@@ -1881,6 +1880,14 @@ export class Deck {
     input.select();
   }
 
+  /** The title is truncated with an ellipsis (see .deck-head h1 in styles.css) so it never pushes
+   * the Export/Save buttons off the row; the full name plus the rename hint live in the tooltip. */
+  private setTitleText(title: string) {
+    const heading = $('trackTitle');
+    heading.textContent = title;
+    heading.title = `${title} (double-click to rename)`;
+  }
+
   private renameSong() {
     if (!this.r) return;
     const heading = $('trackTitle');
@@ -1894,7 +1901,7 @@ export class Deck {
         this.r.title = val;
         this.onRename(val);
       }
-      heading.textContent = this.r?.title ?? '';
+      this.setTitleText(this.r?.title ?? '');
       if (this.r) this.media.setSong(this.r.title);
       input.replaceWith(heading);
       this.updateLyricsLink();
