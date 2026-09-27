@@ -27,17 +27,17 @@ export type EncodeReq =
       pitch: number;
       out: OutputOptions;
     }
-  /** Save stems (16-bit FLAC) + meta.json into the library folder `dir`. */
-  | { type: 'lib-save'; id: number; dir: string; meta: string; stems: { name: string; data: Stereo; scale: number }[] }
-  | { type: 'lib-meta'; id: number; dir: string; meta: string }
-  /** Adds one extra audio file (a live-recorded take) to an already-saved song's folder. */
-  | { type: 'lib-add-file'; id: number; dir: string; name: string; data: Stereo; scale: number; meta: string }
-  /** Removes one file (a take being discarded) from a song's folder. */
-  | { type: 'lib-remove-file'; id: number; dir: string; name: string; meta: string }
-  /** Zip the whole library (every song folder, as stored) for backup. */
-  | { type: 'lib-export'; id: number }
-  /** Unzip a backup, adding any song folders not already in the library. */
-  | { type: 'lib-import'; id: number; zip: Uint8Array }
+  /** Peak-scales and FLAC-encodes stems for the library (either backend): posted back one 'file' at a
+   * time as each finishes, same as 'stems', but 16-bit with the library's own scale-to-fit step. */
+  | { type: 'lib-encode'; id: number; stems: { name: string; data: Stereo; scale: number }[] }
+  /** Writes one file into the OPFS library (the write path needs a worker: see writeFile below).
+   * The native (Tauri) library backend writes directly from the main thread instead — see
+   * src/library/nativeBackend.ts — since a worker has no access to Tauri's IPC bridge. */
+  | { type: 'opfs-write'; id: number; dir: string; name: string; bytes: Uint8Array }
+  /** Zips a flat {path: bytes} map (backup export); level 0 since the audio inside is already compressed. */
+  | { type: 'zip'; id: number; files: Record<string, Uint8Array> }
+  /** The reverse of 'zip', for restoring a backup. */
+  | { type: 'unzip'; id: number; zip: Uint8Array }
   | { type: 'beats'; id: number; mono: Float32Array; harmonic?: Float32Array }
   | { type: 'keys'; id: number; harmonic: Float32Array }
   /** Note energy per semitone over time, for the note view and chords. */
@@ -52,15 +52,14 @@ export type EncodeRes =
 
 const post = (m: EncodeRes, t: Transferable[] = []) => (self as DedicatedWorkerGlobalScope).postMessage(m, t);
 
-async function libRoot() {
-  const root = await navigator.storage.getDirectory();
-  return root.getDirectoryHandle('library', { create: true });
-}
-
 async function libDir(name: string) {
-  return (await libRoot()).getDirectoryHandle(name, { create: true });
+  const root = await navigator.storage.getDirectory();
+  const lib = await root.getDirectoryHandle('library', { create: true });
+  return lib.getDirectoryHandle(name, { create: true });
 }
 
+/** Writes one file into OPFS. This has to run in a worker: sync access handles (the fast path
+ * below) are worker-only in every browser this app supports. */
 async function writeFile(dir: FileSystemDirectoryHandle, name: string, bytes: Uint8Array) {
   const fh = await dir.getFileHandle(name, { create: true });
   // Sync access handles work in every browser with OPFS (Safari has no createWritable).
@@ -91,77 +90,22 @@ async function handle(m: EncodeReq) {
     const mix = renderMix(m.stems, m.gains, m.start, m.end, m.tempo, m.pitch, m.pans, m.eqs);
     const bytes = encodeAudio(mix, m.out);
     post({ id: m.id, type: 'file', name: m.name, bytes }, [bytes.buffer as ArrayBuffer]);
-  } else if (m.type === 'lib-save') {
-    const dir = await libDir(m.dir);
-    let total = 0;
+  } else if (m.type === 'lib-encode') {
     for (let i = 0; i < m.stems.length; i++) {
       const s = m.stems[i];
       const scaled: Stereo = s.scale === 1 ? s.data : [s.data[0].map((v) => v * s.scale), s.data[1].map((v) => v * s.scale)];
-      total += await writeFile(dir, `${s.name}.flac`, encodeFlac(scaled, 16, 44100));
+      const bytes = encodeFlac(scaled, 16, 44100);
+      post({ id: m.id, type: 'file', name: s.name, bytes }, [bytes.buffer as ArrayBuffer]);
       post({ id: m.id, type: 'progress', done: i + 1, total: m.stems.length });
     }
-    // meta.json last: a folder without it is an incomplete save and is ignored.
-    const meta = JSON.parse(m.meta);
-    meta.bytes = total;
-    await writeFile(dir, 'meta.json', new TextEncoder().encode(JSON.stringify(meta)));
+  } else if (m.type === 'opfs-write') {
+    const total = await writeFile(await libDir(m.dir), m.name, m.bytes);
     post({ id: m.id, type: 'result', value: total });
-  } else if (m.type === 'lib-meta') {
-    await writeFile(await libDir(m.dir), 'meta.json', new TextEncoder().encode(m.meta));
-  } else if (m.type === 'lib-add-file') {
-    const dir = await libDir(m.dir);
-    const scaled: Stereo = m.scale === 1 ? m.data : [m.data[0].map((v) => v * m.scale), m.data[1].map((v) => v * m.scale)];
-    await writeFile(dir, `${m.name}.flac`, encodeFlac(scaled, 16, 44100));
-    await writeFile(dir, 'meta.json', new TextEncoder().encode(m.meta));
-  } else if (m.type === 'lib-remove-file') {
-    const dir = await libDir(m.dir);
-    await dir.removeEntry(`${m.name}.flac`).catch(() => {});
-    await writeFile(dir, 'meta.json', new TextEncoder().encode(m.meta));
-  } else if (m.type === 'lib-export') {
-    const lib = await libRoot();
-    const songs: [string, FileSystemDirectoryHandle][] = [];
-    for await (const [name, h] of (lib as any).entries() as AsyncIterable<[string, FileSystemHandle]>) if (h.kind === 'directory') songs.push([name, h as FileSystemDirectoryHandle]);
-    const files: Record<string, [Uint8Array, { level: 0 }]> = {};
-    for (let i = 0; i < songs.length; i++) {
-      const [name, dir] = songs[i];
-      for await (const [fname, fh] of (dir as any).entries() as AsyncIterable<[string, FileSystemHandle]>) {
-        if (fh.kind !== 'file') continue;
-        const file = await (fh as FileSystemFileHandle).getFile();
-        files[`${name}/${fname}`] = [new Uint8Array(await file.arrayBuffer()), { level: 0 }];
-      }
-      post({ id: m.id, type: 'progress', done: i + 1, total: songs.length });
-    }
-    const zipped = zipSync(files);
+  } else if (m.type === 'zip') {
+    const zipped = zipSync(m.files, { level: 0 });
     post({ id: m.id, type: 'result', value: zipped }, [zipped.buffer as ArrayBuffer]);
-  } else if (m.type === 'lib-import') {
-    const unzipped = unzipSync(m.zip);
-    const bySong = new Map<string, Record<string, Uint8Array>>();
-    for (const [path, bytes] of Object.entries(unzipped)) {
-      const slash = path.indexOf('/');
-      if (slash < 0) continue; // stray file at the zip root: not a song folder
-      const [song, fname] = [path.slice(0, slash), path.slice(slash + 1)];
-      if (!fname) continue;
-      (bySong.get(song) ?? (bySong.set(song, {}), bySong.get(song)!))[fname] = bytes;
-    }
-    const lib = await libRoot();
-    const existing = new Set<string>();
-    for await (const [name, h] of (lib as any).entries() as AsyncIterable<[string, FileSystemHandle]>) if (h.kind === 'directory') existing.add(name);
-    const entries = [...bySong.entries()];
-    let imported = 0;
-    let skipped = 0;
-    for (let i = 0; i < entries.length; i++) {
-      const [song, fileset] = entries[i];
-      if (!fileset['meta.json'] || existing.has(song)) {
-        skipped++;
-      } else {
-        const dir = await lib.getDirectoryHandle(song, { create: true });
-        for (const [fname, bytes] of Object.entries(fileset)) if (fname !== 'meta.json') await writeFile(dir, fname, bytes);
-        // meta.json last: a folder without it is an incomplete save and is ignored.
-        await writeFile(dir, 'meta.json', fileset['meta.json']);
-        imported++;
-      }
-      post({ id: m.id, type: 'progress', done: i + 1, total: entries.length });
-    }
-    post({ id: m.id, type: 'result', value: { imported, skipped } });
+  } else if (m.type === 'unzip') {
+    post({ id: m.id, type: 'result', value: unzipSync(m.zip) });
   } else if (m.type === 'cqt') {
     const c = cqt(m.mono);
     post({ id: m.id, type: 'result', value: c }, [c.data.buffer as ArrayBuffer]);

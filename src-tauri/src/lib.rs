@@ -2,6 +2,7 @@
 // separation runs in the webview (WebGPU where available, otherwise CPU/WASM).
 // The two plugins provide native "Save as" / folder dialogs and file writing.
 // The ytdlp module adds the one thing a browser tab can't do itself: "From YouTube" import.
+mod library;
 mod links;
 mod ytdlp;
 
@@ -51,7 +52,9 @@ pub fn run() {
         })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .invoke_handler(tauri::generate_handler![ytdlp::ytdlp_search, ytdlp::ytdlp_download, ytdlp::ytdlp_read, ytdlp::ytdlp_cleanup, links::open_link])
+        .invoke_handler(tauri::generate_handler![ytdlp::ytdlp_search, ytdlp::ytdlp_download, ytdlp::ytdlp_read, ytdlp::ytdlp_cleanup, links::open_link,
+            library::lib_list, library::lib_write_meta, library::lib_write_file, library::lib_read_file,
+            library::lib_list_files, library::lib_remove_file, library::lib_delete])
         .run(tauri::generate_context!())
         .expect("error while running Steminize");
 }
