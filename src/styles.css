@@ -47,6 +47,17 @@
 }
 
 * { box-sizing: border-box; }
+/* A themed, always-reserved-space scrollbar everywhere, instead of the platform default: GTK (and
+   so WebKitGTK, the Linux desktop app's webview) draws an auto-hiding overlay scrollbar that floats
+   on top of content at the pane's edge rather than making room for itself — visibly covering the
+   Songs/Settings tabs, the drop zone, deck buttons, whatever sits closest to that edge. Defining
+   `::-webkit-scrollbar` switches WebKit engines to the classic, space-reserving model; the Firefox
+   properties do the same there. */
+* { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; }
+*::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 html, body { margin: 0; height: 100%; }
 body.modal-open { overflow: hidden; }
 body {
@@ -177,7 +188,7 @@ html, body { min-width: 320px; }
      panes) — overflow-x:hidden stops a stray wide child from silently opting these into a second,
      horizontal scrollbar too, since setting overflow-y alone makes a browser treat overflow-x as
      auto rather than its default visible. */
-  .side, .stage { height: 100%; overflow-y: auto; overflow-x: hidden; }
+  .side, .stage { height: 100%; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; }
   /* Stays put at the top of its own pane while the song list scrolls under it, same as .top does for the page. */
   .side-tabs { position: sticky; top: 0; z-index: 1; background: var(--bg); }
   /* Same idea for the open song: everything above the actual tracks (title, waveform overview,
