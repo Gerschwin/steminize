@@ -1690,12 +1690,21 @@ export class Deck {
   private initScratchFloat() {
     const pane = document.querySelector<HTMLElement>('.dpane[data-pane="scratch"]')!;
     const handle = $('scratchFloatHandle');
+    const resizeHandle = $('scratchResizeHandle');
     const KEY = 'steminize.scratchFloat';
     const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), Math.max(lo, hi));
+    // Marks the pane's normal spot in the drawer, so docking can put it back exactly there.
+    const anchor = document.createComment('scratch-pane-anchor');
+    pane.after(anchor);
 
     const place = (left: number, top: number) => {
       pane.style.left = `${clamp(left, 8, innerWidth - pane.offsetWidth - 8)}px`;
       pane.style.top = `${clamp(top, 8, innerHeight - pane.offsetHeight - 8)}px`;
+    };
+    const resizeTo = (width: number, height: number) => {
+      pane.style.width = `${clamp(width, 300, innerWidth - 16)}px`;
+      pane.style.height = `${clamp(height, 240, innerHeight - 16)}px`;
+      place(pane.offsetLeft, pane.offsetTop); // a growing panel can't be left hanging off the edge
     };
     const save = () => {
       try {
@@ -1725,12 +1734,18 @@ export class Deck {
     const setFloating = (on: boolean) => {
       pane.classList.toggle('floating', on);
       if (on) {
+        // Moved to be a direct child of <body> rather than trusting position:fixed to escape every
+        // ancestor on its own: it should (nothing here sets transform/filter/contain, the usual
+        // reasons it wouldn't), but WebKitGTK visibly clipped/constrained it to the pinned top area
+        // regardless. As a real child of <body> there is no ancestor left to disagree about it.
+        document.body.appendChild(pane);
         const s = load();
         pane.style.width = `${s?.width ?? 420}px`;
         pane.style.height = `${s?.height ?? 480}px`;
         pane.hidden = false;
         place(s?.left ?? innerWidth - 460, s?.top ?? 100);
       } else {
+        anchor.after(pane); // back to its normal spot in the drawer
         pane.style.left = pane.style.top = pane.style.width = pane.style.height = '';
         // Undocking makes it an ordinary drawer pane again: only actually showing if its tab is the open one.
         pane.hidden = document.querySelector('.dtab[data-tab="scratch"]')?.getAttribute('aria-expanded') !== 'true';
@@ -1740,12 +1755,26 @@ export class Deck {
     $('scratchFloatBtn').onclick = () => setFloating(true);
     $('scratchDockBtn').onclick = () => setFloating(false);
 
+    // Listening on `document` rather than just the handle/resize grip is deliberate, not just
+    // setPointerCapture: dragging was intermittent in WebKitGTK, plausibly from the same root cause
+    // as the clipping above (the panel's real rendered position disagreeing with an ancestor), and
+    // capture alone would go quiet if that happened mid-drag. document-level listeners, gated on the
+    // drag/resize state below rather than which element the pointer is actually over, don't depend
+    // on that relationship being reliable — they keep working even if capture itself misbehaves.
     let drag: { x: number; y: number; left: number; top: number } | null = null;
     handle.addEventListener('pointerdown', (e) => {
-      handle.setPointerCapture(e.pointerId);
+      e.preventDefault();
+      // Capture is a nice-to-have (keeps events coming even if the pointer leaves the handle mid-
+      // drag); the document-level listeners above don't depend on it, so a browser that refuses it
+      // for some reason shouldn't stop dragging from working.
+      try {
+        handle.setPointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
       drag = { x: e.clientX, y: e.clientY, left: pane.offsetLeft, top: pane.offsetTop };
     });
-    handle.addEventListener('pointermove', (e) => {
+    document.addEventListener('pointermove', (e) => {
       if (drag) place(drag.left + (e.clientX - drag.x), drag.top + (e.clientY - drag.y));
     });
     const endDrag = () => {
@@ -1753,11 +1782,32 @@ export class Deck {
       drag = null;
       save();
     };
-    handle.addEventListener('pointerup', endDrag);
-    handle.addEventListener('pointercancel', endDrag);
+    document.addEventListener('pointerup', endDrag);
+    document.addEventListener('pointercancel', endDrag);
 
-    // A resize via the panel's own native resize handle, or the window changing size under it: keep
-    // both the saved size current and the panel from being left stranded off-screen.
+    let resize: { x: number; y: number; w: number; h: number } | null = null;
+    resizeHandle.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      try {
+        resizeHandle.setPointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+      resize = { x: e.clientX, y: e.clientY, w: pane.offsetWidth, h: pane.offsetHeight };
+    });
+    document.addEventListener('pointermove', (e) => {
+      if (resize) resizeTo(resize.w + (e.clientX - resize.x), resize.h + (e.clientY - resize.y));
+    });
+    const endResize = () => {
+      if (!resize) return;
+      resize = null;
+      save();
+    };
+    document.addEventListener('pointerup', endResize);
+    document.addEventListener('pointercancel', endResize);
+
+    // Belt and braces alongside endResize()'s own save() above, in case the panel's size ever
+    // changes some other way.
     new ResizeObserver(() => pane.classList.contains('floating') && save()).observe(pane);
     window.addEventListener('resize', () => pane.classList.contains('floating') && place(pane.offsetLeft, pane.offsetTop));
 

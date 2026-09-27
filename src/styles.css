@@ -309,8 +309,15 @@ details.more[open] summary { color: var(--text); }
 .scratch-area.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.5; white-space: pre; overflow-x: auto; }
 
 /* ---------- Scratchpad, popped out into a free-floating window ----------
-   position:fixed escapes .stage's scroll clipping and positions relative to the viewport, since
-   nothing between here and <body> uses transform/filter/contain (any of those would break that). */
+   position:fixed *should* escape .stage's scroll clipping and position relative to the viewport —
+   nothing here uses transform/filter/contain, which is what's supposed to break that — but WebKitGTK
+   (the Linux desktop webview) visibly clipped/constrained it to the pinned top area regardless, and
+   dragging was intermittent with it (plausibly the same issue: the panel's actual rendered position
+   drifting from what offsetLeft/Top report). deck.ts's initScratchFloat() sidesteps this rather than
+   relying on position:fixed's cross-engine guarantees: while floating, the panel is physically moved
+   to be a direct child of <body>, so there is no ancestor left to disagree about. Its resize handle
+   (below) is custom-built for the same reason: WebKitGTK didn't reliably show/support native
+   `resize`, so this doesn't depend on it either. */
 .scratch-float-bar {
   display: none; align-items: center; justify-content: space-between; gap: 8px;
   margin: -10px -10px 0; padding: 7px 8px 7px 12px; border-radius: var(--radius) var(--radius) 0 0;
@@ -319,17 +326,24 @@ details.more[open] summary { color: var(--text); }
 .scratch-float-handle { font-size: 13px; font-weight: 600; color: var(--muted); letter-spacing: 0.02em; }
 .dpane[data-pane='scratch'].floating {
   position: fixed; z-index: 30; width: 420px; height: 480px; min-width: 300px; min-height: 240px;
-  margin: 0; padding: 10px; resize: both; overflow: auto;
+  margin: 0; padding: 10px; overflow: auto;
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
 }
 .dpane[data-pane='scratch'].floating .scratch-float-bar { display: flex; }
-/* The window itself is resizable (above); let the text areas fill whatever room that gives them,
-   rather than each keeping its own fixed min-height and separate resize handle. */
+/* Let the text areas fill whatever room the panel's own size gives them, rather than each keeping
+   its own fixed min-height and native resize handle (replaced by the one custom handle below). */
 .dpane[data-pane='scratch'].floating .scratch-area { flex: 1; min-height: 0; resize: none; }
+.scratch-resize-handle { display: none; position: absolute; right: 0; bottom: 0; width: 18px; height: 18px; cursor: nwse-resize; touch-action: none; }
+.scratch-resize-handle::before {
+  content: ''; position: absolute; right: 4px; bottom: 4px; width: 8px; height: 8px;
+  border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); opacity: 0.6;
+}
+.dpane[data-pane='scratch'].floating .scratch-resize-handle { display: block; }
 @media (max-width: 900px) {
   /* A free-floating, draggable window doesn't fit a phone-width single column: dock it there instead. */
-  .dpane[data-pane='scratch'].floating { position: static; width: auto; height: auto; inset: auto; resize: none; overflow: visible; box-shadow: none; }
-  .dpane[data-pane='scratch'].floating .scratch-float-bar { display: none; }
+  .dpane[data-pane='scratch'].floating { position: static; width: auto; height: auto; inset: auto; overflow: visible; box-shadow: none; }
+  .dpane[data-pane='scratch'].floating .scratch-float-bar,
+  .dpane[data-pane='scratch'].floating .scratch-resize-handle { display: none; }
   .dpane[data-pane='scratch'].floating .scratch-area { flex: none; min-height: 180px; resize: vertical; }
 }
 #lyricsSearchLink { display: none; margin-left: auto; text-decoration: none; }
