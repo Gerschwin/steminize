@@ -453,6 +453,12 @@ setInterval(() => {
 $('appVersion').textContent = `v${__APP_VERSION__}`;
 $('appVersion').title = `Steminize ${__APP_VERSION__}, built ${__BUILD_DATE__}`;
 
+// Live window size next to the version badge — handy for testing layout at specific widths
+// (the 901px and 1280px breakpoints especially) without reaching for devtools.
+const updateViewportRes = () => ($('viewportRes').textContent = `${innerWidth}×${innerHeight}`);
+updateViewportRes();
+window.addEventListener('resize', updateViewportRes);
+
 // ---------------------------------------------------------------- PWA bits
 let installEvt: any = null;
 window.addEventListener('beforeinstallprompt', (e) => {
