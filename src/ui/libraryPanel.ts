@@ -300,7 +300,9 @@ export function initLibrary(deck: Deck) {
     }
     if (!autoSave.checked || !libraryAvailable()) return;
     try {
-      navigator.storage.persist?.().catch(() => {});
+      // Only meaningful for the OPFS backend (asks the browser not to evict the library under storage
+      // pressure); navigator.storage doesn't exist at all in WebKitGTK, so this must be optional too.
+      navigator.storage?.persist?.().catch(() => {});
       const meta = await saveSong(
         { title: r.title, seconds: r.seconds, took: r.took, created: Date.now(), settings: r.settings, kind: r.kind, analysis: r.analysis, state: deck.current === r ? deck.getState() : undefined },
         r.stems,
