@@ -188,7 +188,7 @@ html, body { min-width: 320px; }
      panes) — overflow-x:hidden stops a stray wide child from silently opting these into a second,
      horizontal scrollbar too, since setting overflow-y alone makes a browser treat overflow-x as
      auto rather than its default visible. */
-  .side, .stage { height: 100%; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; }
+  .side, .stage { height: 100%; overflow-y: auto; overflow-x: hidden; }
   /* Stays put at the top of its own pane while the song list scrolls under it, same as .top does for the page. */
   .side-tabs { position: sticky; top: 0; z-index: 1; background: var(--bg); }
   /* Same idea for the open song: everything above the actual tracks (title, waveform overview,
