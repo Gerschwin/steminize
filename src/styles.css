@@ -47,12 +47,12 @@
 }
 
 * { box-sizing: border-box; }
-/* A themed, always-reserved-space scrollbar everywhere, instead of the platform default: GTK (and
-   so WebKitGTK, the Linux desktop app's webview) draws an auto-hiding overlay scrollbar that floats
-   on top of content at the pane's edge rather than making room for itself — visibly covering the
-   Songs/Settings tabs, the drop zone, deck buttons, whatever sits closest to that edge. Defining
-   `::-webkit-scrollbar` switches WebKit engines to the classic, space-reserving model; the Firefox
-   properties do the same there. */
+/* A themed, always-reserved-space scrollbar everywhere, instead of the platform default. Doesn't
+   fix WebKitGTK on its own — GTK's overlay scrollbar there turned out to apply at the toolkit level,
+   below any page CSS, so it still floated over content regardless of this (see the Rust-side
+   GTK_OVERLAY_SCROLLING env var in lib.rs, which is the part that actually fixes that). Kept because
+   it's still the real fix for Chromium/WKWebView/Firefox, and matches the GTK-classic look once
+   GTK_OVERLAY_SCROLLING takes over on Linux. */
 * { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
 *::-webkit-scrollbar { width: 10px; height: 10px; }
 *::-webkit-scrollbar-track { background: transparent; }
