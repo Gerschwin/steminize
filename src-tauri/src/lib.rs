@@ -17,15 +17,14 @@ pub fn run() {
         if std::env::var_os("JSC_useSharedArrayBuffer").is_none() {
             std::env::set_var("JSC_useSharedArrayBuffer", "true");
         }
-        // GTK's overlay scrollbars (auto-hiding, drawn on top of content instead of reserving their
-        // own space) apply to WebKitGTK's scrollable regions too — including plain CSS overflow:auto
-        // panes, not just the window's own outer scroll — so no page-side CSS can turn them off; this
-        // is the only place that works. Without it, a pane's scrollbar floats over whatever sits at
-        // its edge (tabs, buttons, the drop zone). Read at GTK init, so it must be set before then.
-        if std::env::var_os("GTK_OVERLAY_SCROLLING").is_none() {
-            std::env::set_var("GTK_OVERLAY_SCROLLING", "0");
-        }
     }
+    // A GTK_OVERLAY_SCROLLING=0 env var was tried here to stop GTK's auto-hiding overlay scrollbar
+    // from floating over content at a pane's edge. It did — by switching to a real native GTK
+    // scrollbar widget — but that widget's width comes from the GTK theme, ignores this app's CSS
+    // entirely, and turned out much wider than intended, leaving a large dead gap next to it instead
+    // (measured ~24px against a `::-webkit-scrollbar` width of 10px). Reverted: see the dedicated
+    // padding on .side/.stage in styles.css instead, which gives the (thin, overlay) scrollbar room
+    // to float without touching content — plain CSS, so it's actually verifiable and portable.
 
     tauri::Builder::default()
         .setup(|_app| {

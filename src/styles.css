@@ -187,8 +187,15 @@ html, body { min-width: 320px; }
   /* Only vertical scrolling is ever intended here (that's the whole point of splitting the two
      panes) — overflow-x:hidden stops a stray wide child from silently opting these into a second,
      horizontal scrollbar too, since setting overflow-y alone makes a browser treat overflow-x as
-     auto rather than its default visible. */
-  .side, .stage { height: 100%; overflow-y: auto; overflow-x: hidden; }
+     auto rather than its default visible.
+     padding-right: a dedicated empty strip for the scrollbar to float over. GTK's overlay scrollbar
+     (WebKitGTK, the Linux desktop app's webview) auto-hides and draws on top of content rather than
+     reserving its own space, so without this it can cover whatever sits closest to the pane's edge
+     (the Songs/Settings tabs, the drop zone, deck buttons). Forcing GTK to a classic, space-reserving
+     scrollbar was tried instead (see lib.rs) but its width comes from the GTK theme, ignores this
+     app's CSS, and was measurably wider than intended — plain padding here is fully our own, so it's
+     predictable and actually testable. */
+  .side, .stage { height: 100%; overflow-y: auto; overflow-x: hidden; padding-right: 14px; }
   /* Stays put at the top of its own pane while the song list scrolls under it, same as .top does for the page. */
   .side-tabs { position: sticky; top: 0; z-index: 1; background: var(--bg); }
   /* Same idea for the open song: everything above the actual tracks (title, waveform overview,
