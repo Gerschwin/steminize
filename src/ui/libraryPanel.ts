@@ -326,6 +326,7 @@ export function initLibrary(deck: Deck) {
       loaded = true;
     } catch (e) {
       console.warn('Library unavailable', e);
+      toast(`Couldn't read your library: ${(e as Error).message}`, true);
     }
     render();
   }

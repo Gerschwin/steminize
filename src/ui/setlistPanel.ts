@@ -137,14 +137,13 @@ export function initSetlists(deck: Deck, library: Library) {
     const sl = ready ? active() : null;
     select.replaceChildren(...lists.map((l) => h('option', { value: l.id, selected: l.id === activeId }, `${l.name} (${l.songs.length})`)));
     select.hidden = !lists.length;
-    newBtn.disabled = metas.size === 0;
     renameBtn.hidden = delBtn.hidden = !sl;
     listEl.replaceChildren(...(sl ? sl.songs.map((id, i) => row(sl, id, i)) : []));
     listEl.hidden = !sl?.songs.length;
 
     addRow.hidden = !sl;
     const free = [...metas.values()].filter((m) => !sl?.songs.includes(m.id)).sort((a, b) => a.title.localeCompare(b.title));
-    addSel.replaceChildren(h('option', { value: '' }, free.length ? 'Add a song…' : 'Every library song is in this setlist'), ...free.map((m) => h('option', { value: m.id }, m.title)));
+    addSel.replaceChildren(h('option', { value: '' }, free.length ? 'Add a song…' : metas.size ? 'Every library song is in this setlist' : 'No songs in your library yet'), ...free.map((m) => h('option', { value: m.id }, m.title)));
     addSel.disabled = !free.length;
 
     transport.hidden = !sl?.songs.length;
