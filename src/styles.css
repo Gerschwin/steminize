@@ -166,6 +166,17 @@ html, body { min-width: 320px; }
   .stage { order: -1; }
   .welcome { display: none; }
 }
+/* Above the breakpoint where the two columns sit side by side, let each scroll on its own instead
+   of one long page: useful once either the song list or the open song's tracks run tall. Left
+   alone below it, where .layout stacks into a single column and there's no "two panes" to split. */
+@media (min-width: 901px) {
+  html, body { height: 100%; overflow: hidden; }
+  body { display: flex; flex-direction: column; }
+  .layout { flex: 1; min-height: 0; overflow: hidden; }
+  .side, .stage { height: 100%; overflow-y: auto; }
+  /* Stays put at the top of its own pane while the song list scrolls under it, same as .top does for the page. */
+  .side-tabs { position: sticky; top: 0; z-index: 1; background: var(--bg); }
+}
 
 /* ---------- drop zone ---------- */
 .drop {
