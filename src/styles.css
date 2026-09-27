@@ -149,7 +149,7 @@ html, body { min-width: 320px; }
 .side-pane { display: flex; flex-direction: column; gap: 14px; }
 .use-sum { margin: -4px 2px 0; }
 .linkish { border: 0; background: none; color: var(--accent-2); cursor: pointer; padding: 0; font: inherit; text-decoration: underline; }
-.drawer { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 10px; }
+.drawer { display: flex; flex-direction: column; gap: 10px; }
 .drawer-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
 .dtab { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer; font-weight: 600; font-size: 13px; }
 .dtab[aria-expanded='true'] { border-color: var(--accent); }
@@ -290,7 +290,8 @@ details.more[open] summary { color: var(--text); }
   .deck-actions { width: 100%; }
   .deck-actions .btn { flex: 1; }
 }
-.tools { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; }
+.tools { display: flex; flex-direction: column; gap: 10px; }
+.tools-sliders { display: flex; flex-wrap: wrap; gap: 10px; }
 .tool { display: flex; align-items: center; gap: 8px; background: var(--panel-2); border-radius: 9px; padding: 8px 10px; }
 .tool.loop, .tool.practice, .tool.beat, .tool.live, .tool.tuner, .tool.scratch-tabs { flex-wrap: wrap; grid-column: 1 / -1; }
 .tuner-display { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; min-width: 160px; }
@@ -359,11 +360,10 @@ details.more[open] summary { color: var(--text); }
   .tool.loop #loopInfo { flex: 1 1 auto; min-width: 40px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tool.loop > *:not(#loopInfo) { flex-shrink: 0; }
 
-  /* Tempo/Pitch/Volume + the drawer stay in one row (each can shrink a bit before the row would
-     need to grow) instead of the auto-fit grid, which wrapped them onto extra rows once narrow. */
-  .tools { display: flex; flex-wrap: nowrap; }
-  .tools > .tool { flex: 1 1 160px; min-width: 0; grid-column: auto; }
-  .tools > .drawer { flex: 2 1 320px; min-width: 0; }
+  /* Tempo/Pitch/Volume stay in one row (each can shrink a bit before the row would need to grow)
+     instead of wrapping onto extra rows once narrow. Measured floor per slider: 244px. */
+  .tools-sliders { flex-wrap: nowrap; }
+  .tools-sliders > .tool { flex: 1 1 244px; min-width: 0; grid-column: auto; }
   /* The drawer's own tabs stay one row (see the note by .drawer-tabs's own rule for the one
      exception); what a tab's pane contains once open is varied and sometimes dense (e.g. Live
      input), so those keep wrapping like a normal settings panel. */
