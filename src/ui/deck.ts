@@ -1938,7 +1938,7 @@ export class Deck {
     if (staff) void this.renderStaff();
     this.lastStaffPx = NaN;
     this.lastStripPx = NaN;
-    this.syncTimelineCursor(false); // corrected once the next frame knows where playback actually is
+    this.syncTimelineCursor(false, null); // corrected once the next frame knows where playback actually is
     this.scratchAreas.tab.hidden = !onTab || follow;
     this.lastTabRowCol = null; // (re)place the cursor on the next frame, even while paused
     this.dirty = true;
@@ -2027,24 +2027,37 @@ export class Deck {
     if (!layout || $('tabStaff').hidden) return;
     const tl = this.timeline();
     const coord = charOffsetAt(tl.coords, this.smoothStripPos() / SR);
-    const holdAt = $('tabStaffView').clientWidth * 0.4; // matches .tab-staff-cursor's left: 40%
+    const staffView = $('tabStaffView');
+    // Where the strip's own highlight actually sits on the page — not 40% of the staff's own width,
+    // which was wrong: the strip has a pinned string-label column eating into its 40%, the staff
+    // doesn't, so an independent 40%-of-own-width guess put the two boxes' marks at different x.
+    // Falls back to that guess only when there's no strip to line up with.
+    const stripCursor = $('tabStrip').hidden ? null : $('tabStripCursor').getBoundingClientRect();
+    const holdAt = stripCursor ? stripCursor.left + stripCursor.width / 2 - staffView.getBoundingClientRect().left : staffView.clientWidth * 0.4;
     const x = coord === null ? 0 : staffX(layout.map, coord);
     const px = coord === null ? 0 : holdAt - x;
+    $('tabStaffCursor').style.left = `${holdAt}px`;
     $('tabStaffCursor').hidden = coord === null;
-    this.syncTimelineCursor(coord !== null);
+    this.syncTimelineCursor(coord !== null, stripCursor);
     if (Math.abs(px - this.lastStaffPx) < 0.05) return;
     this.lastStaffPx = px;
     $('tabStaffTrack').style.transform = `translateX(${px}px)`;
   }
 
-  /** Scroll strip and Staff sit at the same fixed 40% spot already (each holds its own content still
-   * there while scrolling past it), so a single line drawn across both reads as one marker instead of
-   * two coincidentally-aligned ones. Shown only when both boxes are visible; each box's own cursor still
-   * marks its own content (the strip's highlighted character, in particular) when shown alone. */
-  private syncTimelineCursor(atSomething: boolean) {
+  /** The single marker line down through both boxes, tracing the strip's real highlight (same left
+   * edge, same width) rather than a separate thin line at its own guessed position — before this, the
+   * strip's block and the staff's line didn't actually agree on where "now" was (see updateTabStaff).
+   * Shown only when both boxes are visible. */
+  private syncTimelineCursor(atSomething: boolean, stripCursor: DOMRect | null) {
     const joined = !$('tabStrip').hidden && !$('tabStaff').hidden;
     $('tabTimeline').classList.toggle('joined', joined);
-    $('tabTimelineCursor').hidden = !joined || !atSomething;
+    const el = $('tabTimelineCursor');
+    el.hidden = !joined || !atSomething;
+    if (!el.hidden && stripCursor) {
+      const wrap = $('tabTimeline').getBoundingClientRect();
+      el.style.left = `${stripCursor.left - wrap.left}px`;
+      el.style.width = `${stripCursor.width}px`;
+    }
   }
 
   private stripPos = 0;

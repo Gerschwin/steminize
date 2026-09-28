@@ -678,8 +678,13 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
 /* When both boxes show, remove the seam between them so the shared cursor line reads as one strip. */
 .tab-timeline.joined #tabStrip { margin-bottom: -1px; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .tab-timeline.joined #tabStaff { border-top-left-radius: 0; border-top-right-radius: 0; }
-.tab-timeline.joined .tab-strip-cursor { opacity: 0.5; } /* a touch stronger, to read as part of the same marker as the thin line below */
-.tab-timeline-cursor { position: absolute; top: 0; bottom: 0; left: 40%; width: 2px; background: var(--accent); opacity: 0.7; border-radius: 1px; pointer-events: none; }
+/* The strip's own highlight and the staff's own thin line both go invisible when joined: the single
+   shared bar below (positioned and sized to match the strip's highlight exactly, in deck.ts) replaces
+   both, rather than sitting alongside a thin line that — before this — didn't even line up with it.
+   opacity, not display:none or hidden: deck.ts measures the strip's own cursor's rendered position to
+   place the shared bar, which needs it to stay laid out (display:none zeroes getBoundingClientRect). */
+.tab-timeline.joined .tab-strip-cursor, .tab-timeline.joined .tab-staff-cursor { opacity: 0; }
+.tab-timeline-cursor { position: absolute; top: 0; bottom: 0; background: var(--accent); opacity: 0.35; border-radius: 2px; pointer-events: none; }
 .scratch-area.tab-strip { display: flex; overflow: hidden; white-space: normal; min-height: 0; }
 .scratch-area.tab-strip[hidden] { display: none; }
 .tab-strip-labels { margin: 0; font: inherit; white-space: pre; }
