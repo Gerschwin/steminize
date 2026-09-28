@@ -2407,6 +2407,13 @@ export class Deck {
    * snippet from there so you can find a spot by ear (playing already makes the seek audible). */
   private scrubTo(frame: number) {
     if (this.player.recording) return; // seeking mid-take is refused anyway; don't repeat the warning per pointer move
+    // A live loop pins the playhead inside it, so scrubbing past its edge would just stick there.
+    // Scrubbing is how you look around, so leaving the section switches the loop off (the section
+    // itself stays marked; Loop turns it back on).
+    if (this.loop.on && this.loop.b > this.loop.a && (frame < this.loop.a || frame > this.loop.b)) {
+      this.setLoop(false);
+      toast('Loop switched off while you scrub outside it. Press Loop to turn it back on.');
+    }
     this.player.seek(frame);
     this.dirty = true;
     const r = this.r;
