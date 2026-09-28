@@ -593,9 +593,7 @@ export class Deck {
       }
       if (Math.abs(f - laneDrag.f0) * wave.clientWidth > 6) laneDrag.moved = true;
       if (!laneDrag.moved) return;
-      this.loop.a = Math.round(Math.min(laneDrag.frame0, frame));
-      this.loop.b = Math.round(Math.max(laneDrag.frame0, frame));
-      this.dirty = true;
+      this.dragSection(Math.min(laneDrag.frame0, frame), Math.max(laneDrag.frame0, frame));
     });
     wave.addEventListener('pointerup', () => {
       if (laneDrag?.moved) {
@@ -2160,6 +2158,17 @@ export class Deck {
     return best;
   }
 
+  /** Sets the section being dragged out, already snapped, so the highlight jumps bar to bar under the
+   * pointer and shows what you'll get. If both ends would land on the same point, the raw span is kept. */
+  private dragSection(rawA: number, rawB: number) {
+    const a = this.snap(rawA);
+    const b = this.snap(rawB);
+    const snapped = b > a;
+    this.loop.a = Math.round(snapped ? a : rawA);
+    this.loop.b = Math.round(snapped ? b : rawB);
+    this.dirty = true;
+  }
+
   private snapLoop() {
     const a = this.snap(this.loop.a);
     let b = this.snap(this.loop.b);
@@ -2726,8 +2735,9 @@ export class Deck {
   /** Moves one loop edge, never closer to the other than a quarter second. */
   private dragLoopEdge(edge: 'a' | 'b', frame: number) {
     const gap = Math.round(SR / 4);
-    if (edge === 'a') this.loop.a = Math.round(Math.max(0, Math.min(frame, this.loop.b - gap)));
-    else this.loop.b = Math.round(Math.min(this.length, Math.max(frame, this.loop.a + gap)));
+    const at = this.snap(frame); // live, so the edge jumps bar to bar under the pointer
+    if (edge === 'a') this.loop.a = Math.round(Math.max(0, Math.min(at, this.loop.b - gap)));
+    else this.loop.b = Math.round(Math.min(this.length, Math.max(at, this.loop.a + gap)));
     this.dirty = true;
   }
 
@@ -2802,9 +2812,7 @@ export class Deck {
       if (Math.abs(f - this.drag.x0) * wrap.clientWidth > 6) this.drag.moved = true;
       if (this.drag.moved) {
         const [a, b] = [this.drag.x0, f].sort((x, y) => x - y);
-        this.loop.a = Math.round(this.frameAt(a));
-        this.loop.b = Math.round(this.frameAt(b));
-        this.dirty = true;
+        this.dragSection(this.frameAt(a), this.frameAt(b));
         // Scrub too: the playhead follows the pointer as you drag, with a short preview snippet if paused.
         this.scrubTo(this.frameAt(f));
       }
