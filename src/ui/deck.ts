@@ -1682,13 +1682,22 @@ export class Deck {
     // Tab+ : tap along with the music to mark where the text cursor is right now, then follow
     // along scrolls/highlights by interpolating between those taps (see src/lyrics/tabSync.ts).
     $('tabTapBtn').onmousedown = (e) => e.preventDefault(); // keep focus (and the cursor position) on the textarea
-    $('tabTapBtn').onclick = () => {
+    const tap = () => {
       const charOffset = areas.tab.selectionStart;
       const time = this.player.state.pos / SR;
       this.scratch.tabAnchors = addAnchor(this.scratch.tabAnchors ?? [], { charOffset, time });
       this.updateTabView();
       this.emit();
     };
+    $('tabTapBtn').onclick = tap;
+    // Ctrl/Cmd+Enter taps from the keyboard while the cursor is in the tab text (a plain key would
+    // type into it, and the deck's own shortcuts don't run inside a text box).
+    areas.tab.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
+        e.preventDefault();
+        tap();
+      }
+    });
     $('tabFollowBtn').onclick = () => {
       this.scratch.tabFollow = !this.scratch.tabFollow;
       this.updateTabView();
