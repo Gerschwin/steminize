@@ -23,7 +23,7 @@ import { writeMidi } from '../src/encode/midi.ts';
 import { detectPitch, freqToNote } from '../src/analysis/pitch.ts';
 import { isNewer, parseVersion } from '../src/version.ts';
 import { lineAt, parseLrc } from '../src/lyrics/lrc.ts';
-import { addAnchor, charOffsetAt, coordToPlace, offsetToCoord, rowCol, tabBlocks, tabPositionAt, type TabAnchor } from '../src/lyrics/tabSync.ts';
+import { addAnchor, charOffsetAt, coordToPlace, isLockedAt, moveAnchor, offsetToCoord, removeAnchor, rowCol, tabBlocks, tabPositionAt, toggleAnchorLock, type TabAnchor } from '../src/lyrics/tabSync.ts';
 import { moveItem, nextSong, parseSetlists, prevSong, pruneSongs, totalSeconds, uniqueName, type Setlist } from '../src/setlists.ts';
 import { detectLatency } from '../src/player/latency.ts';
 import { placeTake } from '../src/player/placement.ts';
@@ -638,6 +638,24 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('tab columns: a tap on a bar line means the start of the next bar', offsetToCoord(t2, b2, 6) === 3 && offsetToCoord(t2, b2, 7) === 3);
   ok('tab columns: the cursor skips the bar line and the continuation digit', coordToPlace(b2, 3)?.col === 7 && coordToPlace(b2, 2)?.col === 5);
   ok('tab columns: the cursor at the very end sits after the last time column', coordToPlace(b2, 6)?.col === 10);
+}
+
+// ---- tab+ taps: move, lock, remove
+{
+  const base: TabAnchor[] = [
+    { charOffset: 2, time: 1 },
+    { charOffset: 30, time: 5 },
+    { charOffset: 60, time: 9 },
+  ];
+  ok('taps: moving a tap changes only its time', moveAnchor(base, 30, 6).map((a) => a.time).join() === '1,6,9');
+  const locked = toggleAnchorLock(base, 30);
+  ok('taps: locking marks just that tap', isLockedAt(locked, 30) && !isLockedAt(locked, 2));
+  ok('taps: a locked tap cannot be moved', moveAnchor(locked, 30, 7).find((a) => a.charOffset === 30)?.time === 5);
+  ok('taps: a locked tap is not replaced by re-tapping the same spot', addAnchor(locked, { charOffset: 30, time: 5.5 }).find((a) => a.charOffset === 30)?.time === 5);
+  ok('taps: a locked tap cannot be removed', removeAnchor(locked, 30).length === 3);
+  ok('taps: removing an unlocked tap drops it', removeAnchor(base, 30).map((a) => a.charOffset).join() === '2,60');
+  const unlocked = toggleAnchorLock(locked, 30);
+  ok('taps: unlocking allows edits again and leaves no stray flag', !isLockedAt(unlocked, 30) && !('locked' in unlocked[1]) && moveAnchor(unlocked, 30, 7)[1].time === 7);
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

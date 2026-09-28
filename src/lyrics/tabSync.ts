@@ -9,6 +9,8 @@ export interface TabAnchor {
   charOffset: number;
   /** Seconds into the song. */
   time: number;
+  /** A locked tap can't be dragged, re-tapped over or removed until it is unlocked. */
+  locked?: boolean;
 }
 
 /** Fewer anchors than this and there isn't a meaningful span to interpolate within. */
@@ -17,9 +19,32 @@ export const MIN_ANCHORS = 2;
 /** Anchors in time order, de-duplicated by charOffset (a re-tap at the same spot replaces the old
  * time rather than adding a second point, which would make the interpolation ambiguous there). */
 export function addAnchor(anchors: TabAnchor[], next: TabAnchor): TabAnchor[] {
+  if (isLockedAt(anchors, next.charOffset)) return anchors;
   const out = anchors.filter((a) => a.charOffset !== next.charOffset);
   out.push(next);
   return out.sort((a, b) => a.charOffset - b.charOffset);
+}
+
+export function isLockedAt(anchors: TabAnchor[], charOffset: number): boolean {
+  return anchors.some((a) => a.charOffset === charOffset && a.locked);
+}
+
+/** Moves one tap to a new time (a locked tap stays put). */
+export function moveAnchor(anchors: TabAnchor[], charOffset: number, time: number): TabAnchor[] {
+  return anchors.map((a) => (a.charOffset === charOffset && !a.locked ? { ...a, time } : a));
+}
+
+export function toggleAnchorLock(anchors: TabAnchor[], charOffset: number): TabAnchor[] {
+  return anchors.map((a) => {
+    if (a.charOffset !== charOffset) return a;
+    const { locked: _was, ...rest } = a;
+    return a.locked ? rest : { ...rest, locked: true };
+  });
+}
+
+/** Removes one tap (a locked tap stays). */
+export function removeAnchor(anchors: TabAnchor[], charOffset: number): TabAnchor[] {
+  return anchors.filter((a) => a.charOffset !== charOffset || a.locked);
 }
 
 /** The character offset "sounding" at time `t`, linearly interpolated between the two anchors either

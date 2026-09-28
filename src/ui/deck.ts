@@ -12,7 +12,7 @@ import { openSink, safeName, saveFile } from '../platform.ts';
 import { MAX_REC_LATENCY_MS, loadRecLatencyMs, saveRecLatencyMs, type Settings } from '../settings.ts';
 import { placeTake } from '../player/placement.ts';
 import { lineAt, parseLrc, type Lrc } from '../lyrics/lrc.ts';
-import { addAnchor, MIN_ANCHORS, tabPositionAt, type TabAnchor } from '../lyrics/tabSync.ts';
+import { addAnchor, isLockedAt, MIN_ANCHORS, moveAnchor, removeAnchor, tabPositionAt, toggleAnchorLock, type TabAnchor } from '../lyrics/tabSync.ts';
 import { FLAT, isFlat, sameEq, type EqParams } from '../player/eq.ts';
 import { eqPanel, type EqPanel } from './eqPanel.ts';
 import { $, fitCanvas, fmtDuration, fmtTime, h, pressed, toast } from './dom.ts';
@@ -1686,6 +1686,10 @@ export class Deck {
     const tap = () => {
       const charOffset = areas.tab.selectionStart;
       const time = this.player.state.pos / SR;
+      if (isLockedAt(this.scratch.tabAnchors ?? [], charOffset)) {
+        toast('That tap is locked. Unlock it (select its tag) to re-tap.');
+        return;
+      }
       this.scratch.tabAnchors = addAnchor(this.scratch.tabAnchors ?? [], { charOffset, time });
       this.updateTabView();
       this.emit();
@@ -1707,11 +1711,19 @@ export class Deck {
     $('tabClearAnchorsBtn').onclick = () => {
       if (!confirm("Clear this tab's timing? You'll need to tap it back in.")) return;
       this.scratch.tabAnchors = [];
+      this.selectedTap = null;
       this.scratch.tabFollow = false;
       this.lastTabRowCol = null;
       this.updateTabView();
       this.emit();
     };
+    $('tabTapLockBtn').onclick = () => {
+      if (this.selectedTap === null) return;
+      this.scratch.tabAnchors = toggleAnchorLock(this.scratch.tabAnchors ?? [], this.selectedTap);
+      this.updateTabView();
+      this.emit();
+    };
+    $('tabTapRemoveBtn').onclick = () => this.removeSelectedTap();
     areas.drums.oninput = () => {
       this.scratch.drums = areas.drums.value;
       this.updateScratchSummary();
@@ -1808,6 +1820,13 @@ export class Deck {
     $('tabFollowBtn').hidden = !(onTab && canFollow);
     pressed($('tabFollowBtn'), follow);
     $('tabClearAnchorsBtn').hidden = !(onTab && anchors.length > 0);
+    const sel = anchors.find((a) => a.charOffset === this.selectedTap);
+    if (!sel) this.selectedTap = null;
+    $('tabTapSel').hidden = !(onTab && sel);
+    if (sel) {
+      $('tabTapSelLabel').textContent = `T${anchors.indexOf(sel) + 1} · ${fmtTime(sel.time)}${sel.locked ? ' · locked' : ''}`;
+      $('tabTapLockBtn').textContent = sel.locked ? 'Unlock' : 'Lock';
+    }
     $('tabFollow').hidden = !(onTab && follow);
     this.scratchAreas.tab.hidden = !onTab || follow;
     this.lastTabRowCol = null; // (re)place the cursor on the next frame, even while paused
@@ -2426,6 +2445,11 @@ export class Deck {
     this.dirty = true;
   }
 
+  /** Where each tab-tap tag was last drawn on the overview (CSS px), for hit-testing pointer events. */
+  private tapTagRects: { charOffset: number; x0: number; x1: number; y0: number; y1: number }[] = [];
+  /** The tap picked by clicking its tag (by tab position, so it survives other taps being added). */
+  private selectedTap: number | null = null;
+  private tapDrag: { charOffset: number; x0: number; moved: boolean } | null = null;
   private lastGrain = 0;
   /** Moves the playhead to `frame` while dragging, and, if the song isn't playing, sounds a short
    * snippet from there so you can find a spot by ear (playing already makes the seek audible). */
@@ -2786,6 +2810,15 @@ export class Deck {
     wrap.addEventListener('pointerdown', (e) => {
       if ((e.target as HTMLElement).closest('button')) return; // let the zoom overlay's buttons handle their own clicks
       wrap.setPointerCapture(e.pointerId);
+      // A tab-tap tag: click to select and jump to it, drag to move that tap's time.
+      const box = wrap.getBoundingClientRect();
+      const tag = this.tapTagAt(e.clientX - box.left, e.clientY - box.top);
+      if (tag !== null) {
+        this.selectedTap = tag;
+        this.tapDrag = { charOffset: tag, x0: e.clientX, moved: false };
+        this.updateTabView();
+        return;
+      }
       const px = frac(e) * wrap.clientWidth;
       const edge = this.loopEdgeAt(px, wrap.clientWidth, this.view);
       // A plain drag scrubs (moves the playhead, no section); holding Shift draws a loop section instead.
@@ -2793,9 +2826,24 @@ export class Deck {
       this.drag = { x0: frac(e), moved: false, edge: edge ?? undefined, scrub };
     });
     wrap.addEventListener('pointermove', (e) => {
+      if (this.tapDrag) {
+        if (Math.abs(e.clientX - this.tapDrag.x0) > 3) this.tapDrag.moved = true;
+        if (!this.tapDrag.moved) return;
+        const anchors = this.scratch.tabAnchors ?? [];
+        if (isLockedAt(anchors, this.tapDrag.charOffset)) {
+          if (!wrap.dataset.lockedNoted) toast('That tap is locked. Unlock it to move it.');
+          wrap.dataset.lockedNoted = '1'; // once per drag, not per pointer move
+          return;
+        }
+        const frame = Math.max(0, Math.min(this.length, this.snap(this.frameAt(frac(e)))));
+        this.scratch.tabAnchors = moveAnchor(anchors, this.tapDrag.charOffset, frame / SR);
+        this.updateTabView();
+        return;
+      }
       if (!this.drag) {
         const px = frac(e) * wrap.clientWidth;
-        wrap.style.cursor = this.loopEdgeAt(px, wrap.clientWidth, this.view) ? 'ew-resize' : '';
+        const box = wrap.getBoundingClientRect();
+        wrap.style.cursor = this.tapTagAt(e.clientX - box.left, e.clientY - box.top) !== null ? 'grab' : this.loopEdgeAt(px, wrap.clientWidth, this.view) ? 'ew-resize' : '';
         return;
       }
       const f = frac(e);
@@ -2818,6 +2866,18 @@ export class Deck {
       }
     });
     wrap.addEventListener('pointerup', (e) => {
+      if (this.tapDrag) {
+        const { charOffset, moved } = this.tapDrag;
+        this.tapDrag = null;
+        delete wrap.dataset.lockedNoted;
+        if (moved) this.emit();
+        else {
+          const tap = (this.scratch.tabAnchors ?? []).find((a) => a.charOffset === charOffset);
+          if (tap) this.player.seek(tap.time * SR); // a plain click on a tag jumps to that tap
+          this.dirty = true;
+        }
+        return;
+      }
       if (!this.drag) return;
       if (this.drag.scrub && this.drag.moved) {
         // already scrubbed; nothing to commit
@@ -2867,6 +2927,7 @@ export class Deck {
       else if (k === '0') this.zoomFit();
       else if (e.key === 'ArrowLeft') this.skip(-5);
       else if (e.key === 'ArrowRight') this.skip(5);
+      else if ((k === 'Delete' || k === 'Backspace') && this.selectedTap !== null) this.removeSelectedTap();
       else if (e.key === 'l' || e.key === 'L') this.setLoop(!this.loop.on);
       else if (e.key === 'f' || e.key === 'F') this.tx.toggleFreeze();
       else if (e.key === '[') this.setPoint('a');
@@ -2933,10 +2994,30 @@ export class Deck {
     g.fillRect(Math.round(px), 0, Math.max(1, devicePixelRatio), hh);
   }
 
+  private removeSelectedTap() {
+    if (this.selectedTap === null) return;
+    const anchors = this.scratch.tabAnchors ?? [];
+    if (isLockedAt(anchors, this.selectedTap)) {
+      toast('That tap is locked. Unlock it first.');
+      return;
+    }
+    this.scratch.tabAnchors = removeAnchor(anchors, this.selectedTap);
+    this.selectedTap = null;
+    this.updateTabView();
+    this.emit();
+  }
+
+  /** The tap whose overview tag is under (x, y), in CSS px relative to the overview. */
+  private tapTagAt(x: number, y: number): number | null {
+    for (const t of this.tapTagRects) if (x >= t.x0 && x <= t.x1 && y >= t.y0 && y <= t.y1) return t.charOffset;
+    return null;
+  }
+
   /** Numbered tags for the tab taps along the top of the overview. The number is the tap's place
    * in the tab (1 = earliest in the text), not in time, so a tap made on a later loop pass still
    * reads as the part of the tab it belongs to. */
   private drawTabTapLabels(c: HTMLCanvasElement) {
+    this.tapTagRects = [];
     const taps = this.scratch.tabAnchors;
     if (!taps?.length) return;
     const g = c.getContext('2d')!;
@@ -2945,16 +3026,36 @@ export class Deck {
     g.font = `600 ${10 * dpr}px system-ui, sans-serif`;
     g.textBaseline = 'top';
     const span = this.view.end - this.view.start;
+    const sx = c.clientWidth / (c.width || 1);
+    const sy = c.clientHeight / (c.height || 1);
+    const y = this.markers.length ? 15 * dpr : 0; // just under any section-marker names, clear of the zoom buttons at the bottom right
+    const h = 13 * dpr;
     taps.forEach((a, i) => {
       const tx = ((a.time * SR - this.view.start) / span) * w;
       if (tx < -40 * dpr || tx > w) return;
       const label = `T${i + 1}`;
-      const tw = g.measureText(label).width + 6 * dpr;
-      const y = this.markers.length ? 15 * dpr : 0; // just under any section-marker names, clear of the zoom buttons at the bottom right
+      const lockW = a.locked ? 8 * dpr : 0;
+      const tw = g.measureText(label).width + 6 * dpr + lockW;
       g.fillStyle = TAB_TAP_COLOUR;
-      g.fillRect(tx, y, tw, 13 * dpr);
+      g.fillRect(tx, y, tw, h);
       g.fillStyle = '#111';
       g.fillText(label, tx + 3 * dpr, y + 1.5 * dpr);
+      if (a.locked) {
+        // A small padlock (body + shackle) drawn from shapes, so it doesn't depend on an emoji font.
+        const lx = tx + tw - 8 * dpr;
+        g.fillRect(lx, y + 6 * dpr, 5 * dpr, 4.5 * dpr);
+        g.strokeStyle = '#111';
+        g.lineWidth = Math.max(1, dpr);
+        g.beginPath();
+        g.arc(lx + 2.5 * dpr, y + 6 * dpr, 1.9 * dpr, Math.PI, 0);
+        g.stroke();
+      }
+      if (a.charOffset === this.selectedTap) {
+        g.strokeStyle = getComputedStyle(document.body).color;
+        g.lineWidth = Math.max(1, dpr);
+        g.strokeRect(tx + 0.5, y + 0.5, tw - 1, h - 1);
+      }
+      this.tapTagRects.push({ charOffset: a.charOffset, x0: tx * sx, x1: (tx + tw) * sx, y0: y * sy, y1: (y + h) * sy });
     });
   }
 
