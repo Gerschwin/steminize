@@ -18,6 +18,15 @@ import { installErrorLog, setBackendInfo } from './ui/diagnostics.ts';
 // ---------------------------------------------------------------- setup
 installErrorLog();
 registerServiceWorker();
+// The webview's own right-click menu ("Reload", "Inspect Element", ...) looks out of place on the
+// app's own UI chrome — suppressed there, but left alone on text fields, where cut/copy/paste and
+// spellcheck suggestions are genuinely useful. Same target check as the keyboard-shortcut guard in
+// deck.ts's initKeys().
+document.addEventListener('contextmenu', (e) => {
+  const t = e.target;
+  const editable = t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement || (t as HTMLElement)?.isContentEditable;
+  if (!editable) e.preventDefault();
+});
 initTheme($<HTMLButtonElement>('themeBtn'), $<HTMLMetaElement>('themeColorMeta'));
 const settings = new SettingsPanel(loadSettings());
 const deck = new Deck(() => settings.s);
