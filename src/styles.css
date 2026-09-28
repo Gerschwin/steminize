@@ -678,9 +678,11 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
 .scratch-area.tab-strip[hidden] { display: none; }
 .tab-strip-labels { margin: 0; font: inherit; white-space: pre; }
 .tab-strip-view { position: relative; flex: 1; overflow: hidden; }
-.tab-strip-text { margin: 0; font: inherit; white-space: pre; will-change: transform; }
+.tab-strip-track { will-change: transform; }
+.tab-strip-bars, .tab-strip-text { margin: 0; font: inherit; white-space: pre; }
+.tab-strip-bars { color: var(--muted); }
 /* The fixed spot the strip scrolls past; its width and height are set from the measured font in deck.ts. */
-.tab-strip-cursor { position: absolute; top: 0; left: 40%; background: var(--accent); opacity: 0.35; border-radius: 2px; pointer-events: none; }
+.tab-strip-cursor { position: absolute; top: 0; left: 40%; /* top is set in deck.ts to sit below the bar-number line */ background: var(--accent); opacity: 0.35; border-radius: 2px; pointer-events: none; }
 .tab-tap-sel { display: inline-flex; align-items: center; gap: 6px; }
 .scratch-area.tab-follow { position: relative; max-height: 260px; overflow: auto; scroll-behavior: smooth; white-space: normal; }
 .tab-follow-text { margin: 0; font: inherit; white-space: pre; }

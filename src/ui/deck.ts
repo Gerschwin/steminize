@@ -44,6 +44,9 @@ const SR = 44100;
 /** Tab-tap ticks and tags on the waveforms: distinct from the loop (cyan), section markers (amber) and the played colour. */
 const TAB_TAP_COLOUR = '#34d399';
 
+/** Empty columns on each side of the scroll strip, so the strings run on unbroken from the labels to the first note and past the last. */
+const STRIP_PAD = 400;
+
 export interface Result {
   title: string;
   stems: { name: string; data: Stereo }[];
@@ -1899,12 +1902,15 @@ export class Deck {
   /** Fills the scroll strip: string labels pinned on the left, the tab joined into one long line per string. */
   private buildTabStrip() {
     const tl = this.timeline();
-    tl.strip = stripLayout(tl.text, tl.blocks);
-    $('tabStripLabels').textContent = tl.strip.labels.join('\n');
+    tl.strip = stripLayout(tl.text, tl.blocks, STRIP_PAD);
+    // A blank first line on the labels keeps them level with the strings under the bar numbers.
+    $('tabStripLabels').textContent = ['', ...tl.strip.labels].join('\n');
+    $('tabStripBars').textContent = tl.strip.header;
     $('tabStripText').textContent = tl.strip.rows.join('\n');
     const { w, h } = this.measureTabChar();
     const cursor = $('tabStripCursor');
     cursor.style.width = `${w}px`;
+    cursor.style.top = `${h}px`;
     cursor.style.height = `${tl.strip.rows.length * h}px`;
   }
 
@@ -1920,7 +1926,7 @@ export class Deck {
     const px = Math.round((holdAt - x * w) * 2) / 2;
     if (px === this.lastStripPx) return;
     this.lastStripPx = px;
-    $('tabStripText').style.transform = `translateX(${px}px)`;
+    $('tabStripTrack').style.transform = `translateX(${px}px)`;
     $('tabStripCursor').hidden = coord === null;
   }
 

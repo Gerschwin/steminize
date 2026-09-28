@@ -109,6 +109,8 @@ export interface TabBlock {
   cum: number[];
   /** counts[j] = whether visual column j is a time column. */
   counts: boolean[];
+  /** barLine[j] = whether visual column j is a bar line. */
+  barLine: boolean[];
 }
 
 const isDigit = (c: string | undefined) => c !== undefined && c >= '0' && c <= '9';
@@ -134,15 +136,17 @@ export function tabBlocks(text: string): TabBlock[] {
     const chars = Math.max(...rows.map((r) => r.length));
     const label = Math.max(...rows.map(labelLength));
     const counts: boolean[] = [];
+    const barLine: boolean[] = [];
     for (let c = 0; c < chars; c++) {
       const bar = rows.some((r) => r[c] === '|');
       const continuation = rows.some((r) => isDigit(r[c]) && isDigit(r[c - 1]));
       counts.push(c >= label && !bar && !continuation);
+      barLine.push(c >= label && bar);
     }
     const cum = [0];
     for (let c = 0; c < chars; c++) cum.push(cum[c] + (counts[c] ? 1 : 0));
     const width = cum[chars];
-    blocks.push({ firstRow: i, lastRow: j - 1, start, width, chars, label, cum, counts });
+    blocks.push({ firstRow: i, lastRow: j - 1, start, width, chars, label, cum, counts, barLine });
     start += width;
     i = j;
   }
@@ -203,26 +207,45 @@ export interface StripLayout {
   labels: string[];
   /** One long line per string row. */
   rows: string[];
+  /** A line of bar numbers, each placed at the column where its bar starts. */
+  header: string;
   /** Strip column where each block's content begins. */
   startOf: number[];
 }
 
-export function stripLayout(text: string, blocks: TabBlock[]): StripLayout {
+/** `pad` columns of empty string are added before and after, so the strings run on unbroken from the
+ * labels to the first note and out past the last one. Bar numbers count up through the whole tab. */
+export function stripLayout(text: string, blocks: TabBlock[], pad = 0): StripLayout {
   const lines = text.split('\n');
   const nRows = blocks.length ? Math.max(...blocks.map((b) => b.lastRow - b.firstRow + 1)) : 0;
   const labels: string[] = [];
   const rows: string[] = [];
   const startOf: number[] = [];
-  let at = 0;
+  let at = pad;
   for (const b of blocks) {
     startOf.push(at);
     at += b.chars - b.label;
   }
   for (let k = 0; k < nRows; k++) {
     labels.push(blocks.length ? (lines[blocks[0].firstRow + k] ?? '').padEnd(blocks[0].label).slice(0, blocks[0].label) : '');
-    rows.push(blocks.map((b) => (lines[b.firstRow + k] ?? '').padEnd(b.chars).slice(b.label)).join(''));
+    rows.push('-'.repeat(pad) + blocks.map((b) => (lines[b.firstRow + k] ?? '').padEnd(b.chars).slice(b.label)).join('') + '-'.repeat(pad));
   }
-  return { labels, rows, startOf };
+  const header = Array.from({ length: at + pad }, () => ' ');
+  let n = 0;
+  blocks.forEach((b, bi) => {
+    let pending = true;
+    for (let j = b.label; j < b.chars; j++) {
+      if (b.barLine[j]) pending = true;
+      else if (b.counts[j] && pending) {
+        pending = false;
+        const col = startOf[bi] + (j - b.label);
+        [...String(++n)].forEach((ch, i) => {
+          if (col + i < header.length) header[col + i] = ch;
+        });
+      }
+    }
+  });
+  return { labels, rows, header: header.join(''), startOf };
 }
 
 /** The strip column (fractional) for a time-coordinate. Each time column carries the zero-width
