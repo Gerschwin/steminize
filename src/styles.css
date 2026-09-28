@@ -262,8 +262,10 @@ body.dragging .drop { border-color: var(--accent); }
    growing unbounded and pushing everything below it — the Setlist card especially — further down
    the left pane the more songs pile up. overflow-x:hidden avoids the same auto-on-both-axes trap
    documented elsewhere in this file: setting only overflow-y makes a browser treat overflow-x as
-   auto too, and the .track fix above should mean there's nothing left to scroll to sideways anyway. */
-.lib { max-height: 320px; overflow-y: auto; overflow-x: hidden; }
+   auto too, and the .track fix below should mean there's nothing left to scroll to sideways anyway.
+   padding-right: the same scrollbar buffer as .side/.stage — without it this list's own scrollbar
+   sits flush against each row's text/buttons instead of the pane's actual edge. */
+.lib { max-height: 320px; overflow-y: auto; overflow-x: hidden; padding-right: 14px; }
 .lib .track { cursor: pointer; }
 .lib .track:hover { border-color: var(--line); }
 .lib .t-sub { color: var(--muted); }
@@ -279,8 +281,13 @@ body.dragging .drop { border-color: var(--accent); }
      enough to tip it over), and .track's own overflow:hidden below clips the excess — the ×/↑↓
      buttons, since they come after the title. minmax(0, 1fr) lets the title's column actually
      shrink to fit, so text-overflow:ellipsis kicks in instead of the row overflowing. */
+  /* flex-shrink:0: .queue is a column flex container, and once .lib gives it a real max-height to
+     overflow (rather than growing forever), the *default* flex-shrink:1 kicks in — every row gets
+     proportionally squashed below its own natural content height to fit, instead of just scrolling
+     with each row at full size. That's the "crushed"/title-and-subtitle-overlapping look: two lines
+     forced into less than two lines' height, with .track's own overflow:hidden clipping the rest. */
   position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; align-items: center;
-  padding: 9px 10px 11px; border-radius: 9px; background: var(--panel-2); border: 1px solid transparent; overflow: hidden;
+  flex-shrink: 0; padding: 9px 10px 11px; border-radius: 9px; background: var(--panel-2); border: 1px solid transparent; overflow: hidden;
 }
 .track.done { cursor: pointer; }
 .track.done:hover { border-color: var(--line); }
