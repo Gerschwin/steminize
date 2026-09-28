@@ -306,7 +306,10 @@ body.dragging .drop { border-color: var(--accent); }
 .track.done { cursor: pointer; }
 .track.done:hover { border-color: var(--line); }
 .track.active { border-color: var(--accent); }
-.t-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+/* overflow:clip, not overflow:hidden — same reasoning as .track just above: reported as scrolling
+   now working everywhere except the title's own line, the one remaining overflow:hidden element in
+   a row (confirmed text-overflow:ellipsis still renders correctly with clip instead). */
+.t-name { font-weight: 600; overflow: clip; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .t-name-edit { font-weight: 600; font-size: inherit; width: 100%; border: 0; outline: 1px solid var(--accent); background: var(--panel); border-radius: 4px; padding: 1px 5px; color: inherit; }
 .t-sub { font-size: 12px; color: var(--muted); grid-column: 1; }
 .track.error .t-sub { color: var(--bad); }
