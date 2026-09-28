@@ -293,8 +293,15 @@ body.dragging .drop { border-color: var(--accent); }
      proportionally squashed below its own natural content height to fit, instead of just scrolling
      with each row at full size. That's the "crushed"/title-and-subtitle-overlapping look: two lines
      forced into less than two lines' height, with .track's own overflow:hidden clipping the rest. */
+  /* overflow:clip, not overflow:hidden: this only exists to clip .bar (the absolutely-positioned
+     processing-progress strip) to the row's rounded corners — but overflow:hidden, per spec,
+     establishes a "scroll container" even though nothing here is meant to be scrollable, and reports
+     were that wheel-scrolling the library/setlist list stopped working specifically when the cursor
+     was over a row (worked fine over the gaps between rows) — plausibly WebKitGTK's wheel routing
+     hitting that non-interactive scroll container on .track and stopping there, instead of bubbling
+     to .lib. overflow:clip clips the same way without establishing a scroll container at all. */
   position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; align-items: center;
-  flex-shrink: 0; padding: 9px 10px 11px; border-radius: 9px; background: var(--panel-2); border: 1px solid transparent; overflow: hidden;
+  flex-shrink: 0; padding: 9px 10px 11px; border-radius: 9px; background: var(--panel-2); border: 1px solid transparent; overflow: clip;
 }
 .track.done { cursor: pointer; }
 .track.done:hover { border-color: var(--line); }
