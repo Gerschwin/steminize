@@ -4,8 +4,6 @@
 
 Parked: band collaboration "Session mode" (watch a synced folder, versions, comments). Decided it doesn't belong in a separation app: better as DAW scripts (Reaper/Ardour Lua export + import) plus Syncthing. Revisit only if the band shares parts via a folder + Open multitrack for a few weeks.
 
-Ideas not yet chosen: record yourself over the track, tuner, setlists, practice notes per song.
-
 Scrolling tab in time with the recording: manually-typed tab (the Scratchpad's Tab pane), not auto-transcribed — see the line above about why that's not planned. Tab doesn't have lyrics' one-line-per-moment structure (a tab "line" is several stacked string-rows per bar, and useful granularity is per-column/beat, not per line), so the existing LRC lyrics-follow mechanism can't just be reused as-is. Most practical approach discussed: tap along to mark bar-starts while playing (like the existing Tap-tempo button/markers), store those as timestamp anchors against character positions in the tab, and interpolate scroll between anchors — running through the same tempo-adjustment math the lyrics follow-along needs so scroll speed still tracks when the song is slowed down. Real feature (new data model + tap-align UI + interpolated scroll), not a small extension of lyrics-follow; needs a manual sync pass per song like LRC lyrics already do.
 
 Transcription, not planned: guitar tab (string/fret guessing is poor) and sheet music (needs a big notation library; automatic rhythms need too much fixing).
@@ -13,6 +11,7 @@ Transcription, not planned: guitar tab (string/fret guessing is poor) and sheet 
 Possible UI change: pin the drop zone (+ Songs/Settings tabs, already sticky) at the top of the left pane so "add a song" is always in view, letting only the Library/Setlist area scroll underneath — same idea as the deck-top/lanes split on the right. Smaller win than the right pane though: the Library card already caps itself at a 260px internal scroll, so it doesn't blow out the page the way an open song's lane count does; what mostly drives `.side` scrolling is a short window height, not song count, and pinning the full static block (drop zone, "Open multitrack/folder" buttons, format row) would eat a chunk of a short viewport permanently. Only worth doing if it turns out to be an actual annoyance, not proactively.
 
 ## Done
+- [x] Live input (record yourself over the track), Tuner, Setlist mode, Scratchpad practice notes per song — all built since v1.12.1, not yet released (unreleased)
 - [x] Transcription tools: notes view with keyboard, freeze, editable chord lane + chord chart, audio to MIDI with Basic Pitch (v1.10.0)
 - [x] Linux desktop fixes from first AppImage testing: "Open folder…" used Tauri's native folder dialog instead of the unsupported `webkitdirectory` picker; window opens maximised to the screen instead of a fixed 1280×860; a stuck "Reading audio…" (missing GStreamer codecs) now times out with a clear error instead of hanging forever (v1.9.1)
 - [x] Library backup/restore: back up every song (stems + settings) as one zip, restore into any browser/install; songs already present are skipped, not duplicated (v1.9.0)
