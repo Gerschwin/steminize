@@ -152,7 +152,10 @@ output { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 60
 
 /* ---------- layout ---------- */
 html, body { min-width: 320px; }
-.layout { display: grid; grid-template-columns: 360px 1fr; gap: 20px; padding: 20px; }
+/* gap and padding-right both trimmed to 14px, matching .side/.stage's own scrollbar buffer below —
+   so there's the same, deliberate 14px on *both* sides of a pane's scrollbar (content before it,
+   window edge or the next column after it) instead of the buffer plus this grid's separate 20px. */
+.layout { display: grid; grid-template-columns: 360px 1fr; gap: 14px; padding: 20px 14px 20px 20px; }
 .side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .side-tabs { display: flex; gap: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 11px; padding: 4px; }
 .stab { flex: 1; border: 0; background: transparent; padding: 7px; border-radius: 8px; font-weight: 600; cursor: pointer; color: var(--muted); }
