@@ -48,19 +48,20 @@ export const fmtMB = (b: number) => (b >= 1e9 ? `${(b / 1024 ** 3).toFixed(2)} G
 
 export const pressed = (el: Element, on: boolean) => el.setAttribute('aria-pressed', String(on));
 
-/** Keeps a wheel/trackpad scroll over `el` from reaching whatever scrolls behind it — not just once
- * el's own content is scrolled to an edge (overscroll-behavior already covers that), but also when
- * el has nothing to scroll at all (too few items to overflow its own box), where there's no scroll
- * position for overscroll-behavior to "contain": the browser just hands the gesture straight to the
- * next scrollable ancestor. Swallows the tick instead, so scrolling over el never moves its parent;
- * only scrolling outside el's own bounds does. */
+/** Keeps a wheel/trackpad scroll over `el` from reaching whatever scrolls behind it, for the one
+ * case CSS overscroll-behavior:contain (set globally, see styles.css) can't cover on its own: el
+ * having nothing to scroll at all (too few items to overflow its own box), where there's no scroll
+ * position for it to "contain" — the browser just hands the gesture straight to the next scrollable
+ * ancestor. Deliberately just this one check, not also re-deriving "at the top/bottom edge" here:
+ * that's exactly overscroll-behavior's job, computed natively per tick against the real, precise
+ * scroll position — recomputing it in JS off a rounded scrollTop reading was fighting the native
+ * behavior rather than complementing it, and could disagree with it, especially over a trackpad's
+ * many small ticks — which looked like scrolling "sometimes" working over the list. */
 export function containScroll(el: HTMLElement) {
   el.addEventListener(
     'wheel',
     (e) => {
-      const atTop = el.scrollTop <= 0;
-      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
-      if ((e.deltaY < 0 && atTop) || (e.deltaY > 0 && atBottom)) e.preventDefault();
+      if (el.scrollHeight <= el.clientHeight) e.preventDefault();
     },
     { passive: false },
   );
