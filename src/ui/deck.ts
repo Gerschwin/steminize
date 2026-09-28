@@ -12,7 +12,7 @@ import { openSink, safeName, saveFile } from '../platform.ts';
 import { MAX_REC_LATENCY_MS, loadRecLatencyMs, saveRecLatencyMs, type Settings } from '../settings.ts';
 import { placeTake } from '../player/placement.ts';
 import { lineAt, parseLrc, type Lrc } from '../lyrics/lrc.ts';
-import { addAnchor, charOffsetAt, MIN_ANCHORS, rowCol, type TabAnchor } from '../lyrics/tabSync.ts';
+import { addAnchor, MIN_ANCHORS, tabPositionAt, type TabAnchor } from '../lyrics/tabSync.ts';
 import { FLAT, isFlat, sameEq, type EqParams } from '../player/eq.ts';
 import { eqPanel, type EqPanel } from './eqPanel.ts';
 import { $, fitCanvas, fmtDuration, fmtTime, h, pressed, toast } from './dom.ts';
@@ -1826,27 +1826,21 @@ export class Deck {
     const box = $('tabFollow');
     const cursor = $('tabFollowCursor');
     if (box.hidden) return;
-    const charOffset = charOffsetAt(this.scratch.tabAnchors ?? [], pos / SR);
-    if (charOffset === null) {
+    // The text box's own value, not scratch.tab: an untouched song shows the placeholder template there.
+    const place = tabPositionAt(this.scratchAreas.tab.value, this.scratch.tabAnchors ?? [], pos / SR);
+    if (!place) {
       cursor.hidden = true;
       return;
     }
-    // The text box's own value, not scratch.tab: an untouched song shows the placeholder template there.
-    const text = this.scratchAreas.tab.value;
-    const { row, col } = rowCol(text, charOffset);
-    const rounded = { row, col: Math.round(col) };
+    const { firstRow: first, lastRow: last, col } = place;
+    const rounded = { row: first, col: Math.round(col) };
     if (this.lastTabRowCol && rounded.row === this.lastTabRowCol.row && rounded.col === this.lastTabRowCol.col) return;
     this.lastTabRowCol = rounded;
     const { w, h } = this.measureTabChar();
     cursor.hidden = false;
     cursor.style.width = `${w}px`;
-    // Highlight the whole stacked block (the run of non-blank lines, i.e. all six strings), not just
-    // the one line the tap happened to land on, so it reads as "this beat" across every string.
-    const lines = text.split('\n');
-    let first = row;
-    let last = row;
-    while (first > 0 && lines[first - 1].trim()) first--;
-    while (last < lines.length - 1 && lines[last + 1].trim()) last++;
+    // Highlight the whole stacked block (all six strings) at this column, so it reads as "this beat"
+    // across every string, whichever row the tap happened to land on.
     cursor.style.height = `${(last - first + 1) * h}px`;
     cursor.style.transform = `translate(${col * w}px, ${first * h}px)`;
     // Only scroll once the cursor nears an edge, not every frame — a continuous sweep across a bar

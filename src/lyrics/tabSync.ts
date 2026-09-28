@@ -56,3 +56,69 @@ export function rowCol(text: string, charOffset: number): { row: number; col: nu
   const col = before[row].length + (clamped - whole);
   return { row, col };
 }
+
+// ---- column space --------------------------------------------------------------------------------
+// Interpolating over raw character offsets is wrong for real tab: a stacked block's six string-rows
+// are six runs of text, so an offset that runs from the first row's start to the last row's end sweeps
+// the cursor across the block six times over. What matters is the *column* — how far along the music
+// you are — regardless of which string row you clicked. So the text is treated as a row of blocks
+// (runs of non-blank lines) laid end to end, and every position is a single column coordinate.
+
+export interface TabBlock {
+  firstRow: number;
+  lastRow: number;
+  /** Column coordinate where this block starts (the widths of the blocks before it, summed). */
+  start: number;
+  /** Width of its longest row. */
+  width: number;
+}
+
+export function tabBlocks(text: string): TabBlock[] {
+  const lines = text.split('\n');
+  const blocks: TabBlock[] = [];
+  let start = 0;
+  for (let i = 0; i < lines.length; ) {
+    if (!lines[i].trim()) {
+      i++;
+      continue;
+    }
+    let j = i;
+    let width = 0;
+    while (j < lines.length && lines[j].trim()) width = Math.max(width, lines[j++].length);
+    blocks.push({ firstRow: i, lastRow: j - 1, start, width });
+    start += width;
+    i = j;
+  }
+  return blocks;
+}
+
+/** The column coordinate of a character offset, whichever string row it is in. An offset in a blank
+ * line snaps to the start of the next block (or the end of the last). Null if there is no tab at all. */
+export function offsetToCoord(text: string, blocks: TabBlock[], charOffset: number): number | null {
+  if (!blocks.length) return null;
+  const { row, col } = rowCol(text, charOffset);
+  const b = blocks.find((k) => row <= k.lastRow);
+  if (!b) return blocks[blocks.length - 1].start + blocks[blocks.length - 1].width;
+  if (row < b.firstRow) return b.start;
+  return b.start + Math.min(col, b.width);
+}
+
+/** Where a column coordinate sits: which block (as its first/last rows) and how far across it. */
+export function coordToPlace(blocks: TabBlock[], coord: number): { firstRow: number; lastRow: number; col: number } | null {
+  if (!blocks.length) return null;
+  const c = Math.max(0, coord);
+  const b = blocks.find((k) => c < k.start + k.width) ?? blocks[blocks.length - 1];
+  return { firstRow: b.firstRow, lastRow: b.lastRow, col: Math.min(b.width, c - b.start) };
+}
+
+/** Everything together: where in the tab is time `t`, given the taps. Null with too few taps or no tab. */
+export function tabPositionAt(text: string, anchors: TabAnchor[], t: number) {
+  const blocks = tabBlocks(text);
+  const coords: TabAnchor[] = [];
+  for (const a of anchors) {
+    const c = offsetToCoord(text, blocks, a.charOffset);
+    if (c !== null) coords.push({ charOffset: c, time: a.time });
+  }
+  const coord = charOffsetAt(coords, t);
+  return coord === null ? null : coordToPlace(blocks, coord);
+}

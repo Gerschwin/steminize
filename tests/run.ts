@@ -23,7 +23,7 @@ import { writeMidi } from '../src/encode/midi.ts';
 import { detectPitch, freqToNote } from '../src/analysis/pitch.ts';
 import { isNewer, parseVersion } from '../src/version.ts';
 import { lineAt, parseLrc } from '../src/lyrics/lrc.ts';
-import { addAnchor, charOffsetAt, rowCol, type TabAnchor } from '../src/lyrics/tabSync.ts';
+import { addAnchor, charOffsetAt, coordToPlace, offsetToCoord, rowCol, tabBlocks, tabPositionAt, type TabAnchor } from '../src/lyrics/tabSync.ts';
 import { moveItem, nextSong, parseSetlists, prevSong, pruneSongs, totalSeconds, uniqueName, type Setlist } from '../src/setlists.ts';
 import { detectLatency } from '../src/player/latency.ts';
 import { placeTake } from '../src/player/placement.ts';
@@ -606,6 +606,29 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('setlist: parses saved data', parseSetlists('[{"id":"1","name":"Gig","songs":["a","b","a"],"auto":false,"gap":5}]').map((l) => `${l.name}:${l.songs.join('')}:${l.auto}:${l.gap}`).join() === 'Gig:ab:false:5');
   ok('setlist: garbage in storage gives no setlists', parseSetlists('nope').length === 0 && parseSetlists('{"a":1}').length === 0 && parseSetlists(null).length === 0);
   ok('setlist: bad entries are skipped, bad gaps defaulted', parseSetlists('[{"id":1},{"id":"2","name":"ok","songs":[],"gap":7}]').map((l) => `${l.id}:${l.gap}:${l.auto}`).join() === '2:2:true');
+}
+
+// ---- tab+ column space: which string row you tap must not matter
+{
+  const sys = (n: number) => ['e|' + '-'.repeat(n), 'B|' + '-'.repeat(n), 'G|' + '-'.repeat(n)].join('\n');
+  const text = sys(10) + '\n\n' + sys(10); // two systems of three rows, each row 12 wide
+  const blocks = tabBlocks(text);
+  ok('tab columns: blocks are runs of non-blank lines, laid end to end', blocks.length === 2 && blocks[0].width === 12 && blocks[1].start === 12 && blocks[1].firstRow === 4);
+  const rowStart = (r: number) => text.split('\n').slice(0, r).reduce((n, l) => n + l.length + 1, 0);
+  ok('tab columns: the same column in different string rows is the same coordinate', offsetToCoord(text, blocks, rowStart(0) + 5) === 5 && offsetToCoord(text, blocks, rowStart(2) + 5) === 5);
+  ok('tab columns: second system continues after the first', offsetToCoord(text, blocks, rowStart(4) + 3) === 15);
+  ok('tab columns: an offset on a blank line snaps to the next system', offsetToCoord(text, blocks, rowStart(3)) === 12);
+  const place = coordToPlace(blocks, 15);
+  ok('tab columns: coordinate maps back to a system and column', place?.firstRow === 4 && place.lastRow === 6 && place.col === 3);
+  // start of tab (row 0, col 0) at 0 s, end of the LAST ROW of the LAST system at 24 s
+  const anchors: TabAnchor[] = [
+    { charOffset: 0, time: 0 },
+    { charOffset: text.length, time: 24 },
+  ];
+  const mid = tabPositionAt(text, anchors, 12);
+  ok('tab columns: halfway in time is halfway through the whole tab, not down the rows', mid?.firstRow === 4 && mid.col === 0);
+  const q = tabPositionAt(text, anchors, 6);
+  ok('tab columns: a quarter through sits inside the first system', q?.firstRow === 0 && Math.abs((q?.col ?? 0) - 6) < 1e-9);
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');
