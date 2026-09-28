@@ -23,7 +23,8 @@ import { writeMidi } from '../src/encode/midi.ts';
 import { detectPitch, freqToNote } from '../src/analysis/pitch.ts';
 import { isNewer, parseVersion } from '../src/version.ts';
 import { lineAt, parseLrc } from '../src/lyrics/lrc.ts';
-import { addAnchor, charOffsetAt, coordToPlace, coordToStripX, parseTab, stripLayout, isLockedAt, moveAnchor, offsetToCoord, removeAnchor, rowCol, tabBlocks, tabPositionAt, toggleAnchorLock, type TabAnchor } from '../src/lyrics/tabSync.ts';
+import { splitLength, staffX, vexKey } from '../src/ui/staff.ts';
+import { addAnchor, charOffsetAt, coordToPlace, coordToStripX, parseScore, parseTab, stripLayout, isLockedAt, moveAnchor, offsetToCoord, removeAnchor, rowCol, tabBlocks, tabPositionAt, toggleAnchorLock, type TabAnchor } from '../src/lyrics/tabSync.ts';
 import { moveItem, nextSong, parseSetlists, prevSong, pruneSongs, totalSeconds, uniqueName, type Setlist } from '../src/setlists.ts';
 import { detectLatency } from '../src/player/latency.ts';
 import { placeTake } from '../src/player/placement.ts';
@@ -725,6 +726,25 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('parse: a two-digit fret is read whole', two.length === 1 && two[0].fret === 12);
   const timed = parseTab('e|0-0-|\nB|----|\nG|----|\nD|----|\nA|----|\nE|----|\n  q q');
   ok('parse: a rhythm line gives each note its length', timed.length === 2 && timed[0].length === 4 && timed[1].start === 4);
+}
+
+// ---- tab+ score: bars for the staff view
+{
+  const sc = parseScore('e|0-0-|0-0-|\nB|----|----|\nG|----|----|\nD|----|----|\nA|----|----|\nE|----|----|\n  q q  q q');
+  ok('score: a rhythm line gives each bar its start and exact length', sc.bars.length === 2 && sc.bars[0].start === 0 && sc.bars[0].length === 8 && sc.bars[1].start === 8);
+  ok('score: notes know which bar they are in', sc.notes.map((n) => n.bar).join() === '0,0,1,1');
+  const plain = parseScore('e|0-0-|0-0-|\nB|----|----|');
+  ok('score: without a rhythm line a bar is as long as its columns', plain.bars.length === 2 && plain.bars[0].length === 4 && plain.bars[1].start === 4);
+  const two = parseScore('e|0-|\nB|--|\n\ne|0-|\nB|--|');
+  ok('score: bars carry on counting through every system', two.bars.length === 2 && two.notes[1].bar === 1);
+}
+
+// ---- tab+ staff helpers
+{
+  ok('staff: lengths split into drawable notes', splitLength(16).join() === 'w' && splitLength(6).join() === 'qd' && splitLength(20).join() === 'w,q' && splitLength(2.5).join() === '8,32');
+  ok('staff: guitar is written an octave above where it sounds', vexKey(40) === 'e/3' && vexKey(64) === 'e/5' && vexKey(61) === 'c#/5');
+  const map = [{ u: 0, x: 10 }, { u: 4, x: 50 }, { u: 12, x: 130 }];
+  ok('staff: the cursor joins note positions with straight lines', staffX(map, 2) === 30 && staffX(map, 8) === 90 && staffX(map, -5) === 10 && staffX(map, 99) === 130);
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

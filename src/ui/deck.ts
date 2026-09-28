@@ -22,6 +22,7 @@ import {
   isRhythmRow,
   MIN_ANCHORS,
   moveAnchor,
+  parseScore,
   removeAnchor,
   stripLayout,
   tabBlocks,
@@ -32,6 +33,7 @@ import {
 } from '../lyrics/tabSync.ts';
 import { FLAT, isFlat, sameEq, type EqParams } from '../player/eq.ts';
 import { eqPanel, type EqPanel } from './eqPanel.ts';
+import { drawStaff, staffX, type StaffLayout } from './staff.ts';
 import { $, fitCanvas, fmtDuration, fmtTime, h, pressed, toast } from './dom.ts';
 import { Transcribe, type TxHost, type TxState } from './transcribePanel.ts';
 import type { Chord } from '../analysis/chords.ts';
@@ -126,6 +128,8 @@ export interface ScratchState {
   tabFollow?: boolean;
   /** Follow along as one long scrolling line instead of a page. */
   tabStrip?: boolean;
+  /** Show the tab as standard notation underneath. */
+  tabStaff?: boolean;
   drums?: string;
   notes?: string;
 }
@@ -375,6 +379,11 @@ export class Deck {
   /** The tab's block layout and tap coordinates, rebuilt only when the text or taps change (not every frame). */
   private tabTimeline: { text: string; anchors: TabAnchor[]; blocks: TabBlock[]; coords: TabAnchor[]; strip?: StripLayout } | null = null;
   private lastStripPx = NaN;
+  private staffLayout: StaffLayout | null = null;
+  private staffText: string | null = null;
+  private staffToken = 0;
+  private staffTimer: number | undefined;
+  private lastStaffPx = NaN;
   private tabCharMetrics: { w: number; h: number } | null = null;
   private scratchAreas!: { lyrics: HTMLTextAreaElement; tab: HTMLTextAreaElement; drums: HTMLTextAreaElement; notes: HTMLTextAreaElement };
   // ---- a live recording being drawn in as its own track while it's captured ----
@@ -497,7 +506,10 @@ export class Deck {
     const frame = () => {
       if (this.dirty && this.r) this.draw();
       // The tab scroll strip moves every screen frame while playing, not just when a player report lands.
-      else if (this.r && this.player.state.playing && !$('tabStrip').hidden) this.updateTabStrip();
+      else if (this.r && this.player.state.playing) {
+        if (!$('tabStrip').hidden) this.updateTabStrip();
+        this.updateTabStaff();
+      }
       requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
@@ -1703,6 +1715,10 @@ export class Deck {
     areas.tab.oninput = () => {
       this.scratch.tab = areas.tab.value;
       $('tabFollowText').textContent = areas.tab.value;
+      if (!$('tabStaff').hidden) {
+        clearTimeout(this.staffTimer);
+        this.staffTimer = window.setTimeout(() => void this.renderStaff(), 250);
+      }
       this.lastTabRowCol = null; // positions may have shifted; redraw the cursor fresh next tick
       this.updateScratchSummary();
       this.emit();
@@ -1732,6 +1748,11 @@ export class Deck {
     });
     $('tabFollowBtn').onclick = () => {
       this.scratch.tabFollow = !this.scratch.tabFollow;
+      this.updateTabView();
+      this.emit();
+    };
+    $('tabStaffBtn').onclick = () => {
+      this.scratch.tabStaff = !this.scratch.tabStaff;
       this.updateTabView();
       this.emit();
     };
@@ -1817,6 +1838,7 @@ export class Deck {
     if (s?.tabAnchors?.length) this.scratch.tabAnchors = s.tabAnchors;
     if (s?.tabFollow) this.scratch.tabFollow = true;
     if (s?.tabStrip) this.scratch.tabStrip = true;
+    if (s?.tabStaff) this.scratch.tabStaff = true;
     this.scratchAreas.lyrics.value = this.scratch.lyrics ?? '';
     this.setLyricsText(this.scratch.lyrics ?? '');
     // Tab/Drum tab start with the blank string/beat template actually typed in (not just a
@@ -1909,6 +1931,12 @@ export class Deck {
     $('tabFollow').hidden = !(onTab && follow && !strip);
     $('tabStrip').hidden = !(onTab && strip);
     if (onTab && strip) this.buildTabStrip();
+    const staff = onTab && !!this.scratch.tabStaff;
+    $('tabStaffBtn').hidden = !onTab;
+    pressed($('tabStaffBtn'), !!this.scratch.tabStaff);
+    $('tabStaff').hidden = !staff;
+    if (staff) void this.renderStaff();
+    this.lastStaffPx = NaN;
     this.lastStripPx = NaN;
     this.scratchAreas.tab.hidden = !onTab || follow;
     this.lastTabRowCol = null; // (re)place the cursor on the next frame, even while paused
@@ -1958,6 +1986,53 @@ export class Deck {
     cursor.style.width = `${w}px`;
     cursor.style.top = `${h}px`;
     cursor.style.height = `${tl.strip.rows.length * h}px`;
+  }
+
+  /** Redraws the staff from the tab as it is now (only if it has changed since the last drawing). */
+  private async renderStaff() {
+    const text = this.scratchAreas.tab.value;
+    if (text === this.staffText && this.staffLayout) return;
+    const token = ++this.staffToken;
+    const { notes, bars } = parseScore(text);
+    const track = $('tabStaffTrack');
+    if (!notes.length) {
+      if (token !== this.staffToken) return;
+      track.replaceChildren(h('div', { class: 'tab-staff-note' }, 'No notes to show yet: type some fret numbers on the strings above.'));
+      this.staffLayout = null;
+      this.staffText = null;
+      return;
+    }
+    // Drawn into a spare element first, so a stale or failed drawing never leaves the visible one half-finished.
+    const spare = document.createElement('div');
+    const layout = await drawStaff(spare, notes, bars).catch(() => null);
+    if (token !== this.staffToken) return;
+    if (!layout) {
+      track.replaceChildren(h('div', { class: 'tab-staff-note' }, "Couldn't draw the staff for this tab."));
+      this.staffLayout = null;
+      this.staffText = null;
+      return;
+    }
+    track.replaceChildren(...spare.childNodes);
+    this.staffLayout = layout;
+    this.staffText = text;
+    $('tabStaffView').style.height = `${layout.height}px`;
+    this.lastStaffPx = NaN;
+    this.dirty = true;
+  }
+
+  /** Slides the staff past its fixed cursor in step with the music (or leaves it at the start without timing). */
+  private updateTabStaff() {
+    const layout = this.staffLayout;
+    if (!layout || $('tabStaff').hidden) return;
+    const tl = this.timeline();
+    const coord = charOffsetAt(tl.coords, this.smoothStripPos() / SR);
+    const holdAt = $('tabStaffView').clientWidth * 0.4; // matches .tab-staff-cursor's left: 40%
+    const x = coord === null ? 0 : staffX(layout.map, coord);
+    const px = coord === null ? 0 : holdAt - x;
+    $('tabStaffCursor').hidden = coord === null;
+    if (Math.abs(px - this.lastStaffPx) < 0.05) return;
+    this.lastStaffPx = px;
+    $('tabStaffTrack').style.transform = `translateX(${px}px)`;
   }
 
   private stripPos = 0;
@@ -3222,6 +3297,7 @@ export class Deck {
     $('timeNow').textContent = fmtTime(pos / SR);
     this.updateLyricsFollow(pos);
     this.updateTabFollow(pos);
+    this.updateTabStaff();
     // Keep the playhead in view while zoomed in.
     const span = this.view.end - this.view.start;
     if (this.player.state.playing && span < this.length - 1 && (pos > this.view.end || pos < this.view.start)) this.setView(pos - span * 0.1, pos + span * 0.9);

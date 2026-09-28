@@ -683,6 +683,13 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
 .tab-strip-bars { color: var(--muted); }
 /* The fixed spot the strip scrolls past; its width and height are set from the measured font in deck.ts. */
 .tab-strip-cursor { position: absolute; top: 0; left: 40%; /* top is set in deck.ts to sit below the bar-number line */ background: var(--accent); opacity: 0.35; border-radius: 2px; pointer-events: none; }
+.scratch-area.tab-staff { overflow: hidden; min-height: 0; padding: 6px 12px; color: var(--text); }
+.scratch-area.tab-staff[hidden] { display: none; }
+.tab-staff-view { position: relative; overflow: hidden; }
+.tab-staff-track { will-change: transform; width: max-content; }
+.tab-staff-note { color: var(--muted); font-size: 13px; padding: 8px 0; }
+/* The fixed spot the staff slides past, level with the tab strip's. */
+.tab-staff-cursor { position: absolute; top: 0; bottom: 0; left: 40%; width: 2px; background: var(--accent); opacity: 0.7; border-radius: 1px; pointer-events: none; }
 .tab-tap-sel { display: inline-flex; align-items: center; gap: 6px; }
 .scratch-area.tab-follow { position: relative; max-height: 260px; overflow: auto; scroll-behavior: smooth; white-space: normal; }
 .tab-follow-text { margin: 0; font: inherit; white-space: pre; }

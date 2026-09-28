@@ -18,7 +18,8 @@
     "@tauri-apps/plugin-fs": "^2.5.2",
     "fflate": "^0.8.3",
     "onnxruntime-web": "^1.30.0",
-    "soundtouchjs": "^0.3.0"
+    "soundtouchjs": "^0.3.0",
+    "vexflow": "^5.0.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.5",

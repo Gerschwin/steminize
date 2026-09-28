@@ -401,6 +401,7 @@
                     <button class="btn tiny ghost" type="button" id="tabTapLockBtn" title="Lock this tap so it can't be dragged, re-tapped over or removed">Lock</button>
                     <button class="btn tiny ghost" type="button" id="tabTapRemoveBtn" title="Remove this tap (or press Delete)">Remove</button>
                   </span>
+                  <button class="btn tiny ghost toggle" type="button" id="tabStaffBtn" aria-pressed="false" hidden title="Show the tab as standard music notation underneath, built from the tab and its rhythm line. With taps set, it follows the music too.">Staff</button>
                   <button class="btn tiny ghost toggle" type="button" id="tabStripBtn" aria-pressed="false" hidden title="Follow along as one long scrolling line, with the playing spot held in place, instead of a page that shows the whole tab">Scroll strip</button>
                   <button class="btn tiny ghost" type="button" id="tabClearAnchorsBtn" hidden title="Clear this tab's timing and start tapping again">Clear timing</button>
                 </div>
@@ -419,6 +420,12 @@
                       <pre class="tab-strip-text" id="tabStripText"></pre>
                     </div>
                     <div class="tab-strip-cursor" id="tabStripCursor"></div>
+                  </div>
+                </div>
+                <div class="tab-staff scratch-area" id="tabStaff" hidden aria-live="off">
+                  <div class="tab-staff-view" id="tabStaffView">
+                    <div class="tab-staff-track" id="tabStaffTrack"></div>
+                    <div class="tab-staff-cursor" id="tabStaffCursor" hidden></div>
                   </div>
                 </div>
                 <textarea class="scratch-area mono" id="scratchDrums" placeholder="CC|--------------------|&#10;HH|--------------------|&#10;SN|--------------------|&#10;HT|--------------------|&#10;FT|--------------------|&#10;BD|--------------------|" spellcheck="false" wrap="off" hidden></textarea>
@@ -582,6 +589,7 @@
           <div class="kb-row"><kbd>Ctrl</kbd>/<kbd>⌘</kbd><kbd>Enter</kbd><span>In the Scratchpad's Tab box: tap the current playback time onto the text cursor (same as Tap ⏱)</span></div>
           <div class="kb-row"><kbd>Delete</kbd><span>Remove the selected tab tap (click its green T-tag on the overview first; drag a tag to move it, Lock to protect it)</span></div>
           <div class="kb-row"><kbd>q</kbd><kbd>e</kbd><kbd>s</kbd><span>Tab rhythm line (last line under the strings): w whole, h half, q quarter, e eighth, s sixteenth, a dot after = dotted, CAPITAL = rest. Set with "Add rhythm line".</span></div>
+          <div class="kb-row"><kbd>Staff</kbd><span>In the Tab pane: standard notation under the tab, built from the fret numbers and the rhythm line (guitar written an octave up, as usual). It follows the music when the tab has taps set.</span></div>
           <div class="kb-row"><kbd>Ctrl</kbd>/<kbd>⌘</kbd><kbd>Z</kbd><span>Undo the last mixer change (mute, solo, volume, pan, EQ)</span></div>
           <div class="kb-row"><kbd>Ctrl</kbd>/<kbd>⌘</kbd><kbd>Shift</kbd><kbd>Z</kbd><span>Redo</span></div>
         </div>

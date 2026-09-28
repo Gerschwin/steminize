@@ -306,18 +306,48 @@ export interface TabNote {
   start: number;
   /** Length in sixteenth notes: exact with a rhythm line, otherwise the gap to the next note. */
   length: number;
+  /** Which bar it is in, counting through the whole tab from 0 (an index into the bars from parseScore). */
+  bar: number;
+}
+
+/** A bar of the tab: where it starts and how long it is, in sixteenth notes. */
+export interface TabBar {
+  start: number;
+  length: number;
 }
 
 const OPEN_STRINGS: Record<number, number[]> = { 6: [64, 59, 55, 50, 45, 40], 4: [43, 38, 33, 28] };
 
-/** The tab as a list of notes with pitch and timing, for the staff view and the playing trainer. */
-export function parseTab(text: string): TabNote[] {
+/** The column ranges [from, to) of each bar in a block: what lies between its bar lines. */
+function barSegments(b: TabBlock): [number, number][] {
+  const segs: [number, number][] = [];
+  let from = b.label;
+  for (let c = b.label; c <= b.chars; c++) {
+    if (c === b.chars || b.barLine[c]) {
+      if (c > from && (b.counts.slice(from, c).some(Boolean) || b.events?.some((e) => e.col >= from && e.col < c))) segs.push([from, c]);
+      from = c + 1;
+    }
+  }
+  return segs;
+}
+
+/** The tab as bars and a list of notes with pitch and timing, for the staff view and the playing trainer. */
+export function parseScore(text: string): { notes: TabNote[]; bars: TabBar[] } {
   const lines = text.split('\n');
   const blocks = tabBlocks(text);
   const notes: TabNote[] = [];
+  const bars: TabBar[] = [];
   blocks.forEach((b, bi) => {
     const nStrings = (b.rhythmRow ?? b.lastRow + 1) - b.firstRow;
     const open = OPEN_STRINGS[nStrings];
+    const segs = barSegments(b);
+    const barBase = bars.length;
+    for (const [from, to] of segs) {
+      if (b.events) {
+        const ev = b.events.filter((e) => e.col >= from && e.col < to);
+        bars.push({ start: b.start + (ev[0]?.u ?? 0), length: ev.reduce((n, e) => n + e.d, 0) });
+      } else bars.push({ start: b.start + b.cum[from], length: b.cum[to] - b.cum[from] });
+    }
     const found: TabNote[] = [];
     for (let k = 0; k < nStrings; k++) {
       const line = lines[b.firstRow + k];
@@ -333,7 +363,8 @@ export function parseTab(text: string): TabNote[] {
           fret = Number(line.slice(c, e + 1));
         }
         const start = b.start + (b.events ? colToUnits(b, c) : b.cum[c]);
-        found.push({ block: bi, string: k, fret, midi: open && fret !== null ? open[k] + fret : null, col: c, start, length: 0 });
+        const bar = barBase + Math.max(0, segs.findIndex(([from, to]) => c >= from && c < to));
+        found.push({ block: bi, string: k, fret, midi: open && fret !== null ? open[k] + fret : null, col: c, start, length: 0, bar });
       }
     }
     // length: from the rhythm line's event when there is one, else up to the next note in the block
@@ -348,7 +379,11 @@ export function parseTab(text: string): TabNote[] {
     }
     notes.push(...found);
   });
-  return notes.sort((x, y) => x.start - y.start || x.string - y.string);
+  return { notes: notes.sort((x, y) => x.start - y.start || x.string - y.string), bars };
+}
+
+export function parseTab(text: string): TabNote[] {
+  return parseScore(text).notes;
 }
 
 /** The taps as time-coordinates (see above), for repeated use without redoing the block layout each frame. */
