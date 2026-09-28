@@ -265,7 +265,14 @@ body.dragging .drop { border-color: var(--accent); }
    auto too, and the .track fix below should mean there's nothing left to scroll to sideways anyway.
    padding-right: the same scrollbar buffer as .side/.stage — without it this list's own scrollbar
    sits flush against each row's text/buttons instead of the pane's actual edge. */
-.lib { max-height: 320px; overflow-y: auto; overflow-x: hidden; padding-right: 14px; }
+/* overscroll-behavior back to auto here, overriding the global contain: reported as wheel-scrolling
+   not working at all over the list content (only the scrollbar drag itself always worked) once this
+   list sits nested inside another scrollable pane (.side) — plausibly WebKitGTK's contain blocking
+   the scroll outright here rather than just containing it at the boundary, rather than the milder
+   "chains through to the parent" containScroll()'s own no-overflow check is still there for. Trades
+   back the smaller original bug (scrolling past this list's own edge can resume scrolling .side) for
+   fixing the bigger one (no scroll at all). */
+.lib { max-height: 320px; overflow-y: auto; overflow-x: hidden; overscroll-behavior: auto; padding-right: 14px; }
 .lib .track { cursor: pointer; }
 .lib .track:hover { border-color: var(--line); }
 .lib .t-sub { color: var(--muted); }
