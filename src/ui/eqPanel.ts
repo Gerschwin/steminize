@@ -25,13 +25,16 @@ export interface EqPanel {
   redraw(): void;
 }
 
-export function eqPanel(colour: string, onChange: (e: EqParams) => void): EqPanel {
+/** onChange fires live as sliders move (for playback); onCommit fires once per finished gesture
+ * (drag release, keypress, preset click, double-click reset) with the before/after EQ, for undo. */
+export function eqPanel(colour: string, onChange: (e: EqParams) => void, onCommit?: (before: EqParams, after: EqParams) => void): EqPanel {
   let eq: EqParams = { ...FLAT };
+  let commitBase: EqParams = { ...eq };
   const curve = h('canvas', { class: 'eq-curve' });
 
   const chip = (name: string, hint: string, value: EqParams) => {
     const b = h('button', { class: 'eq-chip', type: 'button', title: hint }, name);
-    b.onclick = () => apply({ ...value });
+    b.onclick = () => applyAndCommit({ ...value });
     return { b, value };
   };
   const chips = [chip('Flat', 'No EQ', FLAT), ...PRESETS.map((p) => chip(p.name, p.hint, p.eq))];
@@ -75,13 +78,31 @@ export function eqPanel(colour: string, onChange: (e: EqParams) => void): EqPane
     sync();
     onChange({ ...eq });
   }
+  /** A whole gesture in one step (preset click, double-click reset): commits immediately. */
+  function applyAndCommit(next: EqParams) {
+    const before = { ...eq };
+    apply(next);
+    onCommit?.(before, { ...eq });
+    commitBase = { ...eq };
+  }
+  /** Marks where a drag/keyboard gesture on a slider started, so its eventual 'change' can commit
+   * one undo step for the whole gesture instead of one per 'input' event. */
+  const markGestureStart = () => (commitBase = { ...eq });
+  const commitGesture = () => {
+    if (!sameEq(commitBase, eq)) onCommit?.(commitBase, { ...eq });
+    commitBase = { ...eq };
+  };
 
   lc.input.oninput = () => apply({ ...eq, lowCut: lcFrom(+lc.input.value) });
   hc.input.oninput = () => apply({ ...eq, highCut: hcFrom(+hc.input.value) });
   ff.input.oninput = () => apply({ ...eq, freq: ffFrom(+ff.input.value) });
   fg.input.oninput = () => apply({ ...eq, gain: +fg.input.value });
   fq.input.oninput = () => apply({ ...eq, q: qFrom(+fq.input.value) });
-  for (const s of [lc, hc, ff, fg, fq]) s.input.ondblclick = () => apply({ ...eq, ...resetFor(s) });
+  for (const s of [lc, hc, ff, fg, fq]) {
+    s.input.addEventListener('focus', markGestureStart);
+    s.input.addEventListener('change', commitGesture);
+    s.input.ondblclick = () => applyAndCommit({ ...eq, ...resetFor(s) });
+  }
   function resetFor(s: typeof lc): Partial<EqParams> {
     if (s === lc) return { lowCut: 0 };
     if (s === hc) return { highCut: 0 };

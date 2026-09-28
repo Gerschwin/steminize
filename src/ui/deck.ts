@@ -12,7 +12,7 @@ import { openSink, safeName, saveFile } from '../platform.ts';
 import { MAX_REC_LATENCY_MS, loadRecLatencyMs, saveRecLatencyMs, type Settings } from '../settings.ts';
 import { placeTake } from '../player/placement.ts';
 import { lineAt, parseLrc, type Lrc } from '../lyrics/lrc.ts';
-import { isFlat, type EqParams } from '../player/eq.ts';
+import { FLAT, isFlat, sameEq, type EqParams } from '../player/eq.ts';
 import { eqPanel, type EqPanel } from './eqPanel.ts';
 import { $, fitCanvas, fmtDuration, fmtTime, h, pressed, toast } from './dom.ts';
 import { Transcribe, type TxHost, type TxState } from './transcribePanel.ts';
@@ -140,6 +140,14 @@ interface Take {
   data: Stereo;
   peaks: Float32Array;
   note?: string; // freeform, e.g. "rushed the bridge" — a reminder for telling takes apart later
+}
+
+type LanePatch = Partial<Pick<Lane, 'vol' | 'pan' | 'mute' | 'solo' | 'eq'>>;
+/** One undoable mixer action: before/after only cover the fields that actually changed. */
+interface LaneHistoryEntry {
+  lane: Lane;
+  before: LanePatch;
+  after: LanePatch;
 }
 
 /** Peak level per FINE-sample bucket, averaged across channels. */
@@ -289,6 +297,10 @@ export class Deck {
   needOnsets: (r: Result) => Promise<{ env: Float32Array; low: Float32Array }> = () => Promise.reject(new Error('unavailable'));
   private r: Result | null = null;
   private lanes: Lane[] = [];
+  /** Mixer undo/redo (mute/solo/vol/pan/EQ): cleared whenever a song opens or closes, since it
+   * refers to specific Lane objects that don't survive either. */
+  private laneUndo: LaneHistoryEntry[] = [];
+  private laneRedo: LaneHistoryEntry[] = [];
   /** The track scroll-to-zoom applies to; others just scroll the page. Click a track to pick it. */
   private selectedLane: Lane | null = null;
   private stopLiveInputUi: () => void = () => {};
@@ -472,16 +484,37 @@ export class Deck {
     eqBtn.onclick = () => this.toggleEq(lane, lane.colour);
     pressed(eqBtn, false);
     nameBtn.ondblclick = () => this.renameLane(lane, nameBtn, dl);
-    mute.onclick = () => this.setLane(lane, { mute: !lane.mute });
-    solo.onclick = () => this.setLane(lane, { solo: !lane.solo });
+    mute.onclick = () => this.setLaneRecorded(lane, { mute: !lane.mute });
+    solo.onclick = () => this.setLaneRecorded(lane, { solo: !lane.solo });
+    // Live-apply on every 'input' (so dragging feels immediate) but record only one undo step per
+    // gesture, on 'change' (drag release, or a single keypress on a focused slider) — comparing
+    // against the value from when the gesture started (captured on focus, which precedes both a
+    // click-drag and keyboard use), not one step per 'input' event.
     vol.oninput = () => this.setLane(lane, { vol: Number(vol.value) });
+    let volGestureStart = lane.vol;
+    vol.addEventListener('focus', () => (volGestureStart = lane.vol));
+    vol.addEventListener('change', () => {
+      this.pushLaneHistory(lane, { vol: volGestureStart }, { vol: lane.vol });
+      volGestureStart = lane.vol;
+    });
     const setPan = (v: number) => {
       pan.value = String(v);
       panOut.textContent = v === 0 ? 'C' : `${v < 0 ? 'L' : 'R'}${Math.round(Math.abs(v) * 100)}`;
       this.setLane(lane, { pan: v });
     };
+    let panGestureStart = lane.pan;
     pan.oninput = () => setPan(Number(pan.value));
-    pan.ondblclick = () => setPan(0);
+    pan.addEventListener('focus', () => (panGestureStart = lane.pan));
+    pan.addEventListener('change', () => {
+      this.pushLaneHistory(lane, { pan: panGestureStart }, { pan: lane.pan });
+      panGestureStart = lane.pan;
+    });
+    pan.ondblclick = () => {
+      const before = lane.pan;
+      setPan(0);
+      this.pushLaneHistory(lane, { pan: before }, { pan: 0 });
+      panGestureStart = lane.pan;
+    };
     dl.onclick = () => this.saveStem(this.lanes.indexOf(lane));
     // Click seeks; dragging across the lane marks a loop section, like the overview strip does
     // (the section is marked but the loop is left off, so scanning for a part doesn't yank playback).
@@ -860,6 +893,8 @@ export class Deck {
     const lanes = $('lanes');
     lanes.replaceChildren();
     this.selectedLane = null;
+    this.laneUndo = [];
+    this.laneRedo = [];
     this.lanes = r.stems.map((s, i) => this.buildLane(s, i));
     this.player.load(r.stems.map((s) => s.data), this.gains());
     this.restoreTakes(r);
@@ -1946,6 +1981,8 @@ export class Deck {
     this.r = null;
     this.media.setSong(null);
     this.lanes = [];
+    this.laneUndo = [];
+    this.laneRedo = [];
     $('deck').hidden = true;
     $('welcome').hidden = false;
   }
@@ -1972,14 +2009,18 @@ export class Deck {
       x.el.classList.remove('eq-open');
     }
     if (open) return;
-    l.eqPanel ??= eqPanel(colour, (eq) => this.setLane(l, { eq }));
+    l.eqPanel ??= eqPanel(
+      colour,
+      (eq) => this.setLane(l, { eq }),
+      (before, after) => this.pushLaneHistory(l, { eq: before }, { eq: after }),
+    );
     if (l.eq) l.eqPanel.set(l.eq);
     l.el.append(l.eqPanel.el);
     l.el.classList.add('eq-open');
     requestAnimationFrame(() => l.eqPanel!.redraw());
   }
 
-  private setLane(l: Lane, patch: Partial<Pick<Lane, 'vol' | 'pan' | 'mute' | 'solo' | 'eq'>>) {
+  private setLane(l: Lane, patch: LanePatch) {
     Object.assign(l, patch);
     this.dirty = true;
     this.emit();
@@ -1991,6 +2032,63 @@ export class Deck {
     for (const x of this.lanes) x.el.querySelector('.eq')!.classList.toggle('on', !isFlat(x.eq));
     // If pan is hidden but in use, say so on the button so it isn't forgotten.
     $('panToggle').textContent = this.lanes.some((x) => x.pan) ? 'Pan (active)' : 'Pan';
+  }
+
+  /** setLane, but also records one undo step. Use for discrete, one-shot changes (a mute/solo
+   * click, an EQ preset). A continuous gesture (dragging a slider) should call setLane directly for
+   * live feedback and record its own single step on release — see the vol/pan/EQ wiring below. */
+  private setLaneRecorded(l: Lane, patch: LanePatch) {
+    const before = {} as LanePatch;
+    for (const k of Object.keys(patch) as (keyof LanePatch)[]) (before as any)[k] = l[k];
+    this.setLane(l, patch);
+    this.pushLaneHistory(l, before, patch);
+  }
+
+  private pushLaneHistory(lane: Lane, before: LanePatch, after: LanePatch) {
+    const unchanged =
+      'eq' in after ? (before.eq && after.eq ? sameEq(before.eq, after.eq) : before.eq === after.eq) : Object.keys(after).every((k) => (before as any)[k] === (after as any)[k]);
+    if (unchanged) return;
+    this.laneUndo.push({ lane, before, after });
+    if (this.laneUndo.length > 200) this.laneUndo.shift();
+    this.laneRedo = [];
+  }
+
+  /** setLane doesn't touch the vol/pan <input type=range> elements themselves — normally unnecessary,
+   * since it's only ever called from those same sliders' own 'input' handlers (already at the right
+   * position) or from a button/EQ panel with no slider of its own to sync. Undo/redo is the one
+   * caller that changes vol/pan from outside the slider, so it has to sync them back explicitly.
+   * The synthetic 'focus' dispatch re-primes that slider's own gesture-start tracking (see buildLane)
+   * to the new value — otherwise undoing, then immediately dragging that same still-focused slider
+   * again without ever un-focusing it, would diff against the pre-undo value instead of this one. */
+  private syncLaneSliders(l: Lane, patch: LanePatch) {
+    const [volEl, panEl] = l.el.querySelectorAll('input[type=range]') as unknown as [HTMLInputElement, HTMLInputElement];
+    if ('vol' in patch) {
+      volEl.value = String(l.vol);
+      volEl.dispatchEvent(new Event('focus'));
+    }
+    if ('pan' in patch) {
+      panEl.value = String(l.pan);
+      const panOut = l.el.querySelector('.mini.pan output');
+      if (panOut) panOut.textContent = l.pan === 0 ? 'C' : `${l.pan < 0 ? 'L' : 'R'}${Math.round(Math.abs(l.pan) * 100)}`;
+      panEl.dispatchEvent(new Event('focus'));
+    }
+    if ('eq' in patch) l.eqPanel?.set(l.eq ?? FLAT); // undo can go back to "never touched" (eq undefined)
+  }
+
+  private undo() {
+    const entry = this.laneUndo.pop();
+    if (!entry) return;
+    this.setLane(entry.lane, entry.before);
+    this.syncLaneSliders(entry.lane, entry.before);
+    this.laneRedo.push(entry);
+  }
+
+  private redo() {
+    const entry = this.laneRedo.pop();
+    if (!entry) return;
+    this.setLane(entry.lane, entry.after);
+    this.syncLaneSliders(entry.lane, entry.after);
+    this.laneUndo.push(entry);
   }
 
   private selectLane(lane: Lane) {
@@ -2464,12 +2562,18 @@ export class Deck {
         e.target instanceof HTMLInputElement ||
         e.target instanceof HTMLTextAreaElement ||
         e.target instanceof HTMLSelectElement ||
-        (e.target as HTMLElement)?.isContentEditable ||
-        e.metaKey ||
-        e.ctrlKey ||
-        e.altKey
+        (e.target as HTMLElement)?.isContentEditable
       )
         return;
+      // Mixer undo/redo: checked ahead of the modifier-key bail-out below, since every other
+      // shortcut here deliberately ignores Ctrl/Cmd/Alt combinations.
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'z') {
+        if (e.shiftKey) this.redo();
+        else this.undo();
+        e.preventDefault();
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key;
       if (e.code === 'Space' || k === 'PageDown' || k === 'MediaPlayPause' || (this.pedal && ['ArrowRight', 'ArrowDown', 'Enter'].includes(k))) this.toggle();
       else if (k === 'PageUp' || k === 'Home' || (this.pedal && ['ArrowLeft', 'ArrowUp'].includes(k))) this.restart();
@@ -2485,7 +2589,7 @@ export class Deck {
       else if (e.key === 'f' || e.key === 'F') this.tx.toggleFreeze();
       else if (e.key === '[') this.setPoint('a');
       else if (e.key === ']') this.setPoint('b');
-      else if (/^[1-6]$/.test(e.key) && this.lanes[+e.key - 1]) this.setLane(this.lanes[+e.key - 1], { mute: !this.lanes[+e.key - 1].mute });
+      else if (/^[1-6]$/.test(e.key) && this.lanes[+e.key - 1]) this.setLaneRecorded(this.lanes[+e.key - 1], { mute: !this.lanes[+e.key - 1].mute });
       else return;
       e.preventDefault();
     });
