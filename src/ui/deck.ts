@@ -375,7 +375,16 @@ export class Deck {
     };
     $('trackTitle').ondblclick = () => this.renameSong();
     $('playBtn').onclick = () => this.toggle();
-    $('toStartBtn').onclick = () => this.player.seek(0);
+    // With a loop on, this goes to the loop's start (the engine keeps the playhead inside a live
+    // loop anyway); Shift+click goes to the start of the whole song, switching the loop off to do so.
+    $('toStartBtn').onclick = (e) => {
+      if (this.loop.on && this.loop.b > this.loop.a) {
+        if (!(e as MouseEvent).shiftKey) return this.player.seek(this.loop.a);
+        this.setLoop(false);
+        toast('Loop switched off. Press Loop to turn it back on.');
+      }
+      this.player.seek(0);
+    };
     $('toEndBtn').onclick = () => this.player.seek(Math.max(0, this.length - SR));
     $('rewindBtn').onclick = () => this.skip(-5);
     $('ffBtn').onclick = () => this.skip(5);
@@ -2743,6 +2752,9 @@ export class Deck {
   private updateLoopUi() {
     if (!$('keyPanel').hidden) this.refreshKeySectionBtn();
     pressed($('loopBtn'), this.loop.on);
+    const toStart = this.loop.on && this.loop.b > this.loop.a ? 'Jump to the loop start (Shift: start of the song, loop off)' : 'Jump to the start';
+    $('toStartBtn').title = toStart;
+    $('toStartBtn').setAttribute('aria-label', toStart);
     $('clearLoop').hidden = !(this.loop.b > this.loop.a);
     $('loopInfo').textContent =
       this.loop.b > this.loop.a
