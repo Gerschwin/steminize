@@ -89,8 +89,9 @@ export function rowCol(text: string, charOffset: number): { row: number; col: nu
 // you are — regardless of which string row you clicked. So the text is treated as a row of blocks
 // (runs of non-blank lines) laid end to end, and every position is a single column coordinate.
 //
-// Not every column is time, though: the row label ("e|"), bar lines and the second digit of a
-// two-digit fret take space on the page but no time in the music. Those columns are zero-width in
+// Not every column is time, though: the row label ("e|"), bar lines, the second digit of a
+// two-digit fret and the b/r/target of a bend take space on the page but no time in the music.
+// (Slides, hammer-ons and vibrato keep their columns: authors usually space those out in time.) Those columns are zero-width in
 // the coordinate, so the highlight doesn't dawdle across them. (What can't be known from the text is
 // a note that is held longer than its spacing suggests; taps in between correct for that.)
 
@@ -139,8 +140,19 @@ export function tabBlocks(text: string): TabBlock[] {
     const barLine: boolean[] = [];
     for (let c = 0; c < chars; c++) {
       const bar = rows.some((r) => r[c] === '|');
-      const continuation = rows.some((r) => isDigit(r[c]) && isDigit(r[c - 1]));
-      counts.push(c >= label && !bar && !continuation);
+      // A column takes no time when it only carries the extra characters of a single note: the second
+      // digit of a two-digit fret, or a bend/release ("7b9r7" is one note, bent and let down): the b/r,
+      // the target number, brackets. But if any string starts a real note in the same column, it does.
+      let extra = false;
+      let note = false;
+      for (const r of rows) {
+        const ch = r[c];
+        if (ch === undefined) continue;
+        const prev = r[c - 1];
+        if (ch === 'b' || ch === 'r' || ch === '(' || ch === ')' || ch === '^' || (isDigit(ch) && (isDigit(prev) || prev === 'b' || prev === 'r'))) extra = true;
+        else if (isDigit(ch) || ch === 'x' || ch === 'X') note = true;
+      }
+      counts.push(c >= label && !bar && !(extra && !note));
       barLine.push(c >= label && bar);
     }
     const cum = [0];

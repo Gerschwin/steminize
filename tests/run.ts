@@ -637,6 +637,14 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('tab columns: a two-digit fret is one column of time', offsetToCoord(t2, b2, 3) === 1 && offsetToCoord(t2, b2, 5) === 2);
   ok('tab columns: a tap on a bar line means the start of the next bar', offsetToCoord(t2, b2, 6) === 3 && offsetToCoord(t2, b2, 7) === 3);
   ok('tab columns: the cursor skips the bar line and the continuation digit', coordToPlace(b2, 3)?.col === 7 && coordToPlace(b2, 2)?.col === 5);
+  const bend = tabBlocks('e|-7b9r7-|\nB|--------|');
+  ok('tab columns: a bend (7b9r7) is one note, not five columns of time', bend[0].width === 3);
+  const chordBend = tabBlocks('e|-7b9-|\nB|-5-7-|');
+  ok('tab columns: another string starting a note under a bend keeps its column', chordBend[0].counts.slice(2, 7).join() === 'true,true,false,true,true' && chordBend[0].width === 4);
+  const bracket = tabBlocks('e|-(7)-|\nB|------|');
+  ok('tab columns: brackets around a note take no time', bracket[0].width === 3);
+  const slide = tabBlocks('e|-5/7-|\nB|------|');
+  ok('tab columns: slides and hammer-ons keep their columns', slide[0].width === 5);
   ok('tab columns: the cursor at the very end sits after the last time column', coordToPlace(b2, 6)?.col === 10);
 }
 

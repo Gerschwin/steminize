@@ -39,6 +39,17 @@ export class Player {
   private queued: PlayerMsg[] = [];
   state: PlayerState = { pos: 0, playing: false, ended: false, passes: 0, tempo: 1, countingIn: false };
   onState: (s: PlayerState) => void = () => {};
+  private stateStamp = 0;
+
+  /** The playhead estimated for right now. Reports arrive about every 23 ms, out of step with screen
+   * frames, so a display that moves smoothly (the tab scroll strip) carries on at the playing speed
+   * from the last report instead of stepping with it. Looks no further ahead than the next report is due. */
+  smoothPos(): number {
+    const s = this.state;
+    if (!s.playing || s.countingIn) return s.pos;
+    const dt = Math.min(0.06, Math.max(0, (performance.now() - this.stateStamp) / 1000));
+    return s.pos + dt * 44100 * s.tempo;
+  }
 
   // ---- live input monitoring: a real instrument/mic played live alongside the tracks ----
   private monitorStream: MediaStream | null = null;
@@ -61,6 +72,7 @@ export class Player {
       node.connect(master).connect(ctx.destination);
       node.port.onmessage = (e) => {
         this.state = e.data;
+        this.stateStamp = performance.now();
         this.onState(e.data);
       };
       this.ctx = ctx;
@@ -118,6 +130,7 @@ export class Player {
     }
     const p = Math.max(0, Math.round(pos));
     this.state = { ...this.state, pos: p }; // update now; the player confirms shortly
+    this.stateStamp = performance.now();
     this.send({ type: 'seek', pos: p });
   }
   setLoop(on: boolean, start: number, end: number) {

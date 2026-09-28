@@ -495,6 +495,8 @@ export class Deck {
     new ResizeObserver(() => this.invalidateLayers()).observe($('deck'));
     const frame = () => {
       if (this.dirty && this.r) this.draw();
+      // The tab scroll strip moves every screen frame while playing, not just when a player report lands.
+      else if (this.r && this.player.state.playing && !$('tabStrip').hidden) this.updateTabStrip();
       requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
@@ -1914,24 +1916,35 @@ export class Deck {
     cursor.style.height = `${tl.strip.rows.length * h}px`;
   }
 
+  private stripPos = 0;
+  /** The playhead for the strip: extrapolated between reports for smooth motion, and never nudged
+   * backwards by the small correction the next report brings (a real jump, like a seek, does go back). */
+  private smoothStripPos(): number {
+    const p = this.player;
+    if (!p.state.playing) return (this.stripPos = p.state.pos);
+    const est = p.smoothPos();
+    if (!(est < this.stripPos && this.stripPos - est < SR * 0.15)) this.stripPos = est;
+    return this.stripPos;
+  }
+
   /** Scroll-strip mode: the tab slides past a fixed spot, so the playing note stays where your eyes are. */
-  private updateTabStrip(pos: number) {
+  private updateTabStrip() {
     const tl = this.timeline();
     if (!tl.strip) this.buildTabStrip();
     const layout = tl.strip!;
-    const coord = charOffsetAt(tl.coords, pos / SR);
+    const coord = charOffsetAt(tl.coords, this.smoothStripPos() / SR);
     const { w } = this.measureTabChar();
     const holdAt = $('tabStripView').clientWidth * 0.4; // matches .tab-strip-cursor's left: 40%
     const x = coord === null ? 0 : coordToStripX(tl.blocks, layout, coord);
-    const px = Math.round((holdAt - x * w) * 2) / 2;
-    if (px === this.lastStripPx) return;
+    const px = holdAt - x * w;
+    if (Math.abs(px - this.lastStripPx) < 0.05) return;
     this.lastStripPx = px;
     $('tabStripTrack').style.transform = `translateX(${px}px)`;
     $('tabStripCursor').hidden = coord === null;
   }
 
   private updateTabFollow(pos: number) {
-    if (!$('tabStrip').hidden) return this.updateTabStrip(pos);
+    if (!$('tabStrip').hidden) return this.updateTabStrip();
     const box = $('tabFollow');
     const cursor = $('tabFollowCursor');
     if (box.hidden) return;
