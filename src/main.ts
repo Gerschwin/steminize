@@ -32,6 +32,18 @@ $('helpBtn').onclick = () => openDialog($<HTMLDialogElement>('helpDlg'));
 
 const chip = $('backendChip');
 chip.textContent = 'Checking device…';
+// WebGPU support in WebKitGTK (the Linux desktop app's webview) is experimental and was the direct
+// cause of a severe OOM crash earlier (an asyncify WASM build misbehaving) — avoided by not loading
+// that build unless a GPU is actually usable, but the underlying WebKitGTK issue isn't something
+// this app can truly fix, just avoid triggering where possible. On a Linux system where a GPU *is*
+// detected as usable, that risk is still live, so flag it upfront rather than let it be a surprise.
+const gpuLinuxNote = $('gpuLinuxNote');
+const linuxDesktop = isTauri && /Linux/.test(navigator.userAgent) && !/Android/.test(navigator.userAgent);
+const showGpuNote = (on: boolean) => (gpuLinuxNote.hidden = !(linuxDesktop && on));
+gpuLinuxNote.onclick = () => {
+  toast('WebGPU on Linux is experimental and has caused crashes in this app before. If you run into instability, switch "Run on" to CPU in Settings.', false, 8000);
+  document.querySelector<HTMLButtonElement>('.stab[data-side="settings"]')?.click();
+};
 // Chrome can expose WebGPU without a usable GPU, so ask for an actual adapter.
 (async () => {
   let gpu = false;
@@ -44,12 +56,14 @@ chip.textContent = 'Checking device…';
     chip.textContent = gpu ? 'GPU ready' : `CPU only · ${navigator.hardwareConcurrency || '?'} threads`;
     chip.title = gpu ? 'Separation will use your graphics card' : 'No usable GPU found; separation will run on the processor (slower)';
     chip.className = `chip${gpu ? ' gpu' : ''}`;
+    showGpuNote(gpu);
   }
 })();
 engine.onBackend = ({ backend, threads, note }) => {
   setBackendInfo({ backend, threads, note });
   chip.textContent = backend === 'webgpu' ? 'Running on GPU' : `Running on CPU · ${threads} thread${threads > 1 ? 's' : ''}`;
   chip.className = `chip${backend === 'webgpu' ? ' gpu' : ''}`;
+  showGpuNote(backend === 'webgpu');
   if (note) toast(note, true);
 };
 
@@ -452,12 +466,6 @@ setInterval(() => {
 
 $('appVersion').textContent = `v${__APP_VERSION__}`;
 $('appVersion').title = `Steminize ${__APP_VERSION__}, built ${__BUILD_DATE__}`;
-
-// Live window size next to the version badge — handy for testing layout at specific widths
-// (the 901px and 1280px breakpoints especially) without reaching for devtools.
-const updateViewportRes = () => ($('viewportRes').textContent = `${innerWidth}×${innerHeight}`);
-updateViewportRes();
-window.addEventListener('resize', updateViewportRes);
 
 // ---------------------------------------------------------------- PWA bits
 let installEvt: any = null;
