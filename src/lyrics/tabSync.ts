@@ -112,7 +112,23 @@ export interface TabBlock {
   counts: boolean[];
   /** barLine[j] = whether visual column j is a bar line. */
   barLine: boolean[];
+  /** Set when the block has a rhythm line under its strings: the notes and rests with their exact lengths. */
+  events?: RhythmEvent[];
+  /** Index (into the text's lines) of the rhythm line, if any. */
+  rhythmRow?: number;
 }
+
+/** A note or rest in a block with a rhythm line. Times are in sixteenth notes from the start of the block. */
+export interface RhythmEvent {
+  col: number;
+  u: number;
+  d: number;
+  rest: boolean;
+}
+
+/** Length in sixteenth notes of each rhythm letter (upper case is a rest of that length). */
+const RHYTHM_UNITS: Record<string, number> = { w: 16, h: 8, q: 4, e: 2, s: 1, t: 0.5 };
+export const isRhythmRow = (line: string) => /^[ whqestWHQEST.]*$/.test(line) && /[whqestWHQEST]/.test(line);
 
 const isDigit = (c: string | undefined) => c !== undefined && c >= '0' && c <= '9';
 
@@ -120,6 +136,48 @@ const isDigit = (c: string | undefined) => c !== undefined && c >= '0' && c <= '
 function labelLength(line: string): number {
   const p = line.indexOf('|');
   return p >= 0 && p <= 3 && /^[A-Za-z#0-9 ]*$/.test(line.slice(0, p)) ? p + 1 : 0;
+}
+
+/** Builds the notes and rests of a block from its rhythm line. A note column with no letter of its own
+ * repeats the last length used (so `e` once at the start of a bar makes every note in it an eighth); an
+ * upper-case letter on its own is a rest. Times count up through the block, each bar as long as its
+ * events add up to (an empty bar repeats the previous bar's length). */
+function rhythmEvents(line: string, noteCol: boolean[], barLine: boolean[], label: number, chars: number): RhythmEvent[] {
+  const events: RhythmEvent[] = [];
+  let u = 0;
+  let lastLen = 2; // eighths, until told otherwise
+  let prevBar = 16;
+  let col = label;
+  while (col < chars) {
+    // one bar: from here to the next bar line
+    let end = col;
+    while (end < chars && !barLine[end]) end++;
+    const cols: number[] = [];
+    for (let c = col; c < end; c++) if (noteCol[c] || RHYTHM_UNITS[(line[c] ?? '').toLowerCase()] !== undefined) cols.push(c);
+    let bar = 0;
+    for (const c of cols) {
+      const ch = line[c] ?? '';
+      const base = RHYTHM_UNITS[ch.toLowerCase()];
+      let d = lastLen;
+      if (base !== undefined) {
+        d = base * (line[c + 1] === '.' ? 1.5 : 1);
+        lastLen = d;
+      }
+      const rest = base !== undefined && ch !== ch.toLowerCase() && !noteCol[c];
+      events.push({ col: c, u: u + bar, d, rest });
+      bar += d;
+    }
+    if (!cols.length) {
+      // a bar of nothing but dashes: one bar of silence, as long as the last one
+      if (end > col) {
+        events.push({ col, u, d: prevBar, rest: true });
+        bar = prevBar;
+      }
+    } else prevBar = bar;
+    u += bar;
+    col = end + 1;
+  }
+  return events;
 }
 
 export function tabBlocks(text: string): TabBlock[] {
@@ -133,11 +191,15 @@ export function tabBlocks(text: string): TabBlock[] {
     }
     let j = i;
     while (j < lines.length && lines[j].trim()) j++;
-    const rows = lines.slice(i, j);
-    const chars = Math.max(...rows.map((r) => r.length));
+    const allRows = lines.slice(i, j);
+    // A rhythm line is the last line of the block, under the strings: only rhythm letters and spaces.
+    const rhythmLine = allRows.length >= 2 && isRhythmRow(allRows[allRows.length - 1]) ? allRows[allRows.length - 1] : undefined;
+    const rows = rhythmLine === undefined ? allRows : allRows.slice(0, -1);
+    const chars = Math.max(...allRows.map((r) => r.length));
     const label = Math.max(...rows.map(labelLength));
     const counts: boolean[] = [];
     const barLine: boolean[] = [];
+    const noteCol: boolean[] = [];
     for (let c = 0; c < chars; c++) {
       const bar = rows.some((r) => r[c] === '|');
       // A column takes no time when it only carries the extra characters of a single note: the second
@@ -154,11 +216,20 @@ export function tabBlocks(text: string): TabBlock[] {
       }
       counts.push(c >= label && !bar && !(extra && !note));
       barLine.push(c >= label && bar);
+      noteCol.push(c >= label && !bar && note);
     }
     const cum = [0];
     for (let c = 0; c < chars; c++) cum.push(cum[c] + (counts[c] ? 1 : 0));
-    const width = cum[chars];
-    blocks.push({ firstRow: i, lastRow: j - 1, start, width, chars, label, cum, counts, barLine });
+    let width = cum[chars];
+    const block: TabBlock = { firstRow: i, lastRow: j - 1, start, width, chars, label, cum, counts, barLine };
+    if (rhythmLine !== undefined) {
+      block.events = rhythmEvents(rhythmLine, noteCol, barLine, label, chars);
+      block.rhythmRow = j - 1;
+      const last = block.events[block.events.length - 1];
+      width = last ? last.u + last.d : 0;
+      block.width = width;
+    }
+    blocks.push(block);
     start += width;
     i = j;
   }
@@ -173,8 +244,33 @@ export function offsetToCoord(text: string, blocks: TabBlock[], charOffset: numb
   const b = blocks.find((k) => row <= k.lastRow);
   if (!b) return blocks[blocks.length - 1].start + blocks[blocks.length - 1].width;
   if (row < b.firstRow) return b.start;
+  if (b.events) return b.start + colToUnits(b, col);
   const j = Math.min(b.chars, Math.floor(col));
   return b.start + b.cum[j] + (j < b.chars && b.counts[j] ? col - j : 0);
+}
+
+/** For a block with a rhythm line: how far into it (in sixteenths) a visual column is. */
+function colToUnits(b: TabBlock, col: number): number {
+  const ev = b.events!;
+  if (!ev.length || col <= ev[0].col) return 0;
+  for (let i = 0; i < ev.length; i++) {
+    const next = i + 1 < ev.length ? ev[i + 1].col : b.chars;
+    if (col < next) return ev[i].u + ev[i].d * ((col - ev[i].col) / (next - ev[i].col));
+  }
+  return b.width;
+}
+
+/** The reverse: the visual column (fractional) a time within a rhythm block sits at. */
+function unitsToCol(b: TabBlock, local: number): number {
+  const ev = b.events!;
+  if (!ev.length) return b.label;
+  for (let i = 0; i < ev.length; i++) {
+    if (local < ev[i].u + ev[i].d) {
+      const next = i + 1 < ev.length ? ev[i + 1].col : b.chars;
+      return ev[i].col + ((local - ev[i].u) / ev[i].d) * (next - ev[i].col);
+    }
+  }
+  return b.chars;
 }
 
 /** Where a time-coordinate sits: which block (as its first/last rows) and how far across it, in
@@ -184,6 +280,7 @@ export function coordToPlace(blocks: TabBlock[], coord: number): { firstRow: num
   const c = Math.max(0, coord);
   const b = blocks.find((k) => c < k.start + k.width) ?? blocks[blocks.length - 1];
   const local = Math.min(b.width, c - b.start);
+  if (b.events) return { firstRow: b.firstRow, lastRow: b.lastRow, col: unitsToCol(b, local) };
   for (let j = 0; j < b.chars; j++) {
     if (b.counts[j] && local >= b.cum[j] && local < b.cum[j] + 1) return { firstRow: b.firstRow, lastRow: b.lastRow, col: j + (local - b.cum[j]) };
   }
@@ -191,6 +288,67 @@ export function coordToPlace(blocks: TabBlock[], coord: number): { firstRow: num
   let last = b.chars - 1;
   while (last > 0 && !b.counts[last]) last--;
   return { firstRow: b.firstRow, lastRow: b.lastRow, col: last + 1 };
+}
+
+// ---- notes ----------------------------------------------------------------------------------------
+
+export interface TabNote {
+  block: number;
+  /** 0 = the top string row. */
+  string: number;
+  /** The fret, or null for a dead note (x). */
+  fret: number | null;
+  /** MIDI pitch in standard tuning (or standard bass tuning for four strings); null when not known. */
+  midi: number | null;
+  /** The visual column it sits in. */
+  col: number;
+  /** Start, in sixteenth notes from the start of the tab. */
+  start: number;
+  /** Length in sixteenth notes: exact with a rhythm line, otherwise the gap to the next note. */
+  length: number;
+}
+
+const OPEN_STRINGS: Record<number, number[]> = { 6: [64, 59, 55, 50, 45, 40], 4: [43, 38, 33, 28] };
+
+/** The tab as a list of notes with pitch and timing, for the staff view and the playing trainer. */
+export function parseTab(text: string): TabNote[] {
+  const lines = text.split('\n');
+  const blocks = tabBlocks(text);
+  const notes: TabNote[] = [];
+  blocks.forEach((b, bi) => {
+    const nStrings = (b.rhythmRow ?? b.lastRow + 1) - b.firstRow;
+    const open = OPEN_STRINGS[nStrings];
+    const found: TabNote[] = [];
+    for (let k = 0; k < nStrings; k++) {
+      const line = lines[b.firstRow + k];
+      for (let c = b.label; c < line.length; c++) {
+        const ch = line[c];
+        const prev = line[c - 1];
+        const startsNote = (isDigit(ch) && !isDigit(prev) && prev !== 'b' && prev !== 'r') || ch === 'x' || ch === 'X';
+        if (!startsNote || b.barLine[c]) continue;
+        let fret: number | null = null;
+        if (isDigit(ch)) {
+          let e = c;
+          while (isDigit(line[e + 1])) e++;
+          fret = Number(line.slice(c, e + 1));
+        }
+        const start = b.start + (b.events ? colToUnits(b, c) : b.cum[c]);
+        found.push({ block: bi, string: k, fret, midi: open && fret !== null ? open[k] + fret : null, col: c, start, length: 0 });
+      }
+    }
+    // length: from the rhythm line's event when there is one, else up to the next note in the block
+    const starts = [...new Set(found.map((n) => n.start))].sort((x, y) => x - y);
+    for (const n of found) {
+      const ev = b.events?.find((e) => e.col === n.col);
+      if (ev) n.length = ev.d;
+      else {
+        const next = starts.find((x) => x > n.start);
+        n.length = next !== undefined ? next - n.start : b.start + b.width - n.start;
+      }
+    }
+    notes.push(...found);
+  });
+  return notes.sort((x, y) => x.start - y.start || x.string - y.string);
 }
 
 /** The taps as time-coordinates (see above), for repeated use without redoing the block layout each frame. */
@@ -270,6 +428,7 @@ export function coordToStripX(blocks: TabBlock[], layout: StripLayout, coord: nu
   if (idx < 0) idx = blocks.length - 1;
   const b = blocks[idx];
   const local = Math.min(b.width, c - b.start);
+  if (b.events) return layout.startOf[idx] + Math.max(0, unitsToCol(b, local) - b.label);
   for (let j = b.label; j < b.chars; j++) {
     if (!b.counts[j] || local < b.cum[j] || local >= b.cum[j] + 1) continue;
     let z = 0;

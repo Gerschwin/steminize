@@ -23,7 +23,7 @@ import { writeMidi } from '../src/encode/midi.ts';
 import { detectPitch, freqToNote } from '../src/analysis/pitch.ts';
 import { isNewer, parseVersion } from '../src/version.ts';
 import { lineAt, parseLrc } from '../src/lyrics/lrc.ts';
-import { addAnchor, charOffsetAt, coordToPlace, coordToStripX, stripLayout, isLockedAt, moveAnchor, offsetToCoord, removeAnchor, rowCol, tabBlocks, tabPositionAt, toggleAnchorLock, type TabAnchor } from '../src/lyrics/tabSync.ts';
+import { addAnchor, charOffsetAt, coordToPlace, coordToStripX, parseTab, stripLayout, isLockedAt, moveAnchor, offsetToCoord, removeAnchor, rowCol, tabBlocks, tabPositionAt, toggleAnchorLock, type TabAnchor } from '../src/lyrics/tabSync.ts';
 import { moveItem, nextSong, parseSetlists, prevSong, pruneSongs, totalSeconds, uniqueName, type Setlist } from '../src/setlists.ts';
 import { detectLatency } from '../src/player/latency.ts';
 import { placeTake } from '../src/player/placement.ts';
@@ -683,6 +683,48 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('strip: padding runs the strings on before and after, and shifts every position', padded.rows[0] === '-----' + lay.rows[0] + '-----' && padded.startOf.join() === '5,13' && coordToStripX(blocks, padded, 0) === 5);
   ok('strip: bar numbers sit at each bar start and count through every system', lay.header.trimEnd() === '1   2   3   4' && padded.header.slice(5).trimEnd() === '1   2   3   4');
   ok('strip: speed never goes backwards', (() => { let last = -1; for (let c = 0; c <= 12; c += 0.25) { const x = coordToStripX(blocks, lay, c); if (x < last) return false; last = x; } return true; })());
+}
+
+// ---- tab+ rhythm line: exact note lengths
+{
+  const t = 'e|-------|-------|\nB|-------|-------|\nE|1-2-3-4|5-6-7-8|\n  q q q q|q q q q';
+  // (the rhythm line has a stray '|' so this is NOT a rhythm line: bar lines belong to string rows only)
+  ok('rhythm: a line with bar lines in it is not a rhythm line', tabBlocks(t)[0].events === undefined);
+
+  const tab = 'e|-------|-------|\nB|-------|-------|\nE|1-2-3-4|5-6-7-8|\n  q q q q q q q q';
+  const b = tabBlocks(tab)[0];
+  ok('rhythm: a last line of rhythm letters gives the block exact events', !!b.events && b.events.length === 8 && b.width === 32);
+  ok('rhythm: events sit at the note columns, four sixteenths per quarter', b.events!.map((e) => e.col).join() === '2,4,6,8,10,12,14,16' && b.events!.map((e) => e.u).join() === '0,4,8,12,16,20,24,28');
+  ok('rhythm: the cursor sweeps evenly through a quarter note', coordToPlace([b], 2)?.col === 3 && coordToPlace([b], 8)?.col === 6);
+  ok('rhythm: the cursor crosses a bar line at the speed of the notes', coordToPlace([b], 14)?.col === 8 + (2 / 4) * 2);
+
+  // uneven lengths: eighth, eighth, quarter, half in one bar (16 sixteenths)
+  const uneven = tabBlocks('e|-------|\nE|1-2-3-4|\n  e e q h')[0];
+  ok('rhythm: uneven lengths put each note at its exact time', uneven.events!.map((e) => e.u).join() === '0,2,4,8' && uneven.width === 16);
+  ok('rhythm: half way through the long note is half way to the next column', coordToPlace([uneven], 10)?.col === 8 + (2 / 8) * (uneven.chars - 8));
+  ok('rhythm: a tap on the first column of the bar is time 0, and on the 4th note is 8', offsetToCoord('e|-------|\nE|1-2-3-4|\n  e e q h', [uneven], 11 + 8) === 8);
+
+  // rests: an upper-case letter with no note under it takes time
+  const rest = tabBlocks('e|-------|\nE|1---2--|\n  q Q q')[0];
+  ok('rhythm: an upper-case letter is a rest that takes its time', rest.events!.length === 3 && rest.events![1].rest && rest.events![2].u === 8);
+
+  // one letter repeats for the notes that follow
+  const inherit = tabBlocks('e|-------|\nE|1-2-3-4|\n  e')[0];
+  ok('rhythm: notes with no letter repeat the last length', inherit.events!.map((e) => e.d).join() === '2,2,2,2');
+
+  // dotted
+  const dotted = tabBlocks('e|-----|\nE|1---2|\n  q. e')[0];
+  ok('rhythm: a dot makes the note half as long again', dotted.events![0].d === 6 && dotted.events![1].u === 6);
+
+  // parsing to notes
+  const notes = parseTab('e|0---|\nB|----|\nG|----|\nD|----|\nA|----|\nE|--3-|');
+  ok('parse: notes get standard-tuning pitches', notes.length === 2 && notes[0].midi === 64 && notes[1].midi === 43);
+  const bendNotes = parseTab('e|-7b9-|\nB|-----|\nG|-----|\nD|-----|\nA|-----|\nE|-----|');
+  ok('parse: a bend is one note at its starting fret', bendNotes.length === 1 && bendNotes[0].fret === 7 && bendNotes[0].midi === 71);
+  const two = parseTab('e|-12-|\nB|----|\nG|----|\nD|----|\nA|----|\nE|----|');
+  ok('parse: a two-digit fret is read whole', two.length === 1 && two[0].fret === 12);
+  const timed = parseTab('e|0-0-|\nB|----|\nG|----|\nD|----|\nA|----|\nE|----|\n  q q');
+  ok('parse: a rhythm line gives each note its length', timed.length === 2 && timed[0].length === 4 && timed[1].start === 4);
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

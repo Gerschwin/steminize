@@ -19,6 +19,7 @@ import {
   coordToPlace,
   coordToStripX,
   isLockedAt,
+  isRhythmRow,
   MIN_ANCHORS,
   moveAnchor,
   removeAnchor,
@@ -260,7 +261,7 @@ function extendTabText(text: string, template: string, addChars = 16) {
   const pad = (line: string, len: number, ch: string) => (line.endsWith('|') ? `${line.slice(0, -1)}${ch.repeat(len)}|` : line + ch.repeat(len));
   return lines
     .map((line, i) => {
-      if (i >= templateLines.length) return line.trim() ? pad(line, addChars, '-') : line;
+      if (i >= templateLines.length) return line.trim() && !isRhythmRow(line) ? pad(line, addChars, '-') : line; // (a rhythm line has no dashes to extend)
       if (line.length < maxLen) line = pad(line, maxLen - line.length, '-');
       return pad(line, addChars, '-');
     })
@@ -1748,6 +1749,48 @@ export class Deck {
       this.updateTabView();
       this.emit();
     };
+    // "Add rhythm line": a line under each block of strings for note lengths (see tabSync.ts). Taps are
+    // positions in the text, so each insertion shifts the taps after it by the length of what went in.
+    $('tabRhythmBtn').onclick = () => {
+      const text = areas.tab.value;
+      const lines = text.split('\n');
+      const blocks = tabBlocks(text);
+      const starts: number[] = [];
+      let at = 0;
+      for (const l of lines) {
+        starts.push(at);
+        at += l.length + 1;
+      }
+      let anchors = this.scratch.tabAnchors ?? [];
+      let added = 0;
+      for (const b of [...blocks].reverse()) {
+        if (b.rhythmRow !== undefined) continue;
+        let col = b.label;
+        for (let c = b.label; c < b.chars; c++) {
+          if (lines.slice(b.firstRow, b.lastRow + 1).some((r) => /[0-9xX]/.test(r[c] ?? ''))) {
+            col = c;
+            break;
+          }
+        }
+        const line = ' '.repeat(col) + 'e';
+        lines.splice(b.lastRow + 1, 0, line);
+        const insertAt = b.lastRow + 1 < starts.length ? starts[b.lastRow + 1] : text.length + 1;
+        const grew = line.length + 1;
+        anchors = anchors.map((a) => (a.charOffset >= insertAt ? { ...a, charOffset: a.charOffset + grew } : a));
+        added++;
+      }
+      if (!added) {
+        toast('Every block already has a rhythm line.');
+        return;
+      }
+      const pos = areas.tab.selectionStart;
+      areas.tab.value = lines.join('\n');
+      areas.tab.setSelectionRange(pos, pos);
+      this.scratch.tabAnchors = anchors;
+      areas.tab.dispatchEvent(new Event('input'));
+      this.updateTabView();
+      toast('Rhythm line added. Put q, e, s… under each note; a note with no letter repeats the last one.');
+    };
     $('tabTapLockBtn').onclick = () => {
       if (this.selectedTap === null) return;
       this.scratch.tabAnchors = toggleAnchorLock(this.scratch.tabAnchors ?? [], this.selectedTap);
@@ -1846,6 +1889,7 @@ export class Deck {
     const canFollow = anchors.length >= MIN_ANCHORS;
     const follow = canFollow && !!this.scratch.tabFollow;
     $('tabTapBtn').hidden = !onTab;
+    $('tabRhythmBtn').hidden = !onTab;
     const count = $('tabAnchorCount');
     count.hidden = !onTab || anchors.length === 0;
     if (!count.hidden) count.textContent = `${anchors.length} tap${anchors.length === 1 ? '' : 's'} set`;

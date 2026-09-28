@@ -392,6 +392,7 @@
                     <button class="btn tiny ghost" type="button" id="lyricsLater" title="Show the lyrics a little later">+</button>
                   </span>
                   <button class="btn tiny ghost" type="button" id="tabExtendBtn" title="Add more bars to every line, still lined up (or just press Tab in the box)">Extend line</button>
+                  <button class="btn tiny ghost" type="button" id="tabRhythmBtn" title="Add a rhythm line under each block of strings. Put a letter under each note for how long it lasts: w whole, h half, q quarter, e eighth, s sixteenth (add a dot for dotted; capital letter = a rest). A note with no letter repeats the last one. Timing then follows the rhythm exactly.">Add rhythm line</button>
                   <button class="btn tiny ghost" type="button" id="tabTapBtn" hidden title="Tap this in time with the music to mark where the cursor is right now — a few taps per song is enough to follow along (keyboard: Ctrl/⌘+Enter while the cursor is in the tab)">Tap ⏱</button>
                   <span class="muted small" id="tabAnchorCount" hidden></span>
                   <button class="btn tiny ghost toggle" type="button" id="tabFollowBtn" aria-pressed="false" hidden title="Show the tab as a follow-along view that scrolls to where you're tapped in">Follow along</button>
@@ -580,6 +581,7 @@
           <div class="kb-row"><kbd>Shift</kbd>+drag<span>Pick a loop section instead of scrubbing</span></div>
           <div class="kb-row"><kbd>Ctrl</kbd>/<kbd>⌘</kbd><kbd>Enter</kbd><span>In the Scratchpad's Tab box: tap the current playback time onto the text cursor (same as Tap ⏱)</span></div>
           <div class="kb-row"><kbd>Delete</kbd><span>Remove the selected tab tap (click its green T-tag on the overview first; drag a tag to move it, Lock to protect it)</span></div>
+          <div class="kb-row"><kbd>q</kbd><kbd>e</kbd><kbd>s</kbd><span>Tab rhythm line (last line under the strings): w whole, h half, q quarter, e eighth, s sixteenth, a dot after = dotted, CAPITAL = rest. Set with "Add rhythm line".</span></div>
           <div class="kb-row"><kbd>Ctrl</kbd>/<kbd>⌘</kbd><kbd>Z</kbd><span>Undo the last mixer change (mute, solo, volume, pan, EQ)</span></div>
           <div class="kb-row"><kbd>Ctrl</kbd>/<kbd>⌘</kbd><kbd>Shift</kbd><kbd>Z</kbd><span>Redo</span></div>
         </div>
