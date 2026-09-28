@@ -23,6 +23,7 @@ import { writeMidi } from '../src/encode/midi.ts';
 import { detectPitch, freqToNote } from '../src/analysis/pitch.ts';
 import { isNewer, parseVersion } from '../src/version.ts';
 import { lineAt, parseLrc } from '../src/lyrics/lrc.ts';
+import { addAnchor, charOffsetAt, rowCol, type TabAnchor } from '../src/lyrics/tabSync.ts';
 import { moveItem, nextSong, parseSetlists, prevSong, pruneSongs, totalSeconds, uniqueName, type Setlist } from '../src/setlists.ts';
 import { detectLatency } from '../src/player/latency.ts';
 import { placeTake } from '../src/player/placement.ts';
@@ -553,6 +554,38 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('lineAt: between lines', lineAt(L, 14.99) === 0 && lineAt(L, 60) === 1);
   ok('lineAt: after the last line', lineAt(L, 9999) === 2);
   ok('lineAt: empty', lineAt([], 3) === -1);
+}
+
+
+// ---- tab+ (Scratchpad tab timing)
+{
+  let a: TabAnchor[] = [];
+  a = addAnchor(a, { charOffset: 20, time: 5 });
+  a = addAnchor(a, { charOffset: 0, time: 0 });
+  ok('tabSync: addAnchor keeps anchors sorted by charOffset', a.map((x) => x.charOffset).join() === '0,20');
+  a = addAnchor(a, { charOffset: 0, time: 1 });
+  ok('tabSync: re-tapping the same charOffset replaces its time, not a duplicate', a.length === 2 && a[0].time === 1);
+
+  ok('tabSync: fewer than 2 anchors interpolates to null', charOffsetAt([], 5) === null && charOffsetAt([{ charOffset: 0, time: 0 }], 5) === null);
+  const two: TabAnchor[] = [{ charOffset: 0, time: 0 }, { charOffset: 40, time: 4 }];
+  ok('tabSync: clamps before the first anchor', charOffsetAt(two, -5) === 0);
+  ok('tabSync: clamps after the last anchor', charOffsetAt(two, 999) === 40);
+  ok('tabSync: linear interpolation between two anchors', charOffsetAt(two, 1) === 10 && charOffsetAt(two, 2) === 20);
+  const three: TabAnchor[] = [{ charOffset: 0, time: 0 }, { charOffset: 10, time: 1 }, { charOffset: 50, time: 5 }];
+  ok('tabSync: interpolates within the right pair of three+ anchors', charOffsetAt(three, 3) === 30);
+  const unsorted: TabAnchor[] = [{ charOffset: 40, time: 4 }, { charOffset: 0, time: 0 }];
+  ok('tabSync: works even if anchors are not passed in time order', charOffsetAt(unsorted, 2) === 20);
+  const sameTime: TabAnchor[] = [{ charOffset: 0, time: 2 }, { charOffset: 10, time: 2 }];
+  ok('tabSync: two anchors at the same time do not divide by zero', charOffsetAt(sameTime, 2) === 0);
+
+  const text = 'e|----3----|\nB|----0----|\nsecond block here';
+  ok('tabSync: rowCol at the very start', JSON.stringify(rowCol(text, 0)) === JSON.stringify({ row: 0, col: 0 }));
+  ok('tabSync: rowCol within the first line', JSON.stringify(rowCol(text, 5)) === JSON.stringify({ row: 0, col: 5 }));
+  const nl = text.indexOf('\n');
+  ok('tabSync: rowCol right after a newline starts the next row at col 0', JSON.stringify(rowCol(text, nl + 1)) === JSON.stringify({ row: 1, col: 0 }));
+  ok('tabSync: rowCol carries a fractional offset into a fractional column', rowCol(text, 5.5).col === 5.5);
+  ok('tabSync: rowCol clamps to the end of the text', rowCol(text, 9999).row === 2);
+  ok('tabSync: rowCol clamps negative offsets to the start', JSON.stringify(rowCol(text, -10)) === JSON.stringify({ row: 0, col: 0 }));
 }
 
 

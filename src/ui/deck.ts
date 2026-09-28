@@ -12,6 +12,7 @@ import { openSink, safeName, saveFile } from '../platform.ts';
 import { MAX_REC_LATENCY_MS, loadRecLatencyMs, saveRecLatencyMs, type Settings } from '../settings.ts';
 import { placeTake } from '../player/placement.ts';
 import { lineAt, parseLrc, type Lrc } from '../lyrics/lrc.ts';
+import { addAnchor, charOffsetAt, MIN_ANCHORS, rowCol, type TabAnchor } from '../lyrics/tabSync.ts';
 import { FLAT, isFlat, sameEq, type EqParams } from '../player/eq.ts';
 import { eqPanel, type EqPanel } from './eqPanel.ts';
 import { $, fitCanvas, fmtDuration, fmtTime, h, pressed, toast } from './dom.ts';
@@ -95,6 +96,11 @@ export interface ScratchState {
   /** Seconds added to every synced lyric's time, to line up a file made for a different recording. */
   lyricsOffset?: number;
   tab?: string;
+  /** Tab+ timing: character-offset-into-tab anchors tapped in while playing, for the follow-along
+   * view to interpolate a scroll position between (see src/lyrics/tabSync.ts). */
+  tabAnchors?: TabAnchor[];
+  /** Show the Tab pane as a follow-along view rather than the raw editable text. */
+  tabFollow?: boolean;
   drums?: string;
   notes?: string;
 }
@@ -338,6 +344,10 @@ export class Deck {
   private lrc: Lrc | null = null;
   private lyricEls: HTMLElement[] = [];
   private lyricIdx = -2;
+  /** Rounded row/col last drawn for the tab+ cursor, so updateTabFollow() skips redundant work
+   * (every frame while playing) once it hasn't actually moved a full character. */
+  private lastTabRowCol: { row: number; col: number } | null = null;
+  private tabCharMetrics: { w: number; h: number } | null = null;
   private scratchAreas!: { lyrics: HTMLTextAreaElement; tab: HTMLTextAreaElement; drums: HTMLTextAreaElement; notes: HTMLTextAreaElement };
   // ---- a live recording being drawn in as its own track while it's captured ----
   private recordLane: Lane | null = null;
@@ -1578,6 +1588,7 @@ export class Deck {
       // the pane isn't actually visible yet (e.g. this initial call, before a song is open).
       this.scratchTab = name;
       this.updateLyricsView();
+      this.updateTabView();
       if (!areas[name].hidden) areas[name].focus();
     };
     for (const k of Object.keys(tabBtns) as (keyof typeof tabBtns)[]) tabBtns[k].onclick = () => show(k);
@@ -1640,7 +1651,32 @@ export class Deck {
     $('lyricsLater').onclick = () => nudge(0.2);
     areas.tab.oninput = () => {
       this.scratch.tab = areas.tab.value;
+      $('tabFollowText').textContent = areas.tab.value;
+      this.lastTabRowCol = null; // positions may have shifted; redraw the cursor fresh next tick
       this.updateScratchSummary();
+      this.emit();
+    };
+    // Tab+ : tap along with the music to mark where the text cursor is right now, then follow
+    // along scrolls/highlights by interpolating between those taps (see src/lyrics/tabSync.ts).
+    $('tabTapBtn').onmousedown = (e) => e.preventDefault(); // keep focus (and the cursor position) on the textarea
+    $('tabTapBtn').onclick = () => {
+      const charOffset = areas.tab.selectionStart;
+      const time = this.player.state.pos / SR;
+      this.scratch.tabAnchors = addAnchor(this.scratch.tabAnchors ?? [], { charOffset, time });
+      this.updateTabView();
+      this.emit();
+    };
+    $('tabFollowBtn').onclick = () => {
+      this.scratch.tabFollow = !this.scratch.tabFollow;
+      this.updateTabView();
+      this.emit();
+    };
+    $('tabClearAnchorsBtn').onclick = () => {
+      if (!confirm("Clear this tab's timing? You'll need to tap it back in.")) return;
+      this.scratch.tabAnchors = [];
+      this.scratch.tabFollow = false;
+      this.lastTabRowCol = null;
+      this.updateTabView();
       this.emit();
     };
     areas.drums.oninput = () => {
@@ -1659,6 +1695,8 @@ export class Deck {
     this.scratch = { lyrics: s?.lyrics ?? '', tab: s?.tab ?? '', drums: s?.drums ?? '', notes: s?.notes ?? '' };
     if (s?.lyricsFollow) this.scratch.lyricsFollow = true;
     if (s?.lyricsOffset) this.scratch.lyricsOffset = s.lyricsOffset;
+    if (s?.tabAnchors?.length) this.scratch.tabAnchors = s.tabAnchors;
+    if (s?.tabFollow) this.scratch.tabFollow = true;
     this.scratchAreas.lyrics.value = this.scratch.lyrics ?? '';
     this.setLyricsText(this.scratch.lyrics ?? '');
     // Tab/Drum tab start with the blank string/beat template actually typed in (not just a
@@ -1668,6 +1706,9 @@ export class Deck {
     this.scratchAreas.tab.value = this.scratch.tab || this.scratchAreas.tab.placeholder;
     this.scratchAreas.drums.value = this.scratch.drums || this.scratchAreas.drums.placeholder;
     this.scratchAreas.notes.value = this.scratch.notes ?? '';
+    $('tabFollowText').textContent = this.scratchAreas.tab.value;
+    this.lastTabRowCol = null;
+    this.updateTabView();
     this.updateScratchSummary();
   }
 
@@ -1719,6 +1760,83 @@ export class Deck {
     const el = this.lyricEls[idx];
     // Scroll the lyrics box itself, not the page, so the rest of the deck doesn't jump around.
     if (el) box.scrollTo({ top: el.offsetTop - box.clientHeight / 2 + el.clientHeight / 2, behavior: 'smooth' });
+  }
+
+  /** Shows the raw text box or the follow-along view, and the controls that go with it, for the Tab pane. */
+  private updateTabView() {
+    const onTab = this.scratchTab === 'tab';
+    const anchors = this.scratch.tabAnchors ?? [];
+    const canFollow = anchors.length >= MIN_ANCHORS;
+    const follow = canFollow && !!this.scratch.tabFollow;
+    $('tabTapBtn').hidden = !onTab;
+    const count = $('tabAnchorCount');
+    count.hidden = !onTab || anchors.length === 0;
+    if (!count.hidden) count.textContent = `${anchors.length} tap${anchors.length === 1 ? '' : 's'} set`;
+    $('tabFollowBtn').hidden = !(onTab && canFollow);
+    pressed($('tabFollowBtn'), follow);
+    $('tabClearAnchorsBtn').hidden = !(onTab && anchors.length > 0);
+    $('tabFollow').hidden = !(onTab && follow);
+    this.scratchAreas.tab.hidden = !onTab || follow;
+    this.lastTabRowCol = null; // (re)place the cursor on the next frame, even while paused
+    this.dirty = true;
+  }
+
+  /** One monospace character's pixel size in the tab follow-along view, measured once and cached —
+   * the font is a fixed size (not responsive), so this doesn't need to be redone per song or per
+   * frame, just the first time it's actually needed. */
+  private measureTabChar(): { w: number; h: number } {
+    if (this.tabCharMetrics) return this.tabCharMetrics;
+    const cs = getComputedStyle($('tabFollowText'));
+    const ctx = document.createElement('canvas').getContext('2d')!;
+    ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    const w = ctx.measureText('0').width || 8;
+    const h = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.5;
+    this.tabCharMetrics = { w, h };
+    return this.tabCharMetrics;
+  }
+
+  /** Moves the tab+ cursor to where playback is, interpolated between tapped anchors, and scrolls
+   * it into view. Called every frame like updateLyricsFollow, but cheaper per call (no classList
+   * work across every line), so it doesn't need that one's "only touch the page on a real change"
+   * guard beyond skipping redundant scrollTo calls. */
+  private updateTabFollow(pos: number) {
+    const box = $('tabFollow');
+    const cursor = $('tabFollowCursor');
+    if (box.hidden) return;
+    const charOffset = charOffsetAt(this.scratch.tabAnchors ?? [], pos / SR);
+    if (charOffset === null) {
+      cursor.hidden = true;
+      return;
+    }
+    // The text box's own value, not scratch.tab: an untouched song shows the placeholder template there.
+    const text = this.scratchAreas.tab.value;
+    const { row, col } = rowCol(text, charOffset);
+    const rounded = { row, col: Math.round(col) };
+    if (this.lastTabRowCol && rounded.row === this.lastTabRowCol.row && rounded.col === this.lastTabRowCol.col) return;
+    this.lastTabRowCol = rounded;
+    const { w, h } = this.measureTabChar();
+    cursor.hidden = false;
+    cursor.style.width = `${w}px`;
+    // Highlight the whole stacked block (the run of non-blank lines, i.e. all six strings), not just
+    // the one line the tap happened to land on, so it reads as "this beat" across every string.
+    const lines = text.split('\n');
+    let first = row;
+    let last = row;
+    while (first > 0 && lines[first - 1].trim()) first--;
+    while (last < lines.length - 1 && lines[last + 1].trim()) last++;
+    cursor.style.height = `${(last - first + 1) * h}px`;
+    cursor.style.transform = `translate(${col * w}px, ${first * h}px)`;
+    // Only scroll once the cursor nears an edge, not every frame — a continuous sweep across a bar
+    // shouldn't fight a constantly-restarting recentring animation.
+    const x = col * w;
+    const y = first * h;
+    const xMargin = Math.min(80, box.clientWidth / 4);
+    const yMargin = h * 2;
+    let left: number | undefined;
+    let top: number | undefined;
+    if (x < box.scrollLeft + xMargin || x > box.scrollLeft + box.clientWidth - xMargin) left = Math.max(0, x - box.clientWidth / 2);
+    if (y < box.scrollTop + yMargin || y > box.scrollTop + box.clientHeight - yMargin) top = Math.max(0, y - box.clientHeight / 2);
+    if (left !== undefined || top !== undefined) box.scrollTo({ left, top, behavior: 'smooth' });
   }
 
   private updateScratchSummary() {
@@ -2738,6 +2856,7 @@ export class Deck {
     const pos = this.player.state.pos;
     $('timeNow').textContent = fmtTime(pos / SR);
     this.updateLyricsFollow(pos);
+    this.updateTabFollow(pos);
     // Keep the playhead in view while zoomed in.
     const span = this.view.end - this.view.start;
     if (this.player.state.playing && span < this.length - 1 && (pos > this.view.end || pos < this.view.start)) this.setView(pos - span * 0.1, pos + span * 0.9);

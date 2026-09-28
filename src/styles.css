@@ -671,6 +671,16 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
 .lyric-line.past { opacity: 0.55; }
 .lyric-line.current { color: var(--text); font-weight: 700; font-size: 20px; }
 
+/* ---------- tab+ (synced tab follow-along) ---------- */
+/* white-space:normal on the box (its .scratch-area.mono class sets pre): otherwise the whitespace between
+   its child elements in the HTML source renders as stray blank lines above the text. */
+.scratch-area.tab-follow { position: relative; max-height: 260px; overflow: auto; scroll-behavior: smooth; white-space: normal; }
+.tab-follow-text { margin: 0; font: inherit; white-space: pre; }
+/* Positioned with transform (updated in JS as row/col, in char-width/line-height units), not
+   left/top — cheaper to animate, and keeps the positioning math in one place (deck.ts) rather than
+   split between JS-computed pixels and CSS. Width/height set once from the measured font metrics. */
+.tab-follow-cursor { position: absolute; top: 10px; left: 12px; /* = .scratch-area padding */ background: var(--accent); opacity: 0.35; border-radius: 2px; pointer-events: none; transition: transform 0.1s linear; }
+
 .about-support .btn { display: inline-block; text-decoration: none; margin-top: 4px; }
 .about-update { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0 0 8px; }
 .about-update a { color: var(--accent-2); }
