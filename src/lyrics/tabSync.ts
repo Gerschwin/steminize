@@ -63,14 +63,33 @@ export function rowCol(text: string, charOffset: number): { row: number; col: nu
 // the cursor across the block six times over. What matters is the *column* — how far along the music
 // you are — regardless of which string row you clicked. So the text is treated as a row of blocks
 // (runs of non-blank lines) laid end to end, and every position is a single column coordinate.
+//
+// Not every column is time, though: the row label ("e|"), bar lines and the second digit of a
+// two-digit fret take space on the page but no time in the music. Those columns are zero-width in
+// the coordinate, so the highlight doesn't dawdle across them. (What can't be known from the text is
+// a note that is held longer than its spacing suggests; taps in between correct for that.)
 
 export interface TabBlock {
   firstRow: number;
   lastRow: number;
-  /** Column coordinate where this block starts (the widths of the blocks before it, summed). */
+  /** Time-coordinate where this block starts (the widths of the blocks before it, summed). */
   start: number;
-  /** Width of its longest row. */
+  /** Time-width of the block (its columns that count as time). */
   width: number;
+  /** Visual columns in the block (its longest row). */
+  chars: number;
+  /** cum[j] = time-coordinate at visual column j, for j = 0..chars. */
+  cum: number[];
+  /** counts[j] = whether visual column j is a time column. */
+  counts: boolean[];
+}
+
+const isDigit = (c: string | undefined) => c !== undefined && c >= '0' && c <= '9';
+
+/** Length of a row's label, i.e. up to and including the first '|' when only a short string name precedes it. */
+function labelLength(line: string): number {
+  const p = line.indexOf('|');
+  return p >= 0 && p <= 3 && /^[A-Za-z#0-9 ]*$/.test(line.slice(0, p)) ? p + 1 : 0;
 }
 
 export function tabBlocks(text: string): TabBlock[] {
@@ -83,32 +102,52 @@ export function tabBlocks(text: string): TabBlock[] {
       continue;
     }
     let j = i;
-    let width = 0;
-    while (j < lines.length && lines[j].trim()) width = Math.max(width, lines[j++].length);
-    blocks.push({ firstRow: i, lastRow: j - 1, start, width });
+    while (j < lines.length && lines[j].trim()) j++;
+    const rows = lines.slice(i, j);
+    const chars = Math.max(...rows.map((r) => r.length));
+    const label = Math.max(...rows.map(labelLength));
+    const counts: boolean[] = [];
+    for (let c = 0; c < chars; c++) {
+      const bar = rows.some((r) => r[c] === '|');
+      const continuation = rows.some((r) => isDigit(r[c]) && isDigit(r[c - 1]));
+      counts.push(c >= label && !bar && !continuation);
+    }
+    const cum = [0];
+    for (let c = 0; c < chars; c++) cum.push(cum[c] + (counts[c] ? 1 : 0));
+    const width = cum[chars];
+    blocks.push({ firstRow: i, lastRow: j - 1, start, width, chars, cum, counts });
     start += width;
     i = j;
   }
   return blocks;
 }
 
-/** The column coordinate of a character offset, whichever string row it is in. An offset in a blank
- * line snaps to the start of the next block (or the end of the last). Null if there is no tab at all. */
+/** The time-coordinate of a character offset, whichever string row it is in. An offset in a blank line
+ * snaps to the start of the next block (or the end of the last). Null if there is no tab at all. */
 export function offsetToCoord(text: string, blocks: TabBlock[], charOffset: number): number | null {
   if (!blocks.length) return null;
   const { row, col } = rowCol(text, charOffset);
   const b = blocks.find((k) => row <= k.lastRow);
   if (!b) return blocks[blocks.length - 1].start + blocks[blocks.length - 1].width;
   if (row < b.firstRow) return b.start;
-  return b.start + Math.min(col, b.width);
+  const j = Math.min(b.chars, Math.floor(col));
+  return b.start + b.cum[j] + (j < b.chars && b.counts[j] ? col - j : 0);
 }
 
-/** Where a column coordinate sits: which block (as its first/last rows) and how far across it. */
+/** Where a time-coordinate sits: which block (as its first/last rows) and how far across it, in
+ * visual columns (so it can be drawn where it belongs on the page, skipping bar lines and labels). */
 export function coordToPlace(blocks: TabBlock[], coord: number): { firstRow: number; lastRow: number; col: number } | null {
   if (!blocks.length) return null;
   const c = Math.max(0, coord);
   const b = blocks.find((k) => c < k.start + k.width) ?? blocks[blocks.length - 1];
-  return { firstRow: b.firstRow, lastRow: b.lastRow, col: Math.min(b.width, c - b.start) };
+  const local = Math.min(b.width, c - b.start);
+  for (let j = 0; j < b.chars; j++) {
+    if (b.counts[j] && local >= b.cum[j] && local < b.cum[j] + 1) return { firstRow: b.firstRow, lastRow: b.lastRow, col: j + (local - b.cum[j]) };
+  }
+  // At (or past) the very end of the block: just after its last time column.
+  let last = b.chars - 1;
+  while (last > 0 && !b.counts[last]) last--;
+  return { firstRow: b.firstRow, lastRow: b.lastRow, col: last + 1 };
 }
 
 /** Everything together: where in the tab is time `t`, given the taps. Null with too few taps or no tab. */
