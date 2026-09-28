@@ -48,6 +48,24 @@ export const fmtMB = (b: number) => (b >= 1e9 ? `${(b / 1024 ** 3).toFixed(2)} G
 
 export const pressed = (el: Element, on: boolean) => el.setAttribute('aria-pressed', String(on));
 
+/** Keeps a wheel/trackpad scroll over `el` from reaching whatever scrolls behind it — not just once
+ * el's own content is scrolled to an edge (overscroll-behavior already covers that), but also when
+ * el has nothing to scroll at all (too few items to overflow its own box), where there's no scroll
+ * position for overscroll-behavior to "contain": the browser just hands the gesture straight to the
+ * next scrollable ancestor. Swallows the tick instead, so scrolling over el never moves its parent;
+ * only scrolling outside el's own bounds does. */
+export function containScroll(el: HTMLElement) {
+  el.addEventListener(
+    'wheel',
+    (e) => {
+      const atTop = el.scrollTop <= 0;
+      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+      if ((e.deltaY < 0 && atTop) || (e.deltaY > 0 && atBottom)) e.preventDefault();
+    },
+    { passive: false },
+  );
+}
+
 /**
  * showModal() traps focus and clicks on the backdrop, but not the mouse wheel: the page behind
  * a dialog can still scroll unless something locks it. Use this instead of calling showModal()

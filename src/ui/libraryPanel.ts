@@ -3,7 +3,7 @@ import { addTake, deleteSong, exportLibrary, importLibrary, libraryAvailable, li
 import { saveFile } from '../platform.ts';
 import type { Deck, DeckState, Result } from './deck.ts';
 import type { KeyCandidate } from '../analysis/key.ts';
-import { $, fmtDuration, fmtMB, fmtTime, h, toast } from './dom.ts';
+import { $, containScroll, fmtDuration, fmtMB, fmtTime, h, toast } from './dom.ts';
 
 const pref = (k: string, d: string) => {
   try {
@@ -39,6 +39,7 @@ async function analyse(r: Result): Promise<Analysis & Onsets> {
 export function initLibrary(deck: Deck) {
   const metas = new Map<string, LibMeta>();
   const list = $('libList');
+  containScroll(list);
   const autoSave = $<HTMLInputElement>('autoSave');
   autoSave.checked = pref('steminize.autoSave', '1') === '1';
   autoSave.onchange = () => {

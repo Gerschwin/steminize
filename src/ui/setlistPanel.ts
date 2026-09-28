@@ -6,7 +6,7 @@ import { SR } from '../engine/separate.ts';
 import type { LibMeta } from '../library.ts';
 import { GAPS, loadSetlists, moveItem, newSetlist, nextSong, prevSong, pruneSongs, saveSetlists, totalSeconds, uniqueName, type Setlist } from '../setlists.ts';
 import type { Deck, DeckState } from './deck.ts';
-import { $, fmtTime, h, toast } from './dom.ts';
+import { $, containScroll, fmtTime, h, toast } from './dom.ts';
 import { createDropdown } from './dropdown.ts';
 import type { initLibrary } from './libraryPanel.ts';
 
@@ -41,6 +41,7 @@ export function initSetlists(deck: Deck, library: Library) {
   };
   const select = mount('slSelect', createDropdown());
   const listEl = $('slList');
+  containScroll(listEl);
   const info = $('slInfo');
   const addRow = $('slAddRow');
   const addSel = mount('slAdd', createDropdown());
