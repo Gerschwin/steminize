@@ -422,7 +422,10 @@ export interface StripLayout {
  * labels to the first note and out past the last one. Bar numbers count up through the whole tab. */
 export function stripLayout(text: string, blocks: TabBlock[], pad = 0): StripLayout {
   const lines = text.split('\n');
-  const nRows = blocks.length ? Math.max(...blocks.map((b) => b.lastRow - b.firstRow + 1)) : 0;
+  // A block's rhythm line (if it has one) is annotation, not a string, so it doesn't get a row here —
+  // the strip only ever shows the strings, same as it would with no rhythm line at all.
+  const stringRows = (b: TabBlock) => (b.rhythmRow !== undefined ? b.rhythmRow : b.lastRow + 1) - b.firstRow;
+  const nRows = blocks.length ? Math.max(...blocks.map(stringRows)) : 0;
   const labels: string[] = [];
   const rows: string[] = [];
   const startOf: number[] = [];
@@ -433,7 +436,11 @@ export function stripLayout(text: string, blocks: TabBlock[], pad = 0): StripLay
   }
   for (let k = 0; k < nRows; k++) {
     labels.push(blocks.length ? (lines[blocks[0].firstRow + k] ?? '').padEnd(blocks[0].label).slice(0, blocks[0].label) : '');
-    rows.push('-'.repeat(pad) + blocks.map((b) => (lines[b.firstRow + k] ?? '').padEnd(b.chars).slice(b.label)).join('') + '-'.repeat(pad));
+    rows.push(
+      '-'.repeat(pad) +
+        blocks.map((b) => (k < stringRows(b) ? (lines[b.firstRow + k] ?? '').padEnd(b.chars).slice(b.label) : ' '.repeat(b.chars - b.label))).join('') +
+        '-'.repeat(pad),
+    );
   }
   const header = Array.from({ length: at + pad }, () => ' ');
   let n = 0;

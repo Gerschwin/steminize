@@ -680,6 +680,12 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('strip: crossing a bar line takes its share of the time, not a jump', coordToStripX(blocks, lay, 2.5) === 3);
   ok('strip: the next bar starts exactly on its first time column', coordToStripX(blocks, lay, 3) === 4);
   ok('strip: the second system continues from the first', coordToStripX(blocks, lay, 6) === 8);
+  const rhy = 'e|-1-2-|\nB|-----|\n  q q';
+  const rhyBlocks = tabBlocks(rhy);
+  const rhyStrip = stripLayout(rhy, rhyBlocks);
+  ok('strip: the rhythm line is annotation, not a string, so it gets no row of its own', rhyStrip.rows.length === 2);
+  ok('strip: its letters do not leak into the tab that is shown', !rhyStrip.rows.join('').match(/[qhwse]/i));
+
   const padded = stripLayout(text, blocks, 5);
   ok('strip: padding runs the strings on before and after, and shifts every position', padded.rows[0] === '-----' + lay.rows[0] + '-----' && padded.startOf.join() === '5,13' && coordToStripX(blocks, padded, 0) === 5);
   ok('strip: bar numbers sit at each bar start and count through every system', lay.header.trimEnd() === '1   2   3   4' && padded.header.slice(5).trimEnd() === '1   2   3   4');
