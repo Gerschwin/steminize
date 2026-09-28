@@ -25,6 +25,9 @@ import { detectPitch, freqToNote } from '../analysis/pitch.ts';
 
 const SR = 44100;
 
+/** Tab-tap ticks and tags on the waveforms: distinct from the loop (cyan), section markers (amber) and the played colour. */
+const TAB_TAP_COLOUR = '#34d399';
+
 export interface Result {
   title: string;
   stems: { name: string; data: Stereo }[];
@@ -2907,8 +2910,44 @@ export class Deck {
       if (mx < -1 || mx > w + 1) continue;
       g.fillRect(Math.round(mx), 0, Math.max(1, devicePixelRatio), hh);
     }
+    // Tab taps (tab+): a short green tick up from the bottom edge, so where the tab is pinned to the
+    // recording shows on every waveform.
+    const taps = this.scratch.tabAnchors;
+    if (taps?.length) {
+      g.fillStyle = TAB_TAP_COLOUR;
+      for (const a of taps) {
+        const tx = x(a.time * SR);
+        if (tx < -1 || tx > w + 1) continue;
+        g.fillRect(Math.round(tx), Math.round(hh * 0.62), Math.max(2, devicePixelRatio * 1.5), Math.ceil(hh * 0.38));
+      }
+    }
     g.fillStyle = getComputedStyle(document.body).color;
     g.fillRect(Math.round(px), 0, Math.max(1, devicePixelRatio), hh);
+  }
+
+  /** Numbered tags for the tab taps along the top of the overview. The number is the tap's place
+   * in the tab (1 = earliest in the text), not in time, so a tap made on a later loop pass still
+   * reads as the part of the tab it belongs to. */
+  private drawTabTapLabels(c: HTMLCanvasElement) {
+    const taps = this.scratch.tabAnchors;
+    if (!taps?.length) return;
+    const g = c.getContext('2d')!;
+    const w = c.width;
+    const dpr = devicePixelRatio || 1;
+    g.font = `600 ${10 * dpr}px system-ui, sans-serif`;
+    g.textBaseline = 'top';
+    const span = this.view.end - this.view.start;
+    taps.forEach((a, i) => {
+      const tx = ((a.time * SR - this.view.start) / span) * w;
+      if (tx < -40 * dpr || tx > w) return;
+      const label = `T${i + 1}`;
+      const tw = g.measureText(label).width + 6 * dpr;
+      const y = this.markers.length ? 15 * dpr : 0; // just under any section-marker names, clear of the zoom buttons at the bottom right
+      g.fillStyle = TAB_TAP_COLOUR;
+      g.fillRect(tx, y, tw, 13 * dpr);
+      g.fillStyle = '#111';
+      g.fillText(label, tx + 3 * dpr, y + 1.5 * dpr);
+    });
   }
 
   /** Marker names on the overview. */
@@ -2958,6 +2997,7 @@ export class Deck {
     this.drawStrip(ov, this.overviewLayers, pos, true);
     this.drawBars(ov);
     this.drawMarkerLabels(ov);
+    this.drawTabTapLabels(ov);
     for (const l of this.lanes) {
       fitCanvas(l.canvas);
       const view = l.ownView ?? this.view;
