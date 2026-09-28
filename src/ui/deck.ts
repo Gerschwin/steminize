@@ -541,8 +541,8 @@ export class Deck {
       panGestureStart = lane.pan;
     };
     dl.onclick = () => this.saveStem(this.lanes.indexOf(lane));
-    // Click seeks; dragging across the lane marks a loop section, like the overview strip does
-    // (the section is marked but the loop is left off, so scanning for a part doesn't yank playback).
+    // Click seeks; dragging scrubs; Shift-dragging across the lane marks a loop section, like the
+    // overview strip does (the section is marked but the loop is left off, so it doesn't yank playback).
     // Mouse/pen only: on touch a drag has to keep scrolling the page.
     const laneFrame = (e: PointerEvent) => {
       const view = lane.ownView ?? this.view;
@@ -558,7 +558,7 @@ export class Deck {
       const { f, frame } = laneFrame(e);
       const view = lane.ownView ?? this.view;
       const edge = this.loopEdgeAt(f * wave.clientWidth, wave.clientWidth, view);
-      const scrub = !edge && !(e.ctrlKey || e.metaKey) && (e.shiftKey || this.onPlayhead(f * wave.clientWidth, wave.clientWidth, view));
+      const scrub = !edge && !e.shiftKey;
       laneDrag = { f0: f, frame0: frame, moved: false, edge: edge ?? undefined, scrub };
     });
     wave.addEventListener('pointermove', (e) => {
@@ -566,7 +566,7 @@ export class Deck {
       if (!laneDrag) {
         const view = lane.ownView ?? this.view;
         const px = f * wave.clientWidth;
-        wave.style.cursor = this.loopEdgeAt(px, wave.clientWidth, view) ? 'ew-resize' : this.onPlayhead(px, wave.clientWidth, view) ? 'col-resize' : '';
+        wave.style.cursor = this.loopEdgeAt(px, wave.clientWidth, view) ? 'ew-resize' : '';
         return;
       }
       if (laneDrag.scrub) {
@@ -1372,7 +1372,7 @@ export class Deck {
       const target = Number.isFinite(targetIdx) ? this.lanes[targetIdx] : undefined;
       const punch = punchBox.checked;
       if (punch && !(this.loop.b > this.loop.a)) {
-        toast('Punch-in needs a loop section: drag across the waveform, or use Set A and Set B.', true);
+        toast('Punch-in needs a loop section: Shift-drag across the waveform, or use Set A and Set B.', true);
         return;
       }
       void (async () => {
@@ -2427,12 +2427,6 @@ export class Deck {
     void this.player.scrubGrain(out);
   }
 
-  /** True when x is on the playhead line, so grabbing it scrubs instead of drawing a section. */
-  private onPlayhead(px: number, width: number, view: { start: number; end: number }): boolean {
-    const span = view.end - view.start || 1;
-    return width > 0 && Math.abs(px - ((this.player.state.pos - view.start) / span) * width) <= 7;
-  }
-
   /** Frame at a fraction across the visible (possibly zoomed) waveform. */
   private frameAt(f: number) {
     return this.view.start + f * (this.view.end - this.view.start);
@@ -2742,7 +2736,7 @@ export class Deck {
     $('loopInfo').textContent =
       this.loop.b > this.loop.a
         ? `${fmtTime(this.loop.a / SR)} – ${fmtTime(this.loop.b / SR)}${this.loop.on ? '' : ' (off)'}`
-        : 'Drag to pick a section · grab the playhead to scrub';
+        : 'Drag to scrub · Shift-drag to pick a section';
     this.dirty = true;
   }
 
@@ -2755,15 +2749,14 @@ export class Deck {
       wrap.setPointerCapture(e.pointerId);
       const px = frac(e) * wrap.clientWidth;
       const edge = this.loopEdgeAt(px, wrap.clientWidth, this.view);
-      // Grabbing the playhead itself (or holding Shift) scrubs: moves the playhead without drawing a section.
-      // Holding Ctrl/Cmd forces a section instead, e.g. to start one right on top of the playhead.
-      const scrub = !edge && !(e.ctrlKey || e.metaKey) && (e.shiftKey || this.onPlayhead(px, wrap.clientWidth, this.view));
+      // A plain drag scrubs (moves the playhead, no section); holding Shift draws a loop section instead.
+      const scrub = !edge && !e.shiftKey;
       this.drag = { x0: frac(e), moved: false, edge: edge ?? undefined, scrub };
     });
     wrap.addEventListener('pointermove', (e) => {
       if (!this.drag) {
         const px = frac(e) * wrap.clientWidth;
-        wrap.style.cursor = this.loopEdgeAt(px, wrap.clientWidth, this.view) ? 'ew-resize' : this.onPlayhead(px, wrap.clientWidth, this.view) ? 'col-resize' : '';
+        wrap.style.cursor = this.loopEdgeAt(px, wrap.clientWidth, this.view) ? 'ew-resize' : '';
         return;
       }
       const f = frac(e);
