@@ -260,8 +260,10 @@ body.dragging .drop { border-color: var(--accent); }
 .q-bar:has(> :not([hidden])) { margin-bottom: 8px; }
 /* Caps how tall the library (and setlist) list can grow before it scrolls internally, instead of
    growing unbounded and pushing everything below it — the Setlist card especially — further down
-   the left pane the more songs pile up. */
-.lib { max-height: 320px; overflow-y: auto; }
+   the left pane the more songs pile up. overflow-x:hidden avoids the same auto-on-both-axes trap
+   documented elsewhere in this file: setting only overflow-y makes a browser treat overflow-x as
+   auto too, and the .track fix above should mean there's nothing left to scroll to sideways anyway. */
+.lib { max-height: 320px; overflow-y: auto; overflow-x: hidden; }
 .lib .track { cursor: pointer; }
 .lib .track:hover { border-color: var(--line); }
 .lib .t-sub { color: var(--muted); }
@@ -270,13 +272,20 @@ body.dragging .drop { border-color: var(--accent); }
 .lanes-head { display: flex; justify-content: flex-end; margin-bottom: -8px; }
 .lanes:not(.show-pan) .mini.pan { display: none; }
 .track {
-  position: relative; display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center;
+  /* minmax(0, 1fr), not a bare 1fr: a grid track's automatic minimum size is its content's
+     min-content width, which for a nowrap/ellipsis title is its full unbroken text width — so
+     without this, a long title never actually shrinks, the row's natural width exceeds its
+     container once one's narrow enough (the library list's own scrollbar taking a few px was
+     enough to tip it over), and .track's own overflow:hidden below clips the excess — the ×/↑↓
+     buttons, since they come after the title. minmax(0, 1fr) lets the title's column actually
+     shrink to fit, so text-overflow:ellipsis kicks in instead of the row overflowing. */
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; align-items: center;
   padding: 9px 10px 11px; border-radius: 9px; background: var(--panel-2); border: 1px solid transparent; overflow: hidden;
 }
 .track.done { cursor: pointer; }
 .track.done:hover { border-color: var(--line); }
 .track.active { border-color: var(--accent); }
-.t-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.t-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .t-name-edit { font-weight: 600; font-size: inherit; width: 100%; border: 0; outline: 1px solid var(--accent); background: var(--panel); border-radius: 4px; padding: 1px 5px; color: inherit; }
 .t-sub { font-size: 12px; color: var(--muted); grid-column: 1; }
 .track.error .t-sub { color: var(--bad); }
