@@ -33,7 +33,7 @@ import {
 } from '../lyrics/tabSync.ts';
 import { FLAT, isFlat, sameEq, type EqParams } from '../player/eq.ts';
 import { eqPanel, type EqPanel } from './eqPanel.ts';
-import { drawStaff, staffX, type StaffLayout } from './staff.ts';
+import { drawStaff, noteAt, staffX, type StaffLayout } from './staff.ts';
 import { $, fitCanvas, fmtDuration, fmtTime, h, pressed, toast } from './dom.ts';
 import { Transcribe, type TxHost, type TxState } from './transcribePanel.ts';
 import type { Chord } from '../analysis/chords.ts';
@@ -2039,6 +2039,17 @@ export class Deck {
     $('tabStaffCursor').style.left = `${holdAt}px`;
     $('tabStaffCursor').hidden = coord === null;
     this.syncTimelineCursor(coord !== null, stripCursor);
+    // The notehead actually sounding right now, not just a position along the line — moves with the
+    // same px the track does, so it's simplest to add px directly rather than share the track's transform.
+    const note = coord === null ? null : noteAt(layout.notes, coord);
+    const box = $('tabStaffNoteBox');
+    box.hidden = !note;
+    if (note) {
+      box.style.left = `${note.x + px - 3}px`;
+      box.style.top = `${note.y - 4}px`;
+      box.style.width = `${note.w + 6}px`;
+      box.style.height = `${note.h + 8}px`;
+    }
     if (Math.abs(px - this.lastStaffPx) < 0.05) return;
     this.lastStaffPx = px;
     $('tabStaffTrack').style.transform = `translateX(${px}px)`;
