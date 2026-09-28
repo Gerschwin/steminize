@@ -155,6 +155,26 @@ export class Player {
     this.held = { src, gain };
   }
 
+  /** A one-off ~100 ms snippet (stereo, at the song's sample rate) for scrubbing while paused, with
+   * short edge ramps so the cuts don't click. Overlapping snippets just add. */
+  async scrubGrain(chs: Float32Array[]) {
+    await this.unlock();
+    const ctx = this.ctx!;
+    const buf = ctx.createBuffer(chs.length, chs[0].length, 44100);
+    chs.forEach((c, i) => buf.copyToChannel(c as Float32Array<ArrayBuffer>, i));
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const gain = ctx.createGain();
+    const t = ctx.currentTime;
+    const dur = buf.duration;
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(1, t + 0.008);
+    gain.gain.setValueAtTime(1, t + Math.max(0.008, dur - 0.03));
+    gain.gain.linearRampToValueAtTime(0, t + dur);
+    src.connect(gain).connect(this.master!);
+    src.start(t);
+  }
+
   stopHold() {
     if (!this.held || !this.ctx) return;
     const { src, gain } = this.held;

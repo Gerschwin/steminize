@@ -335,7 +335,7 @@ export class Deck {
   private tempo = 1;
   private pitch = 0;
   private dirty = true;
-  private drag: { x0: number; moved: boolean; edge?: 'a' | 'b' } | null = null;
+  private drag: { x0: number; moved: boolean; edge?: 'a' | 'b'; scrub?: boolean } | null = null;
   onRerun: () => void = () => {};
   private tx: Transcribe;
   private scratch: ScratchState = {};
@@ -549,20 +549,29 @@ export class Deck {
       const f = Math.max(0, Math.min(1, (e.clientX - wave.getBoundingClientRect().left) / wave.clientWidth));
       return { f, frame: view.start + f * (view.end - view.start) };
     };
-    let laneDrag: { f0: number; frame0: number; moved: boolean; edge?: 'a' | 'b' } | null = null;
+    let laneDrag: { f0: number; frame0: number; moved: boolean; edge?: 'a' | 'b'; scrub?: boolean } | null = null;
     let swallowClick = false; // a drag ends in a click event; don't let it also seek
     wave.addEventListener('pointerdown', (e) => {
       swallowClick = false; // a drag that produced no click must not eat the next real one
       if (e.button !== 0 || e.pointerType === 'touch') return;
       wave.setPointerCapture(e.pointerId);
       const { f, frame } = laneFrame(e);
-      const edge = this.loopEdgeAt(f * wave.clientWidth, wave.clientWidth, lane.ownView ?? this.view);
-      laneDrag = { f0: f, frame0: frame, moved: false, edge: edge ?? undefined };
+      const view = lane.ownView ?? this.view;
+      const edge = this.loopEdgeAt(f * wave.clientWidth, wave.clientWidth, view);
+      const scrub = !edge && (e.shiftKey || this.onPlayhead(f * wave.clientWidth, wave.clientWidth, view));
+      laneDrag = { f0: f, frame0: frame, moved: false, edge: edge ?? undefined, scrub };
     });
     wave.addEventListener('pointermove', (e) => {
       const { f, frame } = laneFrame(e);
       if (!laneDrag) {
-        wave.style.cursor = this.loopEdgeAt(f * wave.clientWidth, wave.clientWidth, lane.ownView ?? this.view) ? 'ew-resize' : '';
+        const view = lane.ownView ?? this.view;
+        const px = f * wave.clientWidth;
+        wave.style.cursor = this.loopEdgeAt(px, wave.clientWidth, view) ? 'ew-resize' : this.onPlayhead(px, wave.clientWidth, view) ? 'col-resize' : '';
+        return;
+      }
+      if (laneDrag.scrub) {
+        if (Math.abs(f - laneDrag.f0) * wave.clientWidth > 2) laneDrag.moved = true;
+        if (laneDrag.moved) this.scrubTo(frame);
         return;
       }
       if (laneDrag.edge) {
@@ -579,7 +588,9 @@ export class Deck {
     wave.addEventListener('pointerup', () => {
       if (laneDrag?.moved) {
         swallowClick = true;
-        if (laneDrag.edge) this.finishLoopEdgeDrag();
+        if (laneDrag.scrub) {
+          // already scrubbed; nothing to commit
+        } else if (laneDrag.edge) this.finishLoopEdgeDrag();
         else {
           this.snapLoop();
           this.updateLoopUi();
@@ -2388,6 +2399,40 @@ export class Deck {
     this.dirty = true;
   }
 
+  private lastGrain = 0;
+  /** Moves the playhead to `frame` while dragging, and, if the song isn't playing, sounds a short
+   * snippet from there so you can find a spot by ear (playing already makes the seek audible). */
+  private scrubTo(frame: number) {
+    if (this.player.recording) return; // seeking mid-take is refused anyway; don't repeat the warning per pointer move
+    this.player.seek(frame);
+    this.dirty = true;
+    const r = this.r;
+    if (!r || this.player.state.playing) return;
+    const now = performance.now();
+    if (now - this.lastGrain < 70) return;
+    this.lastGrain = now;
+    const start = Math.max(0, Math.min(this.length - 1, Math.round(frame)));
+    const n = Math.min(Math.round(SR * 0.1), this.length - start);
+    if (n <= 0) return;
+    const gains = this.gains();
+    const out = [new Float32Array(n), new Float32Array(n)];
+    r.stems.forEach((st, i) => {
+      const g = gains[i];
+      if (!g) return;
+      for (let ch = 0; ch < 2; ch++) {
+        const src = st.data[Math.min(ch, st.data.length - 1)];
+        for (let j = 0; j < n; j++) out[ch][j] += src[start + j] * g;
+      }
+    });
+    void this.player.scrubGrain(out);
+  }
+
+  /** True when x is on the playhead line, so grabbing it scrubs instead of drawing a section. */
+  private onPlayhead(px: number, width: number, view: { start: number; end: number }): boolean {
+    const span = view.end - view.start || 1;
+    return width > 0 && Math.abs(px - ((this.player.state.pos - view.start) / span) * width) <= 7;
+  }
+
   /** Frame at a fraction across the visible (possibly zoomed) waveform. */
   private frameAt(f: number) {
     return this.view.start + f * (this.view.end - this.view.start);
@@ -2697,7 +2742,7 @@ export class Deck {
     $('loopInfo').textContent =
       this.loop.b > this.loop.a
         ? `${fmtTime(this.loop.a / SR)} – ${fmtTime(this.loop.b / SR)}${this.loop.on ? '' : ' (off)'}`
-        : 'Drag across the waveform to pick a section';
+        : 'Drag to pick a section · grab the playhead to scrub';
     this.dirty = true;
   }
 
@@ -2708,15 +2753,24 @@ export class Deck {
     wrap.addEventListener('pointerdown', (e) => {
       if ((e.target as HTMLElement).closest('button')) return; // let the zoom overlay's buttons handle their own clicks
       wrap.setPointerCapture(e.pointerId);
-      const edge = this.loopEdgeAt(frac(e) * wrap.clientWidth, wrap.clientWidth, this.view);
-      this.drag = { x0: frac(e), moved: false, edge: edge ?? undefined };
+      const px = frac(e) * wrap.clientWidth;
+      const edge = this.loopEdgeAt(px, wrap.clientWidth, this.view);
+      // Grabbing the playhead itself (or holding Shift) scrubs: moves the playhead without drawing a section.
+      const scrub = !edge && (e.shiftKey || this.onPlayhead(px, wrap.clientWidth, this.view));
+      this.drag = { x0: frac(e), moved: false, edge: edge ?? undefined, scrub };
     });
     wrap.addEventListener('pointermove', (e) => {
       if (!this.drag) {
-        wrap.style.cursor = this.loopEdgeAt(frac(e) * wrap.clientWidth, wrap.clientWidth, this.view) ? 'ew-resize' : '';
+        const px = frac(e) * wrap.clientWidth;
+        wrap.style.cursor = this.loopEdgeAt(px, wrap.clientWidth, this.view) ? 'ew-resize' : this.onPlayhead(px, wrap.clientWidth, this.view) ? 'col-resize' : '';
         return;
       }
       const f = frac(e);
+      if (this.drag.scrub) {
+        if (Math.abs(f - this.drag.x0) * wrap.clientWidth > 2) this.drag.moved = true;
+        if (this.drag.moved) this.scrubTo(this.frameAt(f));
+        return;
+      }
       if (this.drag.edge) {
         if (Math.abs(f - this.drag.x0) * wrap.clientWidth > 3) this.drag.moved = true;
         if (this.drag.moved) this.dragLoopEdge(this.drag.edge, this.frameAt(f));
@@ -2728,13 +2782,15 @@ export class Deck {
         this.loop.a = Math.round(this.frameAt(a));
         this.loop.b = Math.round(this.frameAt(b));
         this.dirty = true;
-        // Scrub: preview audio at the pointer as you drag, same as scanning a tape (only audible while already playing).
-        this.player.seek(this.frameAt(f));
+        // Scrub too: the playhead follows the pointer as you drag, with a short preview snippet if paused.
+        this.scrubTo(this.frameAt(f));
       }
     });
     wrap.addEventListener('pointerup', (e) => {
       if (!this.drag) return;
-      if (this.drag.edge && this.drag.moved) this.finishLoopEdgeDrag();
+      if (this.drag.scrub && this.drag.moved) {
+        // already scrubbed; nothing to commit
+      } else if (this.drag.edge && this.drag.moved) this.finishLoopEdgeDrag();
       else if (this.drag.moved) {
         // Mark the section but leave the loop off and playback where scrubbing left it:
         // dragging is also how you scan the song to find a part, and forcing the loop on
