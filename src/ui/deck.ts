@@ -558,7 +558,7 @@ export class Deck {
       const { f, frame } = laneFrame(e);
       const view = lane.ownView ?? this.view;
       const edge = this.loopEdgeAt(f * wave.clientWidth, wave.clientWidth, view);
-      const scrub = !edge && (e.shiftKey || this.onPlayhead(f * wave.clientWidth, wave.clientWidth, view));
+      const scrub = !edge && !(e.ctrlKey || e.metaKey) && (e.shiftKey || this.onPlayhead(f * wave.clientWidth, wave.clientWidth, view));
       laneDrag = { f0: f, frame0: frame, moved: false, edge: edge ?? undefined, scrub };
     });
     wave.addEventListener('pointermove', (e) => {
@@ -2756,7 +2756,8 @@ export class Deck {
       const px = frac(e) * wrap.clientWidth;
       const edge = this.loopEdgeAt(px, wrap.clientWidth, this.view);
       // Grabbing the playhead itself (or holding Shift) scrubs: moves the playhead without drawing a section.
-      const scrub = !edge && (e.shiftKey || this.onPlayhead(px, wrap.clientWidth, this.view));
+      // Holding Ctrl/Cmd forces a section instead, e.g. to start one right on top of the playhead.
+      const scrub = !edge && !(e.ctrlKey || e.metaKey) && (e.shiftKey || this.onPlayhead(px, wrap.clientWidth, this.view));
       this.drag = { x0: frac(e), moved: false, edge: edge ?? undefined, scrub };
     });
     wrap.addEventListener('pointermove', (e) => {
