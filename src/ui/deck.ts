@@ -1938,6 +1938,7 @@ export class Deck {
     if (staff) void this.renderStaff();
     this.lastStaffPx = NaN;
     this.lastStripPx = NaN;
+    this.syncTimelineCursor(false); // corrected once the next frame knows where playback actually is
     this.scratchAreas.tab.hidden = !onTab || follow;
     this.lastTabRowCol = null; // (re)place the cursor on the next frame, even while paused
     this.dirty = true;
@@ -2030,9 +2031,20 @@ export class Deck {
     const x = coord === null ? 0 : staffX(layout.map, coord);
     const px = coord === null ? 0 : holdAt - x;
     $('tabStaffCursor').hidden = coord === null;
+    this.syncTimelineCursor(coord !== null);
     if (Math.abs(px - this.lastStaffPx) < 0.05) return;
     this.lastStaffPx = px;
     $('tabStaffTrack').style.transform = `translateX(${px}px)`;
+  }
+
+  /** Scroll strip and Staff sit at the same fixed 40% spot already (each holds its own content still
+   * there while scrolling past it), so a single line drawn across both reads as one marker instead of
+   * two coincidentally-aligned ones. Shown only when both boxes are visible; each box's own cursor still
+   * marks its own content (the strip's highlighted character, in particular) when shown alone. */
+  private syncTimelineCursor(atSomething: boolean) {
+    const joined = !$('tabStrip').hidden && !$('tabStaff').hidden;
+    $('tabTimeline').classList.toggle('joined', joined);
+    $('tabTimelineCursor').hidden = !joined || !atSomething;
   }
 
   private stripPos = 0;

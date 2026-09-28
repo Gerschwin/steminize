@@ -412,21 +412,27 @@
                   <pre class="tab-follow-text" id="tabFollowText"></pre>
                   <div class="tab-follow-cursor" id="tabFollowCursor" hidden></div>
                 </div>
-                <div class="tab-strip scratch-area mono" id="tabStrip" hidden aria-live="off">
-                  <pre class="tab-strip-labels" id="tabStripLabels"></pre>
-                  <div class="tab-strip-view" id="tabStripView">
-                    <div class="tab-strip-track" id="tabStripTrack">
-                      <pre class="tab-strip-bars" id="tabStripBars"></pre>
-                      <pre class="tab-strip-text" id="tabStripText"></pre>
+                <div class="tab-timeline" id="tabTimeline">
+                  <div class="tab-strip scratch-area mono" id="tabStrip" hidden aria-live="off">
+                    <pre class="tab-strip-labels" id="tabStripLabels"></pre>
+                    <div class="tab-strip-view" id="tabStripView">
+                      <div class="tab-strip-track" id="tabStripTrack">
+                        <pre class="tab-strip-bars" id="tabStripBars"></pre>
+                        <pre class="tab-strip-text" id="tabStripText"></pre>
+                      </div>
+                      <div class="tab-strip-cursor" id="tabStripCursor"></div>
                     </div>
-                    <div class="tab-strip-cursor" id="tabStripCursor"></div>
                   </div>
-                </div>
-                <div class="tab-staff scratch-area" id="tabStaff" hidden aria-live="off">
-                  <div class="tab-staff-view" id="tabStaffView">
-                    <div class="tab-staff-track" id="tabStaffTrack"></div>
-                    <div class="tab-staff-cursor" id="tabStaffCursor" hidden></div>
+                  <div class="tab-staff scratch-area" id="tabStaff" hidden aria-live="off">
+                    <div class="tab-staff-view" id="tabStaffView">
+                      <div class="tab-staff-track" id="tabStaffTrack"></div>
+                      <div class="tab-staff-cursor" id="tabStaffCursor" hidden></div>
+                    </div>
                   </div>
+                  <!-- Shown only when Scroll strip and Staff are both on: one continuous line down through
+                       both, at the same fixed spot (left: 40%) each already holds its own content at, so
+                       it's clear they're marking the same instant. -->
+                  <div class="tab-timeline-cursor" id="tabTimelineCursor" hidden></div>
                 </div>
                 <textarea class="scratch-area mono" id="scratchDrums" placeholder="CC|--------------------|&#10;HH|--------------------|&#10;SN|--------------------|&#10;HT|--------------------|&#10;FT|--------------------|&#10;BD|--------------------|" spellcheck="false" wrap="off" hidden></textarea>
                 <textarea class="scratch-area" id="scratchNotes" placeholder="Notes, song sections, anything else…" spellcheck="true" hidden></textarea>
@@ -589,7 +595,7 @@
           <div class="kb-row"><kbd>Ctrl</kbd>/<kbd>⌘</kbd><kbd>Enter</kbd><span>In the Scratchpad's Tab box: tap the current playback time onto the text cursor (same as Tap ⏱)</span></div>
           <div class="kb-row"><kbd>Delete</kbd><span>Remove the selected tab tap (click its green T-tag on the overview first; drag a tag to move it, Lock to protect it)</span></div>
           <div class="kb-row"><kbd>q</kbd><kbd>e</kbd><kbd>s</kbd><span>Tab rhythm line (last line under the strings): w whole, h half, q quarter, e eighth, s sixteenth, a dot after = dotted, CAPITAL = rest. Set with "Add rhythm line".</span></div>
-          <div class="kb-row"><kbd>Staff</kbd><span>In the Tab pane: standard notation under the tab, built from the fret numbers and the rhythm line (guitar written an octave up, as usual). It follows the music when the tab has taps set.</span></div>
+          <div class="kb-row"><kbd>Staff</kbd><span>In the Tab pane: standard notation under the tab, built from the fret numbers and the rhythm line (guitar written an octave up, as usual). It follows the music when the tab has taps set. With Scroll strip also on, one line marks the position across both.</span></div>
           <div class="kb-row"><kbd>Ctrl</kbd>/<kbd>⌘</kbd><kbd>Z</kbd><span>Undo the last mixer change (mute, solo, volume, pan, EQ)</span></div>
           <div class="kb-row"><kbd>Ctrl</kbd>/<kbd>⌘</kbd><kbd>Shift</kbd><kbd>Z</kbd><span>Redo</span></div>
         </div>
