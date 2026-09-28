@@ -53,49 +53,38 @@ export function vexKey(midi: number): string {
 
 let vex: Promise<typeof import('vexflow/bravura')> | null = null;
 
-/** Draws the score into `host` (replacing what was there) and returns where things landed. Draws twice:
- * once at a deliberately roomy guess just to measure the actual ink (a low open string and a note
- * twenty frets up the top string sit many ledger lines apart, and how many ledger lines any given tab
- * needs isn't known ahead of time), then again at a height and baseline fitted to that — instead of a
- * fixed guess that either clips a wide-ranging tab or leaves a narrow-ranging one swimming in space.
- * The measuring pass needs the real rendered geometry (a note's own bounding box, from VexFlow's glyph
- * metrics, turned out not to include its stem/flag/beam — under-measuring exactly the parts most likely
- * to reach furthest from the staff), which in turn needs `host` attached to the document: `host` is
- * normally kept off-document until the caller is ready for it (so a stale drawing is never visible even
- * for a moment), so it's attached off-screen just for the measuring pass, then returned to how it was. */
+/** Middle line of a treble stave, written pitch (MIDI). Guitar is written an octave up (see vexKey),
+ * so this is B4 — a note plotted here sits dead centre, needing no ledger lines either way. */
+const MIDDLE_LINE = 71;
+/** A generous (not exact) pixel-per-semitone step for sizing the row: real engraving spacing is
+ * roughly 3px/semitone on a default-size treble stave, padded up so this reliably clears the note
+ * itself, its stem, and (at the extremes) its beam or flag, without ever needing to measure the
+ * actual rendered SVG — a browser-measurement pass turned out to be the likelier source of a
+ * WebKitGTK-only rendering bug than a fix, so this trades a little tightness for reliability. */
+const PX_PER_SEMITONE = 4.3;
+const MARGIN = 105; // clef, a stem's own length, room for a beam/flag on the outermost note — a beamed
+// group can reach further than its outermost note alone would (the beam follows the group's slope)
+
+/** Draws the score into `host` (replacing what was there) and returns where things landed. The row's
+ * height and the stave's vertical position are sized from the tab's own pitch range (not a single fixed
+ * guess, which either clipped a wide-ranging tab or left a narrow one swimming in empty space) — but
+ * from the notes' pitches alone, not by rendering once to measure and again to fit: an earlier version
+ * did exactly that, and needed to briefly attach `host` to the document to get real geometry from the
+ * browser, which is suspected to be why a real note's stem and beam stopped lining up with its own
+ * notehead on WebKitGTK (never reproduced in Chromium) — this avoids that risk entirely. */
 export async function drawStaff(host: HTMLElement, notes: TabNote[], bars: TabBar[]): Promise<StaffLayout> {
   vex ??= import('vexflow/bravura');
   const vf = await vex;
-  const wasConnected = host.isConnected;
-  const prevStyle = host.getAttribute('style');
-  if (!wasConnected) {
-    host.style.cssText = 'position:fixed; visibility:hidden; left:-99999px; top:0; pointer-events:none;';
-    document.body.appendChild(host);
-  }
-  await render(vf, host, notes, bars, 260, 130);
-  const svg = host.querySelector('svg');
-  const bbox = svg?.getBBox();
-  if (!wasConnected) {
-    host.remove();
-    if (prevStyle === null) host.removeAttribute('style');
-    else host.setAttribute('style', prevStyle);
-  }
-  if (!bbox || !bbox.height) return render(vf, host, notes, bars, 260, 130); // nothing drawn: keep the roomy guess
-  const PAD = 6;
-  const staveY = 130 - bbox.y + PAD; // shift so the ink's own top lands PAD below the new row's top
-  const rowHeight = Math.ceil(bbox.height) + PAD * 2;
-  return render(vf, host, notes, bars, rowHeight, staveY);
-}
-
-/** Draws one pass. */
-async function render(
-  vf: Awaited<NonNullable<typeof vex>>,
-  host: HTMLElement,
-  notes: TabNote[],
-  bars: TabBar[],
-  ROW: number,
-  staveY: number,
-): Promise<StaffLayout> {
+  // Defensive: make sure the embedded engraving font has actually finished loading before drawing
+  // anything with it. Unconfirmed as a cause of the WebKitGTK issue above, but cheap and safe either way.
+  if (typeof document !== 'undefined' && document.fonts) await document.fonts.ready.catch(() => {});
+  const written = notes.filter((n) => n.midi !== null).map((n) => n.midi! + 12);
+  const hi = written.length ? Math.max(...written) : MIDDLE_LINE;
+  const lo = written.length ? Math.min(...written) : MIDDLE_LINE;
+  const above = Math.max(0, hi - MIDDLE_LINE) * PX_PER_SEMITONE + MARGIN;
+  const below = Math.max(0, MIDDLE_LINE - lo) * PX_PER_SEMITONE + MARGIN;
+  const ROW = Math.round(above + below);
+  const staveY = Math.round(above - 20); // the stave's own 5 lines span ~40px, centred on the middle line
   const { Renderer, Stave, StaveNote, Voice, Formatter, Accidental, Dot, Beam } = vf;
   host.replaceChildren();
   const CLEF = 64;
