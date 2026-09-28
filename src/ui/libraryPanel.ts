@@ -3,7 +3,7 @@ import { addTake, deleteSong, exportLibrary, importLibrary, libraryAvailable, li
 import { saveFile } from '../platform.ts';
 import type { Deck, DeckState, Result } from './deck.ts';
 import type { KeyCandidate } from '../analysis/key.ts';
-import { $, fmtMB, fmtTime, h, toast } from './dom.ts';
+import { $, fmtDuration, fmtMB, fmtTime, h, toast } from './dom.ts';
 
 const pref = (k: string, d: string) => {
   try {
@@ -186,7 +186,11 @@ export function initLibrary(deck: Deck) {
   function item(m: LibMeta) {
     const date = new Date(m.created).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
     const stems = m.kind === 'multitrack' ? `${m.stems.length} tracks` : m.settings?.twoStems ? `${m.settings.twoStems}/rest` : `${m.stems.length} stems`;
-    const sub = h('div', { class: 't-sub' }, [fmtTime(m.seconds), stems, m.analysis ? `${Math.round(m.analysis.bpm)} BPM` : '', fmtMB(m.bytes), date].filter(Boolean).join(' · '));
+    // practiceSeconds under a minute isn't worth a row of its own clutter — opening a song briefly
+    // to check something shouldn't read as "practiced".
+    const practiced = (m.state as DeckState | undefined)?.practiceSeconds;
+    const practice = practiced && practiced >= 60 ? `${fmtDuration(practiced)} practiced` : '';
+    const sub = h('div', { class: 't-sub' }, [fmtTime(m.seconds), stems, m.analysis ? `${Math.round(m.analysis.bpm)} BPM` : '', fmtMB(m.bytes), date, practice].filter(Boolean).join(' · '));
     const x = h('button', { class: 't-x', type: 'button', title: 'Delete from library' }, '×');
     // Single click opens, but waits a moment so a double-click (rename) doesn't open it first.
     let openTimer = 0;

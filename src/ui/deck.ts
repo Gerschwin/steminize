@@ -81,6 +81,10 @@ export interface DeckState {
   tx?: TxState;
   /** Lyrics, tab, drum tab and free notes, per song. */
   scratch?: ScratchState;
+  /** Practice log: cumulative seconds this song has actually spent playing (not just open), and
+   * when it was last played. Both persist alongside the rest of the song's saved state. */
+  practiceSeconds?: number;
+  lastPracticed?: number;
 }
 
 /** Plain-text scratchpad, kept simple on purpose: no per-line structure, just what you paste or type. */
@@ -304,6 +308,12 @@ export class Deck {
    * refers to specific Lane objects that don't survive either. */
   private laneUndo: LaneHistoryEntry[] = [];
   private laneRedo: LaneHistoryEntry[] = [];
+  /** Practice log: cumulative seconds actually spent playing this song (not just open), and when
+   * it was last played. lastPracticeTick is a wall-clock timestamp, not persisted — just used to
+   * measure the gap since the previous playing tick. */
+  private practiceSeconds = 0;
+  private lastPracticed?: number;
+  private lastPracticeTick: number | null = null;
   /** The track scroll-to-zoom applies to; others just scroll the page. Click a track to pick it. */
   private selectedLane: Lane | null = null;
   private stopLiveInputUi: () => void = () => {};
@@ -343,6 +353,7 @@ export class Deck {
       this.media.setPlaying(s.playing);
       if (s.ended) this.onEnded();
       else if (s.playing) this.onNearEnd((this.length - s.pos) / SR);
+      this.trackPractice(s.playing);
       // The speed trainer changes tempo inside the player; mirror it here.
       if (Math.abs(s.tempo - this.tempo) > 1e-6) {
         this.tempo = s.tempo;
@@ -901,10 +912,13 @@ export class Deck {
     this.laneRedo = [];
     this.fadeMul = 1;
     this.fadeToken++; // cancels any fade still animating from the song just left
+    this.practiceSeconds = 0;
+    this.lastPracticed = undefined;
+    this.lastPracticeTick = null;
     this.lanes = r.stems.map((s, i) => this.buildLane(s, i));
     this.player.load(r.stems.map((s) => s.data), this.gains());
     this.restoreTakes(r);
-    if (state) this.applyState(state);
+    if (state) this.applyState(state); // restores practiceSeconds/lastPracticed too, if saved
     this.refreshTunerSources();
     this.setTempoPitch(this.tempo, this.pitch, false);
     this.player.setLoop(this.loop.on, this.loop.a, this.loop.b);
@@ -920,6 +934,28 @@ export class Deck {
     this.quiet = false;
   }
 
+  /** Accumulates practice time while actually playing (not just open/paused), throttling the
+   * resulting emit() (which rebuilds and saves the whole DeckState) to once per whole second, not
+   * every playback tick. A gap over 5s (tab backgrounded, debugger pause, ...) isn't counted, so
+   * time away doesn't get credited as practice. */
+  private trackPractice(playing: boolean) {
+    if (!playing) {
+      this.lastPracticeTick = null;
+      return;
+    }
+    const now = performance.now();
+    if (this.lastPracticeTick !== null) {
+      const delta = (now - this.lastPracticeTick) / 1000;
+      if (delta > 0 && delta < 5) {
+        const before = Math.floor(this.practiceSeconds);
+        this.practiceSeconds += delta;
+        this.lastPracticed = Date.now();
+        if (Math.floor(this.practiceSeconds) !== before) this.emit();
+      }
+    }
+    this.lastPracticeTick = now;
+  }
+
   // ---------- saved state ----------
   getState(): DeckState {
     return {
@@ -931,6 +967,8 @@ export class Deck {
       markers: this.markers.map((m) => ({ ...m })),
       tx: this.tx.getState(),
       scratch: { ...this.scratch },
+      practiceSeconds: this.practiceSeconds,
+      lastPracticed: this.lastPracticed,
     };
   }
 
@@ -938,6 +976,8 @@ export class Deck {
     this.pr = { ...structuredClone(DEFAULT_PR), ...s.practice, trainer: { ...DEFAULT_PR.trainer, ...s.practice?.trainer, on: false } };
     this.tempo = s.tempo ?? 1;
     this.pitch = s.pitch ?? 0;
+    this.practiceSeconds = s.practiceSeconds ?? 0;
+    this.lastPracticed = s.lastPracticed;
     this.loop = { ...this.loop, ...s.loop };
     this.markers = (s.markers ?? []).map((m) => ({ ...m })).sort((a, b) => a.pos - b.pos);
     s.lanes?.forEach((st, i) => {
@@ -1991,6 +2031,7 @@ export class Deck {
     this.laneRedo = [];
     this.fadeMul = 1;
     this.fadeToken++;
+    this.lastPracticeTick = null;
     $('deck').hidden = true;
     $('welcome').hidden = false;
   }
