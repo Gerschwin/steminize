@@ -58,6 +58,10 @@
 *::-webkit-scrollbar-track { background: transparent; }
 *::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; }
 *::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+/* Scrolling a nested box (the library list, a dropdown, a dialog, ...) to its own end shouldn't
+   then start scrolling whatever's behind/around it — no-op on anything that isn't itself a scroll
+   container, so it's safe to set everywhere rather than remembering it per scrollable element. */
+* { overscroll-behavior: contain; }
 html, body { margin: 0; height: 100%; }
 body.modal-open { overflow: hidden; }
 body {
