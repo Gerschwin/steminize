@@ -279,6 +279,9 @@ export class Deck {
   onStateChange: (s: DeckState) => void = () => {};
   /** The song played through to its end (not a loop coming round). */
   onEnded: () => void = () => {};
+  /** Fires on every playback tick while actually playing, with seconds left in the song — e.g. for
+   * a setlist to start fading out shortly before the natural end. Not fired while looping/paused. */
+  onNearEnd: (secondsLeft: number) => void = () => {};
   /** Called when a tempo correction changes the song's analysis. */
   onAnalysisChange: (r: Result) => void = () => {};
   /** Called when the song is renamed, so the library entry (if any) can be updated. */
@@ -339,6 +342,7 @@ export class Deck {
       $('playBtn').classList.toggle('on', s.playing);
       this.media.setPlaying(s.playing);
       if (s.ended) this.onEnded();
+      else if (s.playing) this.onNearEnd((this.length - s.pos) / SR);
       // The speed trainer changes tempo inside the player; mirror it here.
       if (Math.abs(s.tempo - this.tempo) > 1e-6) {
         this.tempo = s.tempo;
@@ -895,6 +899,8 @@ export class Deck {
     this.selectedLane = null;
     this.laneUndo = [];
     this.laneRedo = [];
+    this.fadeMul = 1;
+    this.fadeToken++; // cancels any fade still animating from the song just left
     this.lanes = r.stems.map((s, i) => this.buildLane(s, i));
     this.player.load(r.stems.map((s) => s.data), this.gains());
     this.restoreTakes(r);
@@ -1983,14 +1989,41 @@ export class Deck {
     this.lanes = [];
     this.laneUndo = [];
     this.laneRedo = [];
+    this.fadeMul = 1;
+    this.fadeToken++;
     $('deck').hidden = true;
     $('welcome').hidden = false;
   }
 
   // ---------- mixer ----------
+  /** An overall multiplier on top of every lane's own gain, for fadeVolume() — the mixer itself
+   * (mute/solo/vol) is untouched, so a fade never disturbs what the user actually set. */
+  private fadeMul = 1;
+  private fadeToken = 0;
   private gains() {
     const anySolo = this.lanes.some((l) => l.solo);
-    return this.lanes.map((l) => (anySolo ? (l.solo ? l.vol : 0) : l.mute ? 0 : l.vol));
+    return this.lanes.map((l) => (anySolo ? (l.solo ? l.vol : 0) : l.mute ? 0 : l.vol) * this.fadeMul);
+  }
+
+  /** Smoothly ramps overall playback volume to `target` (0-1) over `ms` — e.g. a setlist fading
+   * songs in/out around an auto-advance, instead of a hard cut. ms<=0 jumps immediately (useful to
+   * silence a just-opened song before its first audible frame, ahead of a fade-in). A later call
+   * pre-empts one still in progress, ramping on from wherever it currently is. */
+  fadeVolume(target: number, ms: number): Promise<void> {
+    const token = ++this.fadeToken;
+    const start = this.fadeMul;
+    const t0 = performance.now();
+    return new Promise((resolve) => {
+      const step = (t: number) => {
+        if (token !== this.fadeToken) return resolve(); // superseded by a newer fade
+        const p = ms <= 0 ? 1 : Math.min(1, (t - t0) / ms);
+        this.fadeMul = start + (target - start) * p;
+        this.player.setGains(this.gains(), this.pans(), this.eqs());
+        if (p < 1) requestAnimationFrame(step);
+        else resolve();
+      };
+      requestAnimationFrame(step);
+    });
   }
 
   private pans() {

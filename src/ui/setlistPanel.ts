@@ -23,6 +23,11 @@ export function initSetlists(deck: Deck, library: Library) {
   }
   let metas = new Map<string, LibMeta>();
   let pending: { timer: number; tick: number } | null = null;
+  /** Smooths an auto-advance transition instead of a hard cut: the ending song fades out over its
+   * last FADE_S seconds, then the next one fades in from silence once it starts. Only for auto-
+   * advance — opening a song any other way (a click, the transport) plays at full volume as normal. */
+  const FADE_S = 1.2;
+  let fadingOut = false;
 
   // Real <select>s: their open list is drawn by the OS and mostly ignores page CSS (plain white
   // regardless of theme, confirmed in Chromium and WebKitGTK alike), so these three use a custom
@@ -71,6 +76,7 @@ export function initSetlists(deck: Deck, library: Library) {
     const id = sl?.songs[i];
     if (!sl || !id) return;
     cancelPending();
+    fadingOut = false; // a new song's own near-end can trigger its own fade later
     if (deck.current?.libId === id) {
       deck.player.pause();
       deck.player.seek(0);
@@ -276,6 +282,18 @@ export function initSetlists(deck: Deck, library: Library) {
   };
   prevBtn.onclick = () => void openAt(prevSong(currentIndex()), deck.player.state.playing);
 
+  // Fades the ending song out over its last FADE_S seconds, instead of an auto-advance hard cut —
+  // only once we know there's a next song to actually advance to; the setlist's last song, or a
+  // song played outside auto-advance, just ends normally at full volume.
+  deck.onNearEnd = (secondsLeft) => {
+    const sl = active();
+    const i = currentIndex();
+    if (!sl || !sl.auto || i < 0 || fadingOut || secondsLeft > FADE_S) return;
+    if (nextSong(i, sl.songs.length) === null) return;
+    fadingOut = true;
+    void deck.fadeVolume(0, Math.max(0, secondsLeft) * 1000);
+  };
+
   // When a song plays to its end, move on to the next after the chosen gap.
   deck.onEnded = () => {
     const sl = active();
@@ -292,7 +310,13 @@ export function initSetlists(deck: Deck, library: Library) {
     const go = () => {
       const stillPlaying = deck.player.state.playing;
       cancelPending();
-      if (!stillPlaying) void openAt(n, true);
+      if (stillPlaying) return;
+      void (async () => {
+        await openAt(n, false); // load it muted, so it's never heard at full volume even for an instant — openAt itself refreshes the library highlight
+        await deck.fadeVolume(0, 0);
+        await deck.player.play();
+        await deck.fadeVolume(1, FADE_S * 1000);
+      })();
     };
     let left = sl.gap;
     if (left <= 0) return go();
