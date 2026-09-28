@@ -23,7 +23,7 @@ import { writeMidi } from '../src/encode/midi.ts';
 import { detectPitch, freqToNote } from '../src/analysis/pitch.ts';
 import { isNewer, parseVersion } from '../src/version.ts';
 import { lineAt, parseLrc } from '../src/lyrics/lrc.ts';
-import { addAnchor, charOffsetAt, coordToPlace, isLockedAt, moveAnchor, offsetToCoord, removeAnchor, rowCol, tabBlocks, tabPositionAt, toggleAnchorLock, type TabAnchor } from '../src/lyrics/tabSync.ts';
+import { addAnchor, charOffsetAt, coordToPlace, coordToStripX, stripLayout, isLockedAt, moveAnchor, offsetToCoord, removeAnchor, rowCol, tabBlocks, tabPositionAt, toggleAnchorLock, type TabAnchor } from '../src/lyrics/tabSync.ts';
 import { moveItem, nextSong, parseSetlists, prevSong, pruneSongs, totalSeconds, uniqueName, type Setlist } from '../src/setlists.ts';
 import { detectLatency } from '../src/player/latency.ts';
 import { placeTake } from '../src/player/placement.ts';
@@ -656,6 +656,22 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('taps: removing an unlocked tap drops it', removeAnchor(base, 30).map((a) => a.charOffset).join() === '2,60');
   const unlocked = toggleAnchorLock(locked, 30);
   ok('taps: unlocking allows edits again and leaves no stray flag', !isLockedAt(unlocked, 30) && !('locked' in unlocked[1]) && moveAnchor(unlocked, 30, 7)[1].time === 7);
+}
+
+// ---- tab+ scroll strip
+{
+  const text = 'e|-1-|-2-|\nB|---|---|\n\ne|-3-|-4-|\nB|---|---|';
+  const blocks = tabBlocks(text);
+  const lay = stripLayout(text, blocks);
+  ok('strip: labels are pinned once and stripped from every block', lay.labels.join() === 'e|,B|' && lay.rows[0] === '-1-|-2-|-3-|-4-|' && lay.rows[1] === '---|---|---|---|');
+  ok('strip: each block starts where the previous one ended', lay.startOf.join() === '0,8');
+  // time columns per block: 6 ('-1-' and '-2-' are 3 each, bar lines zero-width) -> 6 wide
+  ok('strip: time 0 is the first note column', coordToStripX(blocks, lay, 0) === 0);
+  ok('strip: a whole time column later is the next column', coordToStripX(blocks, lay, 1) === 1);
+  ok('strip: crossing a bar line takes its share of the time, not a jump', coordToStripX(blocks, lay, 2.5) === 3);
+  ok('strip: the next bar starts exactly on its first time column', coordToStripX(blocks, lay, 3) === 4);
+  ok('strip: the second system continues from the first', coordToStripX(blocks, lay, 6) === 8);
+  ok('strip: speed never goes backwards', (() => { let last = -1; for (let c = 0; c <= 12; c += 0.25) { const x = coordToStripX(blocks, lay, c); if (x < last) return false; last = x; } return true; })());
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

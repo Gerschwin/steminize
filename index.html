@@ -400,6 +400,7 @@
                     <button class="btn tiny ghost" type="button" id="tabTapLockBtn" title="Lock this tap so it can't be dragged, re-tapped over or removed">Lock</button>
                     <button class="btn tiny ghost" type="button" id="tabTapRemoveBtn" title="Remove this tap (or press Delete)">Remove</button>
                   </span>
+                  <button class="btn tiny ghost toggle" type="button" id="tabStripBtn" aria-pressed="false" hidden title="Follow along as one long scrolling line, with the playing spot held in place, instead of a page that shows the whole tab">Scroll strip</button>
                   <button class="btn tiny ghost" type="button" id="tabClearAnchorsBtn" hidden title="Clear this tab's timing and start tapping again">Clear timing</button>
                 </div>
                 <textarea class="scratch-area" id="scratchLyrics" placeholder="Lyrics… or paste synced lyrics in LRC format ([mm:ss.xx] words) to follow along" spellcheck="true"></textarea>
@@ -408,6 +409,13 @@
                 <div class="tab-follow scratch-area mono" id="tabFollow" hidden aria-live="off">
                   <pre class="tab-follow-text" id="tabFollowText"></pre>
                   <div class="tab-follow-cursor" id="tabFollowCursor" hidden></div>
+                </div>
+                <div class="tab-strip scratch-area mono" id="tabStrip" hidden aria-live="off">
+                  <pre class="tab-strip-labels" id="tabStripLabels"></pre>
+                  <div class="tab-strip-view" id="tabStripView">
+                    <pre class="tab-strip-text" id="tabStripText"></pre>
+                    <div class="tab-strip-cursor" id="tabStripCursor"></div>
+                  </div>
                 </div>
                 <textarea class="scratch-area mono" id="scratchDrums" placeholder="CC|--------------------|&#10;HH|--------------------|&#10;SN|--------------------|&#10;HT|--------------------|&#10;FT|--------------------|&#10;BD|--------------------|" spellcheck="false" wrap="off" hidden></textarea>
                 <textarea class="scratch-area" id="scratchNotes" placeholder="Notes, song sections, anything else…" spellcheck="true" hidden></textarea>

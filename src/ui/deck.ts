@@ -12,7 +12,23 @@ import { openSink, safeName, saveFile } from '../platform.ts';
 import { MAX_REC_LATENCY_MS, loadRecLatencyMs, saveRecLatencyMs, type Settings } from '../settings.ts';
 import { placeTake } from '../player/placement.ts';
 import { lineAt, parseLrc, type Lrc } from '../lyrics/lrc.ts';
-import { addAnchor, isLockedAt, MIN_ANCHORS, moveAnchor, removeAnchor, tabPositionAt, toggleAnchorLock, type TabAnchor } from '../lyrics/tabSync.ts';
+import {
+  addAnchor,
+  anchorCoords,
+  charOffsetAt,
+  coordToPlace,
+  coordToStripX,
+  isLockedAt,
+  MIN_ANCHORS,
+  moveAnchor,
+  removeAnchor,
+  stripLayout,
+  tabBlocks,
+  toggleAnchorLock,
+  type StripLayout,
+  type TabAnchor,
+  type TabBlock,
+} from '../lyrics/tabSync.ts';
 import { FLAT, isFlat, sameEq, type EqParams } from '../player/eq.ts';
 import { eqPanel, type EqPanel } from './eqPanel.ts';
 import { $, fitCanvas, fmtDuration, fmtTime, h, pressed, toast } from './dom.ts';
@@ -104,6 +120,8 @@ export interface ScratchState {
   tabAnchors?: TabAnchor[];
   /** Show the Tab pane as a follow-along view rather than the raw editable text. */
   tabFollow?: boolean;
+  /** Follow along as one long scrolling line instead of a page. */
+  tabStrip?: boolean;
   drums?: string;
   notes?: string;
 }
@@ -350,6 +368,9 @@ export class Deck {
   /** Rounded row/col last drawn for the tab+ cursor, so updateTabFollow() skips redundant work
    * (every frame while playing) once it hasn't actually moved a full character. */
   private lastTabRowCol: { row: number; col: number } | null = null;
+  /** The tab's block layout and tap coordinates, rebuilt only when the text or taps change (not every frame). */
+  private tabTimeline: { text: string; anchors: TabAnchor[]; blocks: TabBlock[]; coords: TabAnchor[]; strip?: StripLayout } | null = null;
+  private lastStripPx = NaN;
   private tabCharMetrics: { w: number; h: number } | null = null;
   private scratchAreas!: { lyrics: HTMLTextAreaElement; tab: HTMLTextAreaElement; drums: HTMLTextAreaElement; notes: HTMLTextAreaElement };
   // ---- a live recording being drawn in as its own track while it's captured ----
@@ -1708,6 +1729,11 @@ export class Deck {
       this.updateTabView();
       this.emit();
     };
+    $('tabStripBtn').onclick = () => {
+      this.scratch.tabStrip = !this.scratch.tabStrip;
+      this.updateTabView();
+      this.emit();
+    };
     $('tabClearAnchorsBtn').onclick = () => {
       if (!confirm("Clear this tab's timing? You'll need to tap it back in.")) return;
       this.scratch.tabAnchors = [];
@@ -1742,6 +1768,7 @@ export class Deck {
     if (s?.lyricsOffset) this.scratch.lyricsOffset = s.lyricsOffset;
     if (s?.tabAnchors?.length) this.scratch.tabAnchors = s.tabAnchors;
     if (s?.tabFollow) this.scratch.tabFollow = true;
+    if (s?.tabStrip) this.scratch.tabStrip = true;
     this.scratchAreas.lyrics.value = this.scratch.lyrics ?? '';
     this.setLyricsText(this.scratch.lyrics ?? '');
     // Tab/Drum tab start with the blank string/beat template actually typed in (not just a
@@ -1827,7 +1854,13 @@ export class Deck {
       $('tabTapSelLabel').textContent = `T${anchors.indexOf(sel) + 1} · ${fmtTime(sel.time)}${sel.locked ? ' · locked' : ''}`;
       $('tabTapLockBtn').textContent = sel.locked ? 'Unlock' : 'Lock';
     }
-    $('tabFollow').hidden = !(onTab && follow);
+    const strip = follow && !!this.scratch.tabStrip;
+    $('tabStripBtn').hidden = !(onTab && follow);
+    pressed($('tabStripBtn'), strip);
+    $('tabFollow').hidden = !(onTab && follow && !strip);
+    $('tabStrip').hidden = !(onTab && strip);
+    if (onTab && strip) this.buildTabStrip();
+    this.lastStripPx = NaN;
     this.scratchAreas.tab.hidden = !onTab || follow;
     this.lastTabRowCol = null; // (re)place the cursor on the next frame, even while paused
     this.dirty = true;
@@ -1851,12 +1884,54 @@ export class Deck {
    * it into view. Called every frame like updateLyricsFollow, but cheaper per call (no classList
    * work across every line), so it doesn't need that one's "only touch the page on a real change"
    * guard beyond skipping redundant scrollTo calls. */
+  /** The tab's block layout and tap coordinates, cached until the text or the taps change. */
+  private timeline() {
+    // The text box's own value, not scratch.tab: an untouched song shows the placeholder template there.
+    const text = this.scratchAreas.tab.value;
+    const anchors = this.scratch.tabAnchors ?? [];
+    const t = this.tabTimeline;
+    if (t && t.text === text && t.anchors === anchors) return t;
+    const blocks = tabBlocks(text);
+    this.tabTimeline = { text, anchors, blocks, coords: anchorCoords(text, blocks, anchors) };
+    return this.tabTimeline;
+  }
+
+  /** Fills the scroll strip: string labels pinned on the left, the tab joined into one long line per string. */
+  private buildTabStrip() {
+    const tl = this.timeline();
+    tl.strip = stripLayout(tl.text, tl.blocks);
+    $('tabStripLabels').textContent = tl.strip.labels.join('\n');
+    $('tabStripText').textContent = tl.strip.rows.join('\n');
+    const { w, h } = this.measureTabChar();
+    const cursor = $('tabStripCursor');
+    cursor.style.width = `${w}px`;
+    cursor.style.height = `${tl.strip.rows.length * h}px`;
+  }
+
+  /** Scroll-strip mode: the tab slides past a fixed spot, so the playing note stays where your eyes are. */
+  private updateTabStrip(pos: number) {
+    const tl = this.timeline();
+    if (!tl.strip) this.buildTabStrip();
+    const layout = tl.strip!;
+    const coord = charOffsetAt(tl.coords, pos / SR);
+    const { w } = this.measureTabChar();
+    const holdAt = $('tabStripView').clientWidth * 0.4; // matches .tab-strip-cursor's left: 40%
+    const x = coord === null ? 0 : coordToStripX(tl.blocks, layout, coord);
+    const px = Math.round((holdAt - x * w) * 2) / 2;
+    if (px === this.lastStripPx) return;
+    this.lastStripPx = px;
+    $('tabStripText').style.transform = `translateX(${px}px)`;
+    $('tabStripCursor').hidden = coord === null;
+  }
+
   private updateTabFollow(pos: number) {
+    if (!$('tabStrip').hidden) return this.updateTabStrip(pos);
     const box = $('tabFollow');
     const cursor = $('tabFollowCursor');
     if (box.hidden) return;
-    // The text box's own value, not scratch.tab: an untouched song shows the placeholder template there.
-    const place = tabPositionAt(this.scratchAreas.tab.value, this.scratch.tabAnchors ?? [], pos / SR);
+    const tl = this.timeline();
+    const coord = charOffsetAt(tl.coords, pos / SR);
+    const place = coord === null ? null : coordToPlace(tl.blocks, coord);
     if (!place) {
       cursor.hidden = true;
       return;

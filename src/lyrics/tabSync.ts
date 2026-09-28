@@ -103,6 +103,8 @@ export interface TabBlock {
   width: number;
   /** Visual columns in the block (its longest row). */
   chars: number;
+  /** How many leading columns are the row label ("e|"). */
+  label: number;
   /** cum[j] = time-coordinate at visual column j, for j = 0..chars. */
   cum: number[];
   /** counts[j] = whether visual column j is a time column. */
@@ -140,7 +142,7 @@ export function tabBlocks(text: string): TabBlock[] {
     const cum = [0];
     for (let c = 0; c < chars; c++) cum.push(cum[c] + (counts[c] ? 1 : 0));
     const width = cum[chars];
-    blocks.push({ firstRow: i, lastRow: j - 1, start, width, chars, cum, counts });
+    blocks.push({ firstRow: i, lastRow: j - 1, start, width, chars, label, cum, counts });
     start += width;
     i = j;
   }
@@ -175,14 +177,69 @@ export function coordToPlace(blocks: TabBlock[], coord: number): { firstRow: num
   return { firstRow: b.firstRow, lastRow: b.lastRow, col: last + 1 };
 }
 
-/** Everything together: where in the tab is time `t`, given the taps. Null with too few taps or no tab. */
-export function tabPositionAt(text: string, anchors: TabAnchor[], t: number) {
-  const blocks = tabBlocks(text);
+/** The taps as time-coordinates (see above), for repeated use without redoing the block layout each frame. */
+export function anchorCoords(text: string, blocks: TabBlock[], anchors: TabAnchor[]): TabAnchor[] {
   const coords: TabAnchor[] = [];
   for (const a of anchors) {
     const c = offsetToCoord(text, blocks, a.charOffset);
     if (c !== null) coords.push({ charOffset: c, time: a.time });
   }
-  const coord = charOffsetAt(coords, t);
+  return coords;
+}
+
+/** Everything together: where in the tab is time `t`, given the taps. Null with too few taps or no tab. */
+export function tabPositionAt(text: string, anchors: TabAnchor[], t: number) {
+  const blocks = tabBlocks(text);
+  const coord = charOffsetAt(anchorCoords(text, blocks, anchors), t);
   return coord === null ? null : coordToPlace(blocks, coord);
+}
+
+// ---- scroll strip ---------------------------------------------------------------------------------
+// The same blocks laid out as one long line per string: labels pinned separately, the rest of each
+// row joined end to end. The music's position is then one x that only ever increases.
+
+export interface StripLayout {
+  /** One label per string row ("e|"), from the first block. */
+  labels: string[];
+  /** One long line per string row. */
+  rows: string[];
+  /** Strip column where each block's content begins. */
+  startOf: number[];
+}
+
+export function stripLayout(text: string, blocks: TabBlock[]): StripLayout {
+  const lines = text.split('\n');
+  const nRows = blocks.length ? Math.max(...blocks.map((b) => b.lastRow - b.firstRow + 1)) : 0;
+  const labels: string[] = [];
+  const rows: string[] = [];
+  const startOf: number[] = [];
+  let at = 0;
+  for (const b of blocks) {
+    startOf.push(at);
+    at += b.chars - b.label;
+  }
+  for (let k = 0; k < nRows; k++) {
+    labels.push(blocks.length ? (lines[blocks[0].firstRow + k] ?? '').padEnd(blocks[0].label).slice(0, blocks[0].label) : '');
+    rows.push(blocks.map((b) => (lines[b.firstRow + k] ?? '').padEnd(b.chars).slice(b.label)).join(''));
+  }
+  return { labels, rows, startOf };
+}
+
+/** The strip column (fractional) for a time-coordinate. Each time column carries the zero-width
+ * columns that follow it (a bar line, a second fret digit), so the strip moves at a steady speed and
+ * arrives at each note exactly on its time rather than lurching across a bar line. */
+export function coordToStripX(blocks: TabBlock[], layout: StripLayout, coord: number): number {
+  if (!blocks.length) return 0;
+  const c = Math.max(0, coord);
+  let idx = blocks.findIndex((k) => c < k.start + k.width);
+  if (idx < 0) idx = blocks.length - 1;
+  const b = blocks[idx];
+  const local = Math.min(b.width, c - b.start);
+  for (let j = b.label; j < b.chars; j++) {
+    if (!b.counts[j] || local < b.cum[j] || local >= b.cum[j] + 1) continue;
+    let z = 0;
+    while (j + 1 + z < b.chars && !b.counts[j + 1 + z]) z++;
+    return layout.startOf[idx] + (j - b.label) + (local - b.cum[j]) * (1 + z);
+  }
+  return layout.startOf[idx] + (b.chars - b.label);
 }

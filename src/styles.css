@@ -674,6 +674,13 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
 /* ---------- tab+ (synced tab follow-along) ---------- */
 /* white-space:normal on the box (its .scratch-area.mono class sets pre): otherwise the whitespace between
    its child elements in the HTML source renders as stray blank lines above the text. */
+.scratch-area.tab-strip { display: flex; overflow: hidden; white-space: normal; min-height: 0; }
+.scratch-area.tab-strip[hidden] { display: none; }
+.tab-strip-labels { margin: 0; font: inherit; white-space: pre; }
+.tab-strip-view { position: relative; flex: 1; overflow: hidden; }
+.tab-strip-text { margin: 0; font: inherit; white-space: pre; will-change: transform; }
+/* The fixed spot the strip scrolls past; its width and height are set from the measured font in deck.ts. */
+.tab-strip-cursor { position: absolute; top: 0; left: 40%; background: var(--accent); opacity: 0.35; border-radius: 2px; pointer-events: none; }
 .tab-tap-sel { display: inline-flex; align-items: center; gap: 6px; }
 .scratch-area.tab-follow { position: relative; max-height: 260px; overflow: auto; scroll-behavior: smooth; white-space: normal; }
 .tab-follow-text { margin: 0; font: inherit; white-space: pre; }
