@@ -610,12 +610,15 @@ export class Deck {
       this.player.seek(view.start + f * (view.end - view.start));
     };
     // Scroll-to-zoom only acts on the picked track, zooming just that track, so scrolling
-    // the page past the others doesn't hijack it or change what they're showing.
+    // the page past the others doesn't hijack it or change what they're showing. Shift+scroll
+    // (sideways panning) works over any track though, since it doesn't fight page scrolling:
+    // a track with its own zoom pans itself, any other pans the shared view.
     el.addEventListener('click', () => this.selectLane(lane));
     wave.addEventListener(
       'wheel',
       (e) => {
         if (this.selectedLane === lane) this.onWheel(e, wave, lane);
+        else if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) this.onWheel(e, wave, lane.ownView ? lane : undefined);
       },
       { passive: false },
     );
@@ -2484,7 +2487,8 @@ export class Deck {
     const view = lane ? (lane.ownView ?? this.view) : this.view;
     const span = view.end - view.start;
     if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-      const d = e.shiftKey ? e.deltaY : e.deltaX;
+      // Shift+wheel arrives as deltaY on some platforms and already turned into deltaX on others.
+      const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
       const start = view.start + (d / el.clientWidth) * span;
       const end = view.end + (d / el.clientWidth) * span;
       if (lane) this.setLaneView(lane, start, end);
@@ -2799,9 +2803,12 @@ export class Deck {
 
   private initKeys() {
     window.addEventListener('keydown', (e) => {
+      // A focused slider (left there after dragging one, e.g. the zoom scrollbar) doesn't use Space
+      // itself, so let it through to play/pause rather than going dead until you click elsewhere.
+      const onSlider = e.target instanceof HTMLInputElement && e.target.type === 'range' && e.code === 'Space';
       if (
         !this.r ||
-        e.target instanceof HTMLInputElement ||
+        (e.target instanceof HTMLInputElement && !onSlider) ||
         e.target instanceof HTMLTextAreaElement ||
         e.target instanceof HTMLSelectElement ||
         (e.target as HTMLElement)?.isContentEditable
