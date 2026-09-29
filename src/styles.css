@@ -412,13 +412,26 @@ details.more[open] summary { color: var(--text); }
 .scratch-float-handle { font-size: 13px; font-weight: 600; color: var(--muted); letter-spacing: 0.02em; }
 .dpane[data-pane='scratch'].floating {
   position: fixed; z-index: 30; width: 420px; height: 480px; min-width: 300px; min-height: 240px;
-  margin: 0; padding: 10px; overflow: auto;
+  margin: 0; padding: 10px; overflow: hidden;
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
 }
 .dpane[data-pane='scratch'].floating .scratch-float-bar { display: flex; }
-/* Let the text areas fill whatever room the panel's own size gives them, rather than each keeping
-   its own fixed min-height and native resize handle (replaced by the one custom handle below). */
-.dpane[data-pane='scratch'].floating .scratch-area { flex: 1; min-height: 0; resize: none; }
+/* Docked, the pane sits inside .deck-top, which stays pinned (position:sticky) to the top of .stage
+   while everything below it — the tracks — scrolls underneath. Left to grow with its content the way
+   it used to, a tall Scratchpad (easy to get to now, between the tab views and the staff) would inflate
+   how much of the sticky header there is to scroll past just to reach the tracks. Capped and scrolling
+   internally instead, the same way the library and setlist lists are. */
+.dpane[data-pane='scratch']:not(.floating) { max-height: 420px; overflow: hidden; }
+/* Both docked and floating: the toolbar (Float/Lyrics/Tab/Drum tab/Notes and everything under the open
+   one) stays put at a fixed height — flex-shrink:0 so it's never the thing that gives when space is
+   tight — while whichever content view is open (a plain text box, the read-only follow-along page, the
+   scroll strip, or the staff) is the flexible part that actually scrolls, each handling its own
+   scrolling exactly as it already did undocked. #tabTimeline isn't itself a .scratch-area (it's a
+   wrapper around the scroll strip and the staff, joined into one when both are shown), so it needs the
+   same treatment named explicitly. */
+.dpane[data-pane='scratch'] .scratch-float-bar, .dpane[data-pane='scratch'] .tool.scratch-tabs { flex-shrink: 0; }
+.dpane[data-pane='scratch'] .scratch-area, .dpane[data-pane='scratch'] #tabTimeline { flex: 1; min-height: 0; }
+.dpane[data-pane='scratch'].floating .scratch-area { resize: none; }
 .scratch-resize-handle { display: none; position: absolute; right: 0; bottom: 0; width: 18px; height: 18px; cursor: nwse-resize; touch-action: none; }
 .scratch-resize-handle::before {
   content: ''; position: absolute; right: 4px; bottom: 4px; width: 8px; height: 8px;
@@ -431,6 +444,10 @@ details.more[open] summary { color: var(--text); }
   .dpane[data-pane='scratch'].floating .scratch-float-bar,
   .dpane[data-pane='scratch'].floating .scratch-resize-handle { display: none; }
   .dpane[data-pane='scratch'].floating .scratch-area { flex: none; min-height: 180px; resize: vertical; }
+  /* Same reasoning as the docked cap above, and needed here too: below the breakpoint .stage no longer
+     scrolls on its own (.layout stacks into one column instead — see the min-width:901px block), so
+     without a cap here a tall Scratchpad would still push the tracks a long way down the single page. */
+  .dpane[data-pane='scratch'] { max-height: 420px; overflow: hidden; }
 }
 #lyricsSearchLink { display: none; margin-left: auto; text-decoration: none; }
 #scratchTabLyrics[aria-pressed='true'] ~ #lyricsSearchLink { display: inline-flex; }
@@ -685,7 +702,11 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
    place the shared bar, which needs it to stay laid out (display:none zeroes getBoundingClientRect). */
 .tab-timeline.joined .tab-strip-cursor, .tab-timeline.joined .tab-staff-cursor { opacity: 0; }
 .tab-timeline-cursor { position: absolute; top: 0; bottom: 0; background: var(--accent); opacity: 0.35; border-radius: 2px; pointer-events: none; }
-.scratch-area.tab-strip { display: flex; overflow: hidden; white-space: normal; min-height: 0; }
+/* overflow-x stays hidden (it crops the horizontally-sliding track, same reason as ever); overflow-y is
+   now auto rather than hidden, so a tab with more string rows than the box has room for scrolls into
+   view instead of being clipped off — this matters more now that a docked/floating Scratchpad caps its
+   own total height (see .dpane[data-pane='scratch']) rather than growing to fit whatever's inside it. */
+.scratch-area.tab-strip { display: flex; overflow-x: hidden; overflow-y: auto; white-space: normal; min-height: 0; }
 .scratch-area.tab-strip[hidden] { display: none; }
 .tab-strip-labels { margin: 0; font: inherit; white-space: pre; }
 .tab-strip-view { position: relative; flex: 1; overflow: hidden; }
@@ -694,7 +715,10 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
 .tab-strip-bars { color: var(--muted); }
 /* The fixed spot the strip scrolls past; its width and height are set from the measured font in deck.ts. */
 .tab-strip-cursor { position: absolute; top: 0; left: 40%; /* top is set in deck.ts to sit below the bar-number line */ background: var(--accent); opacity: 0.35; border-radius: 2px; pointer-events: none; }
-.scratch-area.tab-staff { overflow: hidden; min-height: 0; padding: 2px 12px; color: var(--text); }
+/* Same reasoning as .tab-strip just above: x stays clipped (the staff also slides horizontally), y is
+   scrollable instead of clipped — the staff's own height is sized to the tab's pitch range now, which
+   can be taller than a capped panel has room for. */
+.scratch-area.tab-staff { overflow-x: hidden; overflow-y: auto; min-height: 0; padding: 2px 12px; color: var(--text); }
 .scratch-area.tab-staff[hidden] { display: none; }
 .tab-staff-view { position: relative; overflow: hidden; }
 .tab-staff-track { will-change: transform; width: max-content; }
