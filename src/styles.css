@@ -431,6 +431,19 @@ details.more[open] summary { color: var(--text); }
    same treatment named explicitly. */
 .dpane[data-pane='scratch'] .scratch-float-bar, .dpane[data-pane='scratch'] .tool.scratch-tabs { flex-shrink: 0; }
 .dpane[data-pane='scratch'] .scratch-area, .dpane[data-pane='scratch'] #tabTimeline { flex: 1; min-height: 0; }
+/* Within #tabTimeline specifically, the strip and the staff aren't equal — an even flex:1 split gave
+   each half the available height regardless of what either actually needed, which starved the strip
+   (a fixed handful of string rows, typically its full content fits in less space than half) of room
+   for rows it should never need to scroll for, while leaving the staff either short of what its own
+   (separately, correctly, sized) content needed or sitting in more space than it needed. The strip now
+   takes exactly its own content's height and no more; the staff gets whatever's left, same as it would
+   if the strip weren't there at all — scrolling internally itself if that's still not enough. */
+/* shrink:0, not 1: the staff's flex-basis is 0% (plain flex:1), so in a flex-shrink pass the browser
+   gives it a "scaled shrink factor" of zero and puts basically all of the shrinking onto whichever
+   other item has a nonzero one — which, at shrink:1, was the strip, the one item here that shouldn't
+   be shrinking below its content at all. shrink:0 takes it out of that pool entirely; the staff, which
+   actually has flex-grow, ends up with what's left over instead, which is what should be shrinking. */
+.dpane[data-pane='scratch'] .scratch-area.tab-strip { flex: 0 0 auto; }
 .dpane[data-pane='scratch'].floating .scratch-area { resize: none; }
 .scratch-resize-handle { display: none; position: absolute; right: 0; bottom: 0; width: 18px; height: 18px; cursor: nwse-resize; touch-action: none; }
 .scratch-resize-handle::before {
