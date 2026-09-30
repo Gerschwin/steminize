@@ -400,7 +400,7 @@
                   <button class="btn tiny ghost" type="button" id="tabRhythmBtn" title="Add a rhythm line under each block of strings. Put a letter under each note for how long it lasts: w whole, h half, q quarter, e eighth, s sixteenth (add a dot for dotted; capital letter = a rest). A note with no letter repeats the last one. Timing then follows the rhythm exactly.">Add rhythm line</button>
                   <button class="btn tiny ghost" type="button" id="tabTapBtn" hidden title="Tap this in time with the music to mark where the cursor is right now — a few taps per song is enough to follow along (keyboard: Ctrl/⌘+Enter while the cursor is in the tab)">Tap ⏱</button>
                   <span class="muted small" id="tabAnchorCount" hidden></span>
-                  <button class="btn tiny ghost toggle" type="button" id="tabFollowBtn" aria-pressed="false" hidden title="Show the tab engraved — fret numbers on a tab stave, with a rhythm row above showing the exact timing — and follow where you're tapped in, instead of the plain typed text">Follow along</button>
+                  <button class="btn tiny ghost toggle" type="button" id="tabFollowBtn" aria-pressed="false" hidden title="Show the tab engraved — fret numbers on a tab stave, with a rhythm row underneath showing the exact timing — and follow where you're tapped in, instead of the plain typed text">Follow along</button>
                   <span class="tab-tap-sel" id="tabTapSel" hidden>
                     <span class="muted small" id="tabTapSelLabel"></span>
                     <button class="btn tiny ghost" type="button" id="tabTapLockBtn" title="Lock this tap so it can't be dragged, re-tapped over or removed">Lock</button>
@@ -414,7 +414,7 @@
                 <div class="lyrics-follow" id="lyricsFollow" hidden aria-live="off"></div>
                 <textarea class="scratch-area mono" id="scratchTab" placeholder="e|--------------------|&#10;B|--------------------|&#10;G|--------------------|&#10;D|--------------------|&#10;A|--------------------|&#10;E|--------------------|" spellcheck="false" wrap="off" hidden></textarea>
                 <div class="tab-timeline" id="tabTimeline">
-                  <!-- The engraved tab (tab stave + rhythm row above it): follow-along's read-only view for
+                  <!-- The engraved tab (tab stave + rhythm row under it): follow-along's read-only view for
                        the Tab pane, replacing what used to be the plain typed text scrolled past a marker.
                        Same view/track/cursor/notebox structure as the staff below (shared CSS classes), since
                        both are now VexFlow-drawn notation sliding past a fixed point the same way. -->

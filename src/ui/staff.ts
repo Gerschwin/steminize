@@ -198,11 +198,12 @@ export function staffX(map: { u: number; x: number }[], u: number): number {
   return map[map.length - 1].x;
 }
 
-// ---- rhythm-tab: fret numbers on a tab stave, with note durations shown as stems/beams above it ----
-// (the display in BACKLOG's tab+ roadmap screenshot: a compact rhythm row — no 5-line staff, no pitch,
-// just the beaming a reader needs to feel the timing — sitting right above the tab it times, rather than
-// a full notation staff some distance below it. The full staff (drawStaff, above) stays available too:
-// pitched here draws real noteheads in the rhythm row instead of the plain rhythm-slash placeholder.)
+// ---- rhythm-tab: fret numbers on a tab stave, with note durations shown as stems/beams under it ----
+// (based on the display in BACKLOG's tab+ roadmap screenshot, but with the rhythm row moved below the
+// tab rather than above it: a compact row — no 5-line staff, no pitch, just the beaming a reader needs
+// to feel the timing — sitting right under the tab it times, rather than a full notation staff some
+// distance away. The full staff (drawStaff, above) stays available too: pitched here draws real
+// noteheads in the rhythm row instead of the plain rhythm-slash placeholder.)
 
 export interface TabScoreLayout {
   map: { u: number; x: number }[];
@@ -217,7 +218,7 @@ export interface TabScoreLayout {
 const fretText = (fret: number | null): string => (fret === null ? 'x' : String(fret));
 
 /** Draws fret numbers on a tab stave (6 lines, a "TAB" glyph instead of a clef) with a compact rhythm
- * row above it showing the same notes' exact durations as stems, beams, dots and flags — no 5-line
+ * row under it showing the same notes' exact durations as stems, beams, dots and flags — no 5-line
  * staff, just enough notation to read the timing, unless `pitched` asks for real noteheads there too.
  * `host` is expected to still be off-document when this is called (the usual caller draws into a
  * detached element first, so a stale or failed drawing is never visible even for a moment, only
@@ -232,7 +233,12 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
   host.replaceChildren();
 
   const CLEF = 64;
-  const RHYTHM_H = pitched ? 90 : 46; // just stems+beams needs much less room than real noteheads/ledger lines
+  // Stems on this row default to pointing down (VexFlow's own call for a note sitting on the middle
+  // line, which every unpitched placeholder note does), so the row needs headroom below its own
+  // reference line, not just above it — when the rhythm row sat above the tab (the first version of
+  // this) that extra reach quietly fell into the generous tab-stave gap below and went unnoticed; now
+  // that it's the last thing on the page, there's nothing below to absorb it, so it has to be sized in.
+  const RHYTHM_H = 90;
   const GAP = 6;
   // How tall a TabStave actually is, asked rather than guessed: the vertical "TAB" glyph at the start
   // (addTabGlyph()) turned out to push the six string lines down by roughly 4 lines' worth of its own
@@ -255,13 +261,17 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
   let x = 0;
   bars.forEach((bar, bi) => {
     const w = widthOf(bar) + (bi === 0 ? CLEF : 0);
-    const rhythmY = pitched ? 46 : 10;
+    const tabY = 10;
+    const tabStave = new TabStave(x, tabY, w);
+    if (bi === 0) tabStave.addTabGlyph();
+    tabStave.setContext(ctx).draw();
+    // TAB_H is already the tab stave's own absolute bottom-line y (its "+10" already covers tabY) —
+    // adding tabY again here would double-count it and push the rhythm row, and the SVG's declared
+    // height, 10px further down than the content actually needs.
+    const rhythmY = TAB_H + GAP;
     const rhythmStave = new Stave(x, rhythmY, w, pitched ? undefined : { numLines: 0 });
     if (bi === 0 && pitched) rhythmStave.addClef('treble', 'default', '8vb');
     rhythmStave.setContext(ctx).draw();
-    const tabStave = new TabStave(x, rhythmY + RHYTHM_H + GAP, w);
-    if (bi === 0) tabStave.addTabGlyph();
-    tabStave.setContext(ctx).draw();
 
     const inBar = notes.filter((n) => n.bar === bi);
     const groups = new Map<number, TabNote[]>();
@@ -325,8 +335,8 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
     // Every fret digit sits on its own small solid-white "eraser" rectangle (VexFlow's own, to blank
     // out the tab line it would otherwise cross) — always white, regardless of theme. Drawn in the
     // app's usual near-white currentColor, a digit there is nearly invisible on its own background;
-    // a fixed dark fill, just for this pass, gives it the contrast the light rhythm row above doesn't
-    // need (nothing else there sits on a forced-white patch).
+    // a fixed dark fill, just for this pass, gives it the contrast the light rhythm row doesn't need
+    // (nothing there sits on a forced-white patch).
     ctx.save();
     ctx.setFillStyle('#111');
     tabVoice.draw(ctx, tabStave);
