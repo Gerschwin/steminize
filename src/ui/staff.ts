@@ -218,7 +218,12 @@ const fretText = (fret: number | null): string => (fret === null ? 'x' : String(
 
 /** Draws fret numbers on a tab stave (6 lines, a "TAB" glyph instead of a clef) with a compact rhythm
  * row above it showing the same notes' exact durations as stems, beams, dots and flags — no 5-line
- * staff, just enough notation to read the timing, unless `pitched` asks for real noteheads there too. */
+ * staff, just enough notation to read the timing, unless `pitched` asks for real noteheads there too.
+ * `host` is expected to still be off-document when this is called (the usual caller draws into a
+ * detached element first, so a stale or failed drawing is never visible even for a moment, only
+ * moving it into the real page once it's finished) — which rules out anything here that needs to look
+ * its own output back up via document.getElementById() (VexFlow's Element.getSVGElement() does
+ * exactly that), a trap the unpitched rhythm row's blanked-out noteheads fell into once already. */
 export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: TabBar[], pitched = false): Promise<TabScoreLayout> {
   vex ??= import('vexflow/bravura');
   const vf = await vex;
@@ -229,7 +234,13 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
   const CLEF = 64;
   const RHYTHM_H = pitched ? 90 : 46; // just stems+beams needs much less room than real noteheads/ledger lines
   const GAP = 6;
-  const TAB_H = 6 * 13 + 24; // matches TabStave's own default line spacing, plus room for the "TAB" glyph and fret digits
+  // How tall a TabStave actually is, asked rather than guessed: the vertical "TAB" glyph at the start
+  // (addTabGlyph()) turned out to push the six string lines down by roughly 4 lines' worth of its own
+  // height, which a plain lines×spacing sum doesn't account for at all — the first version of this
+  // guessed too little, and the bottom two of six lines rendered past the SVG's own height, clipped
+  // off entirely (not a CSS/scrolling problem — nothing to scroll to, they were never in the picture).
+  // getBottomY() needs no context or drawing, just the stave's own line/glyph configuration.
+  const TAB_H = new TabStave(0, 0, 100).addTabGlyph().getBottomY() + 10;
   const ROW = RHYTHM_H + GAP + TAB_H;
   const widthOf = (b: TabBar) => Math.max(96, b.length * 14 + 40);
   const total = CLEF + bars.reduce((n, b) => n + widthOf(b), 0) + 20;
@@ -267,6 +278,14 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
       const midis = pitched ? [...new Set(group.filter((n) => n.midi !== null).map((n) => n.midi!))].sort((a, b) => a - b) : [];
       const rNote = new StaveNote({ keys: rest || !midis.length ? ['b/4'] : midis.map(vexKey), duration: base + (rest ? 'r' : ''), dots, clef: 'treble' });
       if (dots) Dot.buildAndAttach([rNote], { all: true });
+      // Unpitched: the notehead is a stand-in with no real meaning, so it's made invisible right here
+      // — via the note's own per-key style, baked into its drawing, rather than trying to find and
+      // hide its rendered SVG element afterwards. That needs a live, attached document to search
+      // (Element.getSVGElement() is a plain document.getElementById()), which this drawing isn't yet:
+      // it's drawn into a detached element first, on purpose (see drawTabScore's own doc comment), so
+      // a stale or failed drawing is never visible even for a moment — only moved into the real page,
+      // by the caller, once it's finished.
+      if (!rest && !pitched) rNote.setKeyStyle(0, { fillStyle: 'transparent', strokeStyle: 'transparent' });
       rhythmTickables.push(rNote);
       // A rest in the tab row: a GhostNote occupies the right amount of time (for the rhythm/tab
       // columns to still line up) without drawing anything — VFTabNote's own .setGhost(true) is a

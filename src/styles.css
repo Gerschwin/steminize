@@ -406,13 +406,13 @@ details.more[open] summary { color: var(--text); }
    `resize`, so this doesn't depend on it either. */
 .scratch-float-bar {
   display: none; align-items: center; justify-content: space-between; gap: 8px;
-  margin: -10px -10px 0; padding: 7px 8px 7px 12px; border-radius: var(--radius) var(--radius) 0 0;
+  padding: 7px 8px 7px 12px; border-radius: var(--radius) var(--radius) 0 0;
   background: var(--panel-2); cursor: move; user-select: none; touch-action: none;
 }
 .scratch-float-handle { font-size: 13px; font-weight: 600; color: var(--muted); letter-spacing: 0.02em; }
 .dpane[data-pane='scratch'].floating {
   position: fixed; z-index: 30; width: 420px; height: 480px; min-width: 300px; min-height: 240px;
-  margin: 0; padding: 10px; overflow: hidden;
+  margin: 0; padding: 10px; overflow-y: auto; overflow-x: hidden;
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
 }
 .dpane[data-pane='scratch'].floating .scratch-float-bar { display: flex; }
@@ -421,30 +421,20 @@ details.more[open] summary { color: var(--text); }
    it used to, a tall Scratchpad (easy to get to now, between the tab views and the staff) would inflate
    how much of the sticky header there is to scroll past just to reach the tracks. Capped and scrolling
    internally instead, the same way the library and setlist lists are. */
-.dpane[data-pane='scratch']:not(.floating) { max-height: 420px; overflow: hidden; }
-/* Both docked and floating: the toolbar (Float/Lyrics/Tab/Drum tab/Notes and everything under the open
-   one) stays put at a fixed height — flex-shrink:0 so it's never the thing that gives when space is
-   tight — while whichever content view is open (a plain text box, the read-only follow-along page, the
-   scroll strip, or the staff) is the flexible part that actually scrolls, each handling its own
-   scrolling exactly as it already did undocked. #tabTimeline isn't itself a .scratch-area (it's a
-   wrapper around the scroll strip and the staff, joined into one when both are shown), so it needs the
-   same treatment named explicitly. */
-.dpane[data-pane='scratch'] .scratch-float-bar, .dpane[data-pane='scratch'] .tool.scratch-tabs { flex-shrink: 0; }
-.dpane[data-pane='scratch'] .scratch-area, .dpane[data-pane='scratch'] #tabTimeline { flex: 1; min-height: 0; }
-/* Within #tabTimeline specifically, the strip and the staff aren't equal — an even flex:1 split gave
-   each half the available height regardless of what either actually needed, which starved the strip
-   (a fixed handful of string rows, typically its full content fits in less space than half) of room
-   for rows it should never need to scroll for, while leaving the staff either short of what its own
-   (separately, correctly, sized) content needed or sitting in more space than it needed. The strip now
-   takes exactly its own content's height and no more; the staff gets whatever's left, same as it would
-   if the strip weren't there at all — scrolling internally itself if that's still not enough. */
-/* shrink:0, not 1: the staff's flex-basis is 0% (plain flex:1), so in a flex-shrink pass the browser
-   gives it a "scaled shrink factor" of zero and puts basically all of the shrinking onto whichever
-   other item has a nonzero one — which, at shrink:1, was the strip, the one item here that shouldn't
-   be shrinking below its content at all. shrink:0 takes it out of that pool entirely; the staff, which
-   actually has flex-grow, ends up with what's left over instead, which is what should be shrinking. */
-.dpane[data-pane='scratch'] .scratch-area.tab-strip { flex: 0 0 auto; }
-.dpane[data-pane='scratch'].floating .scratch-area { resize: none; }
+.dpane[data-pane='scratch']:not(.floating) { max-height: 420px; overflow-y: auto; overflow-x: hidden; }
+/* Both docked and floating: the drag handle + toolbar (#scratchStickyTop) stay in view at the top of
+   the Scratchpad's own scrollbar while everything below it — whichever tab content is open — scrolls
+   underneath, the same way .side-tabs and .deck-top do for their own panes. Content is left to its
+   natural height rather than fighting it for space with flex:1/flex-shrink tricks (an earlier version
+   of this split the engraved tab and the full staff's height evenly between them regardless of what
+   either actually needed, and separately could clip the bottom of whichever one lost that split with
+   no way to reach it — a plain, single scrollbar for the whole pane doesn't have either problem). */
+.scratch-sticky-top { position: sticky; top: 0; z-index: 1; background: var(--panel); display: flex; flex-direction: column; gap: 10px; }
+/* Floating only: the panel has its own 10px padding all round (unlike docked, where .dpane has none),
+   so the sticky header needs the same ancestor-padding compensation .deck-top uses elsewhere in this
+   file — bleed out to the panel's real top/left/right edges, then pad itself back in by the same
+   amount, so it sticks flush with rounded corners instead of leaving a 10px gap above it when stuck. */
+.dpane[data-pane='scratch'].floating .scratch-sticky-top { margin: -10px -10px 0; padding: 10px 10px 0; border-radius: var(--radius) var(--radius) 0 0; }
 .scratch-resize-handle { display: none; position: absolute; right: 0; bottom: 0; width: 18px; height: 18px; cursor: nwse-resize; touch-action: none; }
 .scratch-resize-handle::before {
   content: ''; position: absolute; right: 4px; bottom: 4px; width: 8px; height: 8px;
@@ -453,14 +443,13 @@ details.more[open] summary { color: var(--text); }
 .dpane[data-pane='scratch'].floating .scratch-resize-handle { display: block; }
 @media (max-width: 900px) {
   /* A free-floating, draggable window doesn't fit a phone-width single column: dock it there instead. */
-  .dpane[data-pane='scratch'].floating { position: static; width: auto; height: auto; inset: auto; overflow: visible; box-shadow: none; }
+  .dpane[data-pane='scratch'].floating { position: static; width: auto; height: auto; inset: auto; box-shadow: none; }
   .dpane[data-pane='scratch'].floating .scratch-float-bar,
   .dpane[data-pane='scratch'].floating .scratch-resize-handle { display: none; }
-  .dpane[data-pane='scratch'].floating .scratch-area { flex: none; min-height: 180px; resize: vertical; }
   /* Same reasoning as the docked cap above, and needed here too: below the breakpoint .stage no longer
      scrolls on its own (.layout stacks into one column instead — see the min-width:901px block), so
      without a cap here a tall Scratchpad would still push the tracks a long way down the single page. */
-  .dpane[data-pane='scratch'] { max-height: 420px; overflow: hidden; }
+  .dpane[data-pane='scratch'] { max-height: 420px; overflow-y: auto; overflow-x: hidden; }
 }
 #lyricsSearchLink { display: none; margin-left: auto; text-decoration: none; }
 #scratchTabLyrics[aria-pressed='true'] ~ #lyricsSearchLink { display: inline-flex; }
@@ -708,9 +697,9 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
    cursor/notebox classes below, applied to both; only the outer wrapper classes (.tab-strip,
    .tab-staff) differ, for the height-sizing rule just under this comment. */
 .tab-timeline { position: relative; display: flex; flex-direction: column; }
-/* .dpane[data-pane='scratch'] .scratch-area.tab-strip's flex:0 0 auto, set earlier in this file
-   (it's about the Scratchpad's own capped height, not specific to this section), is what makes the
-   engraved tab take exactly its own content's height while the staff gets whatever's left over. */
+/* Neither box is given flex:1 here, so each takes exactly its own natural content height (the default
+   for a flex item) — the Scratchpad's own scrollbar (see .dpane[data-pane='scratch']) is what handles
+   there not being enough room for both, rather than the two fighting over a fixed amount of space. */
 /* When both boxes show, remove the seam between them so the shared cursor line reads as one strip. */
 .tab-timeline.joined #tabStrip { margin-bottom: -1px; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .tab-timeline.joined #tabStaff { border-top-left-radius: 0; border-top-right-radius: 0; }
@@ -722,9 +711,11 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
 .tab-timeline.joined .tab-staff-cursor { opacity: 0; }
 .tab-timeline-cursor { position: absolute; top: 0; bottom: 0; background: var(--accent); opacity: 0.35; border-radius: 2px; pointer-events: none; }
 /* x stays clipped (both boxes slide their content horizontally via transform, past the fixed
-   cursor); y is scrollable rather than clipped, since a wide-ranging tab or a tall rhythm row can
-   need more height than a capped panel has room for — see .dpane[data-pane='scratch'] below for
-   why the panel itself is capped rather than growing to fit whatever's inside it. */
+   cursor). y is auto rather than visible mostly because a browser won't actually let it be visible
+   here — an axis left visible while the other isn't gets silently forced to auto — but it's also a
+   second line of defence behind the Scratchpad's own scrollbar (see .dpane[data-pane='scratch']):
+   each box normally renders at its own full natural height, this only matters if something else
+   ever constrains it smaller than that. */
 .scratch-area.tab-strip, .scratch-area.tab-staff { overflow-x: hidden; overflow-y: auto; min-height: 0; padding: 2px 12px; color: var(--text); }
 .scratch-area.tab-strip[hidden], .scratch-area.tab-staff[hidden] { display: none; }
 .tab-staff-view { position: relative; overflow: hidden; }

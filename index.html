@@ -373,11 +373,16 @@
                 </div>
               </div>
               <div class="dpane" data-pane="scratch" hidden>
-                <div class="scratch-float-bar" id="scratchFloatBar">
-                  <span class="scratch-float-handle" id="scratchFloatHandle">⠿ Scratchpad</span>
-                  <button class="btn tiny ghost" id="scratchDockBtn" type="button" title="Dock back into the panel">Dock</button>
-                </div>
-                <div class="tool scratch-tabs">
+                <!-- The drag handle (floating only) and the tab toolbar stick together as one unit at the
+                     top of the Scratchpad while its content scrolls underneath — wrapped so they stick as
+                     a single block instead of each needing its own top offset (the handle's own height,
+                     for the toolbar, isn't a fixed number — it can wrap to more than one line). -->
+                <div class="scratch-sticky-top" id="scratchStickyTop">
+                  <div class="scratch-float-bar" id="scratchFloatBar">
+                    <span class="scratch-float-handle" id="scratchFloatHandle">⠿ Scratchpad</span>
+                    <button class="btn tiny ghost" id="scratchDockBtn" type="button" title="Dock back into the panel">Dock</button>
+                  </div>
+                  <div class="tool scratch-tabs">
                   <button class="btn tiny ghost" type="button" id="scratchFloatBtn" title="Pop out into a moveable, resizable window">Float ⧉</button>
                   <button class="btn tiny ghost toggle" type="button" id="scratchTabLyrics" aria-pressed="true">Lyrics</button>
                   <button class="btn tiny ghost toggle" type="button" id="scratchTabTab" aria-pressed="false">Tab</button>
@@ -403,6 +408,7 @@
                   </span>
                   <button class="btn tiny ghost toggle" type="button" id="tabStaffBtn" aria-pressed="false" hidden title="Also show a full standard-notation staff underneath, with real pitches — the engraved tab above already shows the rhythm on its own. With taps set, it follows the music too.">Staff</button>
                   <button class="btn tiny ghost" type="button" id="tabClearAnchorsBtn" hidden title="Clear this tab's timing and start tapping again">Clear timing</button>
+                  </div>
                 </div>
                 <textarea class="scratch-area" id="scratchLyrics" placeholder="Lyrics… or paste synced lyrics in LRC format ([mm:ss.xx] words) to follow along" spellcheck="true"></textarea>
                 <div class="lyrics-follow" id="lyricsFollow" hidden aria-live="off"></div>
