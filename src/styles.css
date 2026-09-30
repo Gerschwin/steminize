@@ -45,13 +45,19 @@
   --shadow: 0 10px 30px rgba(20, 24, 40, 0.12);
   color-scheme: light;
 }
-/* The Scratchpad always renders light, regardless of the app's own theme — a workaround for the tab+
-   engraved view's fret numbers going invisible in dark mode on one real device (Linux/WebKitGTK; never
-   reproduced elsewhere, and multiple targeted rendering fixes didn't resolve it there either). Same
-   variables as :root[data-theme='light'] above, just re-declared on the panel itself so every element
-   inside it (docked or floating — same element either way, just repositioned) inherits the light
-   palette no matter what :root is set to. Revisit if the underlying WebKitGTK cause is ever found. */
-.dpane[data-pane='scratch'] {
+/* The Scratchpad's own content — the text boxes and the engraved tab/staff views, anywhere fret
+   numbers or other typed text actually renders — always renders light, regardless of the app's own
+   theme: a workaround for the tab+ engraved view's fret numbers going invisible in dark mode on one
+   real device (Linux/WebKitGTK; never reproduced elsewhere, and multiple targeted rendering fixes
+   didn't resolve it there either). Same variables as :root[data-theme='light'] above, re-declared
+   directly on the content containers (.scratch-area covers every text box and both engraved views
+   alike; .lyrics-follow and .tab-timeline are their own read-only-view siblings, not .scratch-area
+   themselves) rather than the whole panel, so the toolbar above them — Float, the pane switcher, Tap/
+   Follow along/Staff/Trainer and the rest — keeps following the app's real theme same as everywhere
+   else. Revisit if the underlying WebKitGTK cause is ever found. */
+.dpane[data-pane='scratch'] .scratch-area,
+.dpane[data-pane='scratch'] .lyrics-follow,
+.dpane[data-pane='scratch'] .tab-timeline {
   --bg: #f5f6fa;
   --panel: #ffffff;
   --panel-2: #f0f1f6;
