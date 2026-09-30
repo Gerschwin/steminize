@@ -229,24 +229,40 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
   vex ??= import('vexflow/bravura');
   const vf = await vex;
   if (typeof document !== 'undefined' && document.fonts) await document.fonts.ready.catch(() => {});
-  const { Renderer, Stave, TabStave, StaveNote, TabNote: VFTabNote, GhostNote, Voice, Formatter, Accidental, Dot, Beam } = vf;
+  const { Renderer, Stave, TabStave, StaveNote, TabNote: VFTabNote, GhostNote, Voice, Formatter, Accidental, Dot, Beam, Stem } = vf;
   host.replaceChildren();
 
   const CLEF = 64;
-  // Stems on this row default to pointing down (VexFlow's own call for a note sitting on the middle
-  // line, which every unpitched placeholder note does), so the row needs headroom below its own
-  // reference line, not just above it — when the rhythm row sat above the tab (the first version of
-  // this) that extra reach quietly fell into the generous tab-stave gap below and went unnoticed; now
-  // that it's the last thing on the page, there's nothing below to absorb it, so it has to be sized in.
   const RHYTHM_H = 90;
   const GAP = 6;
+  // The unpitched placeholder note's own pitch/line doesn't mean anything — the notehead is invisible
+  // — but VexFlow still uses it to decide the note's vertical position, so it's pinned to the stave's
+  // own bottom line ('e/4': the lowest line that still needs no ledger line, which a *forced* line
+  // below the actual stave, further down still, could quietly gain). The stem is forced down explicitly
+  // rather than left to VexFlow's own default (which flips to "up" for a note this low), so it still
+  // hangs into the row instead of doubling back up towards the tab.
+  const RHYTHM_KEY = 'e/4';
+  // How far below a Stave's own y the 'e/4' line actually lands, asked rather than guessed (same
+  // reasoning as TAB_H below): used to shift the row's stave up by exactly that much, so the note
+  // — sitting on that line, right where VexFlow puts it — ends up hard against the tab above it
+  // instead of leaving a gap the height of an unused stave underneath the two.
+  const RHYTHM_KEY_OFFSET = (() => {
+    const probeStave = new Stave(0, 0, 100, { numLines: 0 });
+    const probeNote = new StaveNote({ keys: [RHYTHM_KEY], duration: 'q', clef: 'treble' });
+    probeNote.setStave(probeStave);
+    return probeStave.getYForLine(probeNote.getKeyProps()[0].line);
+  })();
   // How tall a TabStave actually is, asked rather than guessed: the vertical "TAB" glyph at the start
   // (addTabGlyph()) turned out to push the six string lines down by roughly 4 lines' worth of its own
   // height, which a plain lines×spacing sum doesn't account for at all — the first version of this
   // guessed too little, and the bottom two of six lines rendered past the SVG's own height, clipped
   // off entirely (not a CSS/scrolling problem — nothing to scroll to, they were never in the picture).
-  // getBottomY() needs no context or drawing, just the stave's own line/glyph configuration.
-  const TAB_H = new TabStave(0, 0, 100).addTabGlyph().getBottomY() + 10;
+  // getBottomLineY() needs no context or drawing, just the stave's own line/glyph configuration — and
+  // is the actual last string line's own y, unlike its sibling getBottomY(), which measures down to
+  // the bottom of the stave's whole reserved area (room for ties, annotations, ...) and overshoots the
+  // real last line by a good 50-60px, enough to read as a stray gap once something (the rhythm row)
+  // is meant to sit right underneath it rather than just needing to clear it.
+  const TAB_H = new TabStave(0, 0, 100).addTabGlyph().getBottomLineY() + 10;
   const ROW = RHYTHM_H + GAP + TAB_H;
   const widthOf = (b: TabBar) => Math.max(96, b.length * 14 + 40);
   const total = CLEF + bars.reduce((n, b) => n + widthOf(b), 0) + 20;
@@ -267,8 +283,10 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
     tabStave.setContext(ctx).draw();
     // TAB_H is already the tab stave's own absolute bottom-line y (its "+10" already covers tabY) —
     // adding tabY again here would double-count it and push the rhythm row, and the SVG's declared
-    // height, 10px further down than the content actually needs.
-    const rhythmY = TAB_H + GAP;
+    // height, 10px further down than the content actually needs. Unpitched, the stave itself is
+    // shifted up by RHYTHM_KEY_OFFSET so the placeholder note (always on the same line) lands right
+    // at TAB_H + GAP rather than that much further down.
+    const rhythmY = pitched ? TAB_H + GAP : TAB_H + GAP - RHYTHM_KEY_OFFSET;
     const rhythmStave = new Stave(x, rhythmY, w, pitched ? undefined : { numLines: 0 });
     if (bi === 0 && pitched) rhythmStave.addClef('treble', 'default', '8vb');
     rhythmStave.setContext(ctx).draw();
@@ -286,7 +304,11 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
       const dots = code.endsWith('d') ? 1 : 0;
       const base = dots ? code.slice(0, -1) : code;
       const midis = pitched ? [...new Set(group.filter((n) => n.midi !== null).map((n) => n.midi!))].sort((a, b) => a - b) : [];
-      const rNote = new StaveNote({ keys: rest || !midis.length ? ['b/4'] : midis.map(vexKey), duration: base + (rest ? 'r' : ''), dots, clef: 'treble' });
+      const keys = !pitched ? [RHYTHM_KEY] : rest || !midis.length ? ['b/4'] : midis.map(vexKey);
+      const rNote = new StaveNote({ keys, duration: base + (rest ? 'r' : ''), dots, clef: 'treble' });
+      // RHYTHM_KEY sits low enough that VexFlow's own default would point the stem back up, towards
+      // the tab — forced down instead, so it hangs into the row the way it visually needs to here.
+      if (!rest && !pitched) rNote.setStemDirection(Stem.DOWN);
       if (dots) Dot.buildAndAttach([rNote], { all: true });
       // Unpitched: the notehead is a stand-in with no real meaning, so it's made invisible right here
       // — via the note's own per-key style, baked into its drawing, rather than trying to find and
