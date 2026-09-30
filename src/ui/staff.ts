@@ -415,7 +415,17 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
     // directly, as an inline style, on every digit's own element removes any dependency on inheritance
     // or on exactly when a context's fill state was read, at the cost of doing it twice when it isn't
     // needed — cheap insurance against a real gap this app has no way to reproduce and confirm fixed.
-    for (const el of svg.querySelectorAll<SVGTextElement>('.vf-tabnote text')) el.style.fill = '#111';
+    // The forced fill alone didn't fix that report, though, which points further upstream: Bravura is
+    // a pure music-symbol font with no digit glyphs of its own — a fret number only appears at all by
+    // falling through to Academico, VexFlow's bundled companion *text* font. Bravura-only glyphs (the
+    // "TAB" label, the muted-note 'x' symbol) were confirmed fine in that same session, so the likely
+    // gap is Academico specifically failing to load or render there — nothing left to fall through to,
+    // so nothing draws. A plain, always-available generic family appended after both closes that gap
+    // outright regardless of why Academico didn't come through.
+    for (const el of svg.querySelectorAll<SVGTextElement>('.vf-tabnote text')) {
+      el.style.fill = '#111';
+      el.style.fontFamily = 'Bravura, Academico, sans-serif';
+    }
   }
   return { map, notes: notesOut, width: total, height: ROW };
 }
