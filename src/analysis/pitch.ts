@@ -89,3 +89,11 @@ export function freqToNote(f: number): { note: number; cents: number } {
   const cents = Math.round((raw - note) * 100);
   return { note, cents };
 }
+
+/** How many cents sharp (+) or flat (-) `freq` is of a specific target note — unlike freqToNote,
+ * which rounds to whichever note is nearest, this measures against a note already known (e.g. a
+ * playing trainer's expected fret), so a wildly wrong note still gives a real (if large) distance
+ * rather than wrapping to whatever's closest. */
+export function centsFrom(freq: number, midi: number): number {
+  return 1200 * Math.log2(freq / (440 * Math.pow(2, (midi - 69) / 12)));
+}

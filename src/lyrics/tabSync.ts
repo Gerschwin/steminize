@@ -382,6 +382,12 @@ export function parseScore(text: string): { notes: TabNote[]; bars: TabBar[] } {
   return { notes: notes.sort((x, y) => x.start - y.start || x.string - y.string), bars };
 }
 
+/** The note(s) sounding at time `u` (in the same sixteenth-note units as TabNote.start/length) — more
+ * than one for a chord, none for a rest/gap. For the playing trainer: what's expected right now. */
+export function noteGroupAt(notes: TabNote[], u: number): TabNote[] {
+  return notes.filter((n) => u >= n.start && u < n.start + n.length);
+}
+
 export function parseTab(text: string): TabNote[] {
   return parseScore(text).notes;
 }

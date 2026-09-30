@@ -20,12 +20,14 @@ import {
   isRhythmRow,
   MIN_ANCHORS,
   moveAnchor,
+  noteGroupAt,
   parseScore,
   removeAnchor,
   tabBlocks,
   toggleAnchorLock,
   type TabAnchor,
   type TabBlock,
+  type TabNote,
 } from '../lyrics/tabSync.ts';
 import { FLAT, isFlat, sameEq, type EqParams } from '../player/eq.ts';
 import { eqPanel, type EqPanel } from './eqPanel.ts';
@@ -36,9 +38,13 @@ import type { Chord } from '../analysis/chords.ts';
 import type { NoteEvent } from '../analysis/basicPitch.ts';
 import type { Cqt } from '../analysis/cqt.ts';
 import { noteName } from '../analysis/cqt.ts';
-import { detectPitch, freqToNote } from '../analysis/pitch.ts';
+import { centsFrom, detectPitch, freqToNote } from '../analysis/pitch.ts';
 
 const SR = 44100;
+/** How far off (in cents, 100ths of a semitone) a live-played note can be and still count as a hit
+ * for the playing trainer — looser than the Tuner's ±5, which is for precise tuning: a fretted note's
+ * natural intonation wanders more than an open string settling into tune. */
+const TRAINER_TOLERANCE_CENTS = 40;
 
 /** Tab-tap ticks and tags on the waveforms: distinct from the loop (cyan), section markers (amber) and the played colour. */
 const TAB_TAP_COLOUR = '#34d399';
@@ -118,10 +124,13 @@ export interface ScratchState {
    * view to interpolate a scroll position between (see src/lyrics/tabSync.ts). */
   tabAnchors?: TabAnchor[];
   /** Show the Tab pane as the engraved follow-along view (a tab stave with fret numbers, a rhythm row
-   * above it) rather than the raw editable text. */
+   * under it) rather than the raw editable text. */
   tabFollow?: boolean;
   /** Also show a full standard-notation staff underneath the engraved tab. */
   tabStaff?: boolean;
+  /** Compare live mic pitch against the tab's notes as they play, highlighting right/wrong on the
+   * engraved view. Needs Live input monitoring running and turns tabFollow on if it wasn't already. */
+  tabTrainer?: boolean;
   drums?: string;
   notes?: string;
 }
@@ -372,6 +381,9 @@ export class Deck {
   // on-change layout plus a "last drawn x" to skip redundant per-frame work once it hasn't moved. ----
   private stripLayout: TabScoreLayout | null = null;
   private stripText: string | null = null;
+  /** The same parse's raw notes (string/fret/midi/start/length), kept alongside stripLayout's geometry
+   * for the playing trainer to compare against, without re-parsing the tab on every trainer tick. */
+  private stripNotes: TabNote[] | null = null;
   private stripToken = 0;
   private stripTimer: number | undefined;
   private lastStripPx = NaN;
@@ -380,6 +392,17 @@ export class Deck {
   private staffToken = 0;
   private staffTimer: number | undefined;
   private lastStaffPx = NaN;
+  // ---- playing trainer: compares live mic pitch against stripNotes as they play (see initTrainer) ----
+  /** Notes hit vs. total finalized so far this pass; reset on trainer-on, song change, or a backward
+   * seek (a loop restart or scrub back) — a fresh tally per pass, not accumulated across loops. */
+  private trainerTotal = 0;
+  private trainerHit = 0;
+  /** The current note-group's own start (u), and whether it's been matched at any point during its
+   * window — finalized into trainerTotal/trainerHit only once u moves past it, so a brief silence
+   * right after a correct hit doesn't retroactively read as a miss. */
+  private trainerGroupStart: number | null = null;
+  private trainerGroupHit = false;
+  private trainerLastU = 0;
   private scratchAreas!: { lyrics: HTMLTextAreaElement; tab: HTMLTextAreaElement; drums: HTMLTextAreaElement; notes: HTMLTextAreaElement };
   // ---- a live recording being drawn in as its own track while it's captured ----
   private recordLane: Lane | null = null;
@@ -469,6 +492,7 @@ export class Deck {
     this.initKeys();
     this.initLiveInput();
     this.initTuner();
+    this.initTrainer();
     this.initScratchpad();
     const host: TxHost = {
       player: this.player,
@@ -1619,6 +1643,92 @@ export class Deck {
     this.refreshTunerSources();
   }
 
+  /** Clears the playing trainer's running tally — a fresh count per pass, not accumulated across
+   * loops or songs. Called when the trainer's switched on, a song loads, and (from initTrainer) on a
+   * backward jump in the tab's own timeline (a loop restart or a scrub back). */
+  private resetTrainerTally() {
+    this.trainerTotal = 0;
+    this.trainerHit = 0;
+    this.trainerGroupStart = null;
+    this.trainerGroupHit = false;
+    this.trainerLastU = 0;
+  }
+
+  /** Compares live mic pitch against whichever of the tab's notes is expected right now, colouring
+   * the engraved view's note box(es) and keeping a running hit/total tally. Same self-scheduling
+   * shape as initTuner just above, but reads stripNotes (the raw parse, not its drawn geometry) and
+   * the same tap-anchor timeline the engraved view itself scrolls by (charOffsetAt via timeline()),
+   * so "the note currently highlighted" and "the note being judged" are always the same one. */
+  private initTrainer() {
+    const status = $('tabTrainerStatus');
+    const boxes = () => [$('tabStripNoteBox'), $('tabStaffNoteBox')];
+
+    const paint = (cls: 'trainer-hit' | 'trainer-miss' | null) => {
+      for (const b of boxes()) {
+        b.classList.toggle('trainer-hit', cls === 'trainer-hit');
+        b.classList.toggle('trainer-miss', cls === 'trainer-miss');
+      }
+    };
+
+    const tick = () => {
+      const on = !!this.scratch.tabTrainer;
+      if (!on || $('tabStrip').hidden || !this.r) {
+        paint(null);
+        setTimeout(tick, 200);
+        return;
+      }
+      if (!this.player.monitoring) {
+        status.textContent = 'Start Live input monitoring to use this';
+        paint(null);
+        setTimeout(tick, 200);
+        return;
+      }
+      if (!this.player.state.playing) {
+        status.textContent = this.trainerTotal ? `${this.trainerHit}/${this.trainerTotal} · ${Math.round((100 * this.trainerHit) / this.trainerTotal)}%` : 'Press play to begin';
+        paint(null);
+        setTimeout(tick, 200);
+        return;
+      }
+      // Monitored audio lags the track by the mic round-trip (see the Live input latency
+      // measurement) — without this, the note looked up is whichever one the track was actually
+      // playing *before* what's being heard right now, not the one it's testing against.
+      const latencySamples = (loadRecLatencyMs() / 1000) * SR;
+      const tl = this.timeline();
+      const u = charOffsetAt(tl.coords, (this.smoothStripPos() - latencySamples) / SR);
+      if (u !== null && u < this.trainerLastU - 0.5) this.resetTrainerTally();
+      if (u !== null) this.trainerLastU = u;
+      const group = u === null ? [] : noteGroupAt(this.stripNotes ?? [], u);
+
+      if (group.length && group[0].start !== this.trainerGroupStart) {
+        if (this.trainerGroupStart !== null) {
+          this.trainerTotal++;
+          if (this.trainerGroupHit) this.trainerHit++;
+        }
+        this.trainerGroupStart = group[0].start;
+        this.trainerGroupHit = false;
+      } else if (!group.length && this.trainerGroupStart !== null) {
+        this.trainerTotal++;
+        if (this.trainerGroupHit) this.trainerHit++;
+        this.trainerGroupStart = null;
+      }
+
+      let cls: 'trainer-hit' | 'trainer-miss' | null = null;
+      if (group.length) {
+        const td = this.player.monitorTimeDomain();
+        const result = td && detectPitch(td.buf, td.sampleRate);
+        if (result) {
+          const hit = group.some((n) => n.midi !== null && Math.abs(centsFrom(result.freq, n.midi)) <= TRAINER_TOLERANCE_CENTS);
+          cls = hit ? 'trainer-hit' : 'trainer-miss';
+          if (hit) this.trainerGroupHit = true;
+        }
+      }
+      paint(cls);
+      status.textContent = this.trainerTotal ? `${this.trainerHit}/${this.trainerTotal} · ${Math.round((100 * this.trainerHit) / this.trainerTotal)}%` : 'Listening…';
+      setTimeout(tick, 90);
+    };
+    tick();
+  }
+
   // ---------- scratchpad: plain-text lyrics, tab, drum tab and notes, per song ----------
   private initScratchpad() {
     const tabBtns = {
@@ -1753,11 +1863,24 @@ export class Deck {
       this.updateTabView();
       this.emit();
     };
+    $('tabTrainerBtn').onclick = () => {
+      this.scratch.tabTrainer = !this.scratch.tabTrainer;
+      // Needs the engraved view visible to highlight right/wrong on; turning it on also turns that
+      // on if it wasn't already. One-directional — turning Follow back off later doesn't clear this
+      // flag, it just goes inert (no note box to colour) until Follow's on again.
+      if (this.scratch.tabTrainer) {
+        if (!this.scratch.tabFollow) this.scratch.tabFollow = true;
+        this.resetTrainerTally();
+      }
+      this.updateTabView();
+      this.emit();
+    };
     $('tabClearAnchorsBtn').onclick = () => {
       if (!confirm("Clear this tab's timing? You'll need to tap it back in.")) return;
       this.scratch.tabAnchors = [];
       this.selectedTap = null;
       this.scratch.tabFollow = false;
+      this.scratch.tabTrainer = false;
       this.updateTabView();
       this.emit();
     };
@@ -1829,6 +1952,8 @@ export class Deck {
     if (s?.tabAnchors?.length) this.scratch.tabAnchors = s.tabAnchors;
     if (s?.tabFollow) this.scratch.tabFollow = true;
     if (s?.tabStaff) this.scratch.tabStaff = true;
+    if (s?.tabTrainer) this.scratch.tabTrainer = true;
+    this.resetTrainerTally();
     this.scratchAreas.lyrics.value = this.scratch.lyrics ?? '';
     this.setLyricsText(this.scratch.lyrics ?? '');
     // Tab/Drum tab start with the blank string/beat template actually typed in (not just a
@@ -1922,6 +2047,10 @@ export class Deck {
     pressed($('tabStaffBtn'), !!this.scratch.tabStaff);
     $('tabStaff').hidden = !staff;
     if (staff) void this.renderStaff();
+    const trainer = canFollow && !!this.scratch.tabTrainer;
+    $('tabTrainerBtn').hidden = !(onTab && canFollow);
+    pressed($('tabTrainerBtn'), trainer);
+    $('tabTrainerStatus').hidden = !(onTab && trainer);
     this.lastStaffPx = NaN;
     this.lastStripPx = NaN;
     this.syncTimelineCursor(false, null); // corrected once the next frame knows where playback actually is
@@ -1956,6 +2085,7 @@ export class Deck {
       track.replaceChildren(h('div', { class: 'tab-staff-note' }, 'No notes to show yet: type some fret numbers on the strings above.'));
       this.stripLayout = null;
       this.stripText = null;
+      this.stripNotes = null;
       return;
     }
     const spare = document.createElement('div');
@@ -1965,11 +2095,13 @@ export class Deck {
       track.replaceChildren(h('div', { class: 'tab-staff-note' }, "Couldn't draw the tab."));
       this.stripLayout = null;
       this.stripText = null;
+      this.stripNotes = null;
       return;
     }
     track.replaceChildren(...spare.childNodes);
     this.stripLayout = layout;
     this.stripText = text;
+    this.stripNotes = notes;
     $('tabStripView').style.height = `${layout.height}px`;
     this.lastStripPx = NaN;
     this.dirty = true;

@@ -728,6 +728,10 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
 /* The actual note (or fret) sounding right now, behind the moving line rather than instead of it —
    the line still says "this instant", the box says "this note" (useful once several are close together). */
 .tab-staff-notebox { position: absolute; top: 0; background: var(--accent); opacity: 0.18; border-radius: 4px; pointer-events: none; }
+/* Playing trainer: right/wrong on top of the note box above, same idea as the Tuner's needle colour
+   swap (.in-tune) — a class toggled each tick from live mic pitch, not a separate element. */
+.tab-staff-notebox.trainer-hit { background: var(--ok); opacity: 0.35; }
+.tab-staff-notebox.trainer-miss { background: var(--bad); opacity: 0.35; }
 .tab-tap-sel { display: inline-flex; align-items: center; gap: 6px; }
 
 .about-support .btn { display: inline-block; text-decoration: none; margin-top: 4px; }

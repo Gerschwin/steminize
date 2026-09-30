@@ -20,11 +20,11 @@ import { chordName, chordSheet, detectChords, mergeSame, prefersSharps } from '.
 import { BP_PITCHES, BP_WINDOW, bpNotes, bpUnwrap, bpWindows, singleLine } from '../src/analysis/basicPitch.ts';
 import { decimate2 } from '../src/analysis/resample.ts';
 import { writeMidi } from '../src/encode/midi.ts';
-import { detectPitch, freqToNote } from '../src/analysis/pitch.ts';
+import { centsFrom, detectPitch, freqToNote } from '../src/analysis/pitch.ts';
 import { isNewer, parseVersion } from '../src/version.ts';
 import { lineAt, parseLrc } from '../src/lyrics/lrc.ts';
 import { splitLength, staffX, vexKey } from '../src/ui/staff.ts';
-import { addAnchor, charOffsetAt, coordToPlace, coordToStripX, parseScore, parseTab, stripLayout, isLockedAt, moveAnchor, offsetToCoord, removeAnchor, rowCol, tabBlocks, tabPositionAt, toggleAnchorLock, type TabAnchor } from '../src/lyrics/tabSync.ts';
+import { addAnchor, charOffsetAt, coordToPlace, coordToStripX, noteGroupAt, parseScore, parseTab, stripLayout, isLockedAt, moveAnchor, offsetToCoord, removeAnchor, rowCol, tabBlocks, tabPositionAt, toggleAnchorLock, type TabAnchor, type TabNote } from '../src/lyrics/tabSync.ts';
 import { moveItem, nextSong, parseSetlists, prevSong, pruneSongs, totalSeconds, uniqueName, type Setlist } from '../src/setlists.ts';
 import { detectLatency } from '../src/player/latency.ts';
 import { placeTake } from '../src/player/placement.ts';
@@ -751,6 +751,23 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('staff: guitar is written an octave above where it sounds', vexKey(40) === 'e/3' && vexKey(64) === 'e/5' && vexKey(61) === 'c#/5');
   const map = [{ u: 0, x: 10 }, { u: 4, x: 50 }, { u: 12, x: 130 }];
   ok('staff: the cursor joins note positions with straight lines', staffX(map, 2) === 30 && staffX(map, 8) === 90 && staffX(map, -5) === 10 && staffX(map, 99) === 130);
+}
+
+// ---- tab+ playing trainer: which note(s) are expected right now, and how close a live pitch is
+{
+  const notes: TabNote[] = [
+    { block: 0, string: 0, fret: 0, midi: 64, col: 2, start: 0, length: 4, bar: 0 },
+    { block: 0, string: 0, fret: 3, midi: 67, col: 6, start: 4, length: 4, bar: 0 },
+    { block: 0, string: 1, fret: 0, midi: 59, col: 2, start: 0, length: 2, bar: 0 }, // a chord with the first note
+  ];
+  ok('trainer: a plain note is found by its own time window', noteGroupAt(notes, 5).map((n) => n.fret).join() === '3');
+  ok('trainer: a chord returns every note that starts together', noteGroupAt(notes, 1).map((n) => n.fret).sort().join() === '0,0');
+  ok('trainer: a gap past the last note is a rest — nothing expected', noteGroupAt(notes, 9).length === 0);
+  ok('trainer: right at a note\'s start is inside its window, right at its end is not', noteGroupAt(notes, 4).map((n) => n.fret).join() === '3' && noteGroupAt(notes, 8).length === 0);
+
+  ok('pitch: cents distance is 0 dead on', Math.abs(centsFrom(440, 69)) < 1e-6);
+  ok('pitch: a semitone sharp is +100 cents', Math.abs(centsFrom(440 * Math.pow(2, 1 / 12), 69) - 100) < 1e-6);
+  ok('pitch: an octave flat is -1200 cents', Math.abs(centsFrom(220, 69) + 1200) < 1e-6);
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');
