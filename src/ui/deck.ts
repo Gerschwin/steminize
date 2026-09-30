@@ -16,24 +16,20 @@ import {
   addAnchor,
   anchorCoords,
   charOffsetAt,
-  coordToPlace,
-  coordToStripX,
   isLockedAt,
   isRhythmRow,
   MIN_ANCHORS,
   moveAnchor,
   parseScore,
   removeAnchor,
-  stripLayout,
   tabBlocks,
   toggleAnchorLock,
-  type StripLayout,
   type TabAnchor,
   type TabBlock,
 } from '../lyrics/tabSync.ts';
 import { FLAT, isFlat, sameEq, type EqParams } from '../player/eq.ts';
 import { eqPanel, type EqPanel } from './eqPanel.ts';
-import { drawStaff, noteAt, staffX, type StaffLayout } from './staff.ts';
+import { drawStaff, drawTabScore, noteAt, staffX, type StaffLayout, type TabScoreLayout } from './staff.ts';
 import { $, fitCanvas, fmtDuration, fmtTime, h, pressed, toast } from './dom.ts';
 import { Transcribe, type TxHost, type TxState } from './transcribePanel.ts';
 import type { Chord } from '../analysis/chords.ts';
@@ -46,9 +42,6 @@ const SR = 44100;
 
 /** Tab-tap ticks and tags on the waveforms: distinct from the loop (cyan), section markers (amber) and the played colour. */
 const TAB_TAP_COLOUR = '#34d399';
-
-/** Empty columns on each side of the scroll strip, so the strings run on unbroken from the labels to the first note and past the last. */
-const STRIP_PAD = 400;
 
 export interface Result {
   title: string;
@@ -124,11 +117,10 @@ export interface ScratchState {
   /** Tab+ timing: character-offset-into-tab anchors tapped in while playing, for the follow-along
    * view to interpolate a scroll position between (see src/lyrics/tabSync.ts). */
   tabAnchors?: TabAnchor[];
-  /** Show the Tab pane as a follow-along view rather than the raw editable text. */
+  /** Show the Tab pane as the engraved follow-along view (a tab stave with fret numbers, a rhythm row
+   * above it) rather than the raw editable text. */
   tabFollow?: boolean;
-  /** Follow along as one long scrolling line instead of a page. */
-  tabStrip?: boolean;
-  /** Show the tab as standard notation underneath. */
+  /** Also show a full standard-notation staff underneath the engraved tab. */
   tabStaff?: boolean;
   drums?: string;
   notes?: string;
@@ -373,18 +365,21 @@ export class Deck {
   private lrc: Lrc | null = null;
   private lyricEls: HTMLElement[] = [];
   private lyricIdx = -2;
-  /** Rounded row/col last drawn for the tab+ cursor, so updateTabFollow() skips redundant work
-   * (every frame while playing) once it hasn't actually moved a full character. */
-  private lastTabRowCol: { row: number; col: number } | null = null;
   /** The tab's block layout and tap coordinates, rebuilt only when the text or taps change (not every frame). */
-  private tabTimeline: { text: string; anchors: TabAnchor[]; blocks: TabBlock[]; coords: TabAnchor[]; strip?: StripLayout } | null = null;
+  private tabTimeline: { text: string; anchors: TabAnchor[]; blocks: TabBlock[]; coords: TabAnchor[] } | null = null;
+  // ---- the engraved tab (fret numbers + rhythm row, follow-along's read-only view — see staff.ts's
+  // drawTabScore) and the separate, optional full staff (drawStaff): same pattern for both, a redrawn-
+  // on-change layout plus a "last drawn x" to skip redundant per-frame work once it hasn't moved. ----
+  private stripLayout: TabScoreLayout | null = null;
+  private stripText: string | null = null;
+  private stripToken = 0;
+  private stripTimer: number | undefined;
   private lastStripPx = NaN;
   private staffLayout: StaffLayout | null = null;
   private staffText: string | null = null;
   private staffToken = 0;
   private staffTimer: number | undefined;
   private lastStaffPx = NaN;
-  private tabCharMetrics: { w: number; h: number } | null = null;
   private scratchAreas!: { lyrics: HTMLTextAreaElement; tab: HTMLTextAreaElement; drums: HTMLTextAreaElement; notes: HTMLTextAreaElement };
   // ---- a live recording being drawn in as its own track while it's captured ----
   private recordLane: Lane | null = null;
@@ -1714,12 +1709,14 @@ export class Deck {
     $('lyricsLater').onclick = () => nudge(0.2);
     areas.tab.oninput = () => {
       this.scratch.tab = areas.tab.value;
-      $('tabFollowText').textContent = areas.tab.value;
+      if (!$('tabStrip').hidden) {
+        clearTimeout(this.stripTimer);
+        this.stripTimer = window.setTimeout(() => void this.renderTabStrip(), 250);
+      }
       if (!$('tabStaff').hidden) {
         clearTimeout(this.staffTimer);
         this.staffTimer = window.setTimeout(() => void this.renderStaff(), 250);
       }
-      this.lastTabRowCol = null; // positions may have shifted; redraw the cursor fresh next tick
       this.updateScratchSummary();
       this.emit();
     };
@@ -1756,17 +1753,11 @@ export class Deck {
       this.updateTabView();
       this.emit();
     };
-    $('tabStripBtn').onclick = () => {
-      this.scratch.tabStrip = !this.scratch.tabStrip;
-      this.updateTabView();
-      this.emit();
-    };
     $('tabClearAnchorsBtn').onclick = () => {
       if (!confirm("Clear this tab's timing? You'll need to tap it back in.")) return;
       this.scratch.tabAnchors = [];
       this.selectedTap = null;
       this.scratch.tabFollow = false;
-      this.lastTabRowCol = null;
       this.updateTabView();
       this.emit();
     };
@@ -1837,7 +1828,6 @@ export class Deck {
     if (s?.lyricsOffset) this.scratch.lyricsOffset = s.lyricsOffset;
     if (s?.tabAnchors?.length) this.scratch.tabAnchors = s.tabAnchors;
     if (s?.tabFollow) this.scratch.tabFollow = true;
-    if (s?.tabStrip) this.scratch.tabStrip = true;
     if (s?.tabStaff) this.scratch.tabStaff = true;
     this.scratchAreas.lyrics.value = this.scratch.lyrics ?? '';
     this.setLyricsText(this.scratch.lyrics ?? '');
@@ -1848,8 +1838,6 @@ export class Deck {
     this.scratchAreas.tab.value = this.scratch.tab || this.scratchAreas.tab.placeholder;
     this.scratchAreas.drums.value = this.scratch.drums || this.scratchAreas.drums.placeholder;
     this.scratchAreas.notes.value = this.scratch.notes ?? '';
-    $('tabFollowText').textContent = this.scratchAreas.tab.value;
-    this.lastTabRowCol = null;
     this.updateTabView();
     this.updateScratchSummary();
   }
@@ -1904,7 +1892,8 @@ export class Deck {
     if (el) box.scrollTo({ top: el.offsetTop - box.clientHeight / 2 + el.clientHeight / 2, behavior: 'smooth' });
   }
 
-  /** Shows the raw text box or the follow-along view, and the controls that go with it, for the Tab pane. */
+  /** Shows the raw text box or the engraved follow-along view, and the controls that go with it, for
+   * the Tab pane. */
   private updateTabView() {
     const onTab = this.scratchTab === 'tab';
     const anchors = this.scratch.tabAnchors ?? [];
@@ -1925,12 +1914,9 @@ export class Deck {
       $('tabTapSelLabel').textContent = `T${anchors.indexOf(sel) + 1} · ${fmtTime(sel.time)}${sel.locked ? ' · locked' : ''}`;
       $('tabTapLockBtn').textContent = sel.locked ? 'Unlock' : 'Lock';
     }
-    const strip = follow && !!this.scratch.tabStrip;
-    $('tabStripBtn').hidden = !(onTab && follow);
-    pressed($('tabStripBtn'), strip);
-    $('tabFollow').hidden = !(onTab && follow && !strip);
-    $('tabStrip').hidden = !(onTab && strip);
-    if (onTab && strip) this.buildTabStrip();
+    const strip = onTab && follow;
+    $('tabStrip').hidden = !strip;
+    if (strip) void this.renderTabStrip();
     const staff = onTab && !!this.scratch.tabStaff;
     $('tabStaffBtn').hidden = !onTab;
     pressed($('tabStaffBtn'), !!this.scratch.tabStaff);
@@ -1940,28 +1926,9 @@ export class Deck {
     this.lastStripPx = NaN;
     this.syncTimelineCursor(false, null); // corrected once the next frame knows where playback actually is
     this.scratchAreas.tab.hidden = !onTab || follow;
-    this.lastTabRowCol = null; // (re)place the cursor on the next frame, even while paused
     this.dirty = true;
   }
 
-  /** One monospace character's pixel size in the tab follow-along view, measured once and cached —
-   * the font is a fixed size (not responsive), so this doesn't need to be redone per song or per
-   * frame, just the first time it's actually needed. */
-  private measureTabChar(): { w: number; h: number } {
-    if (this.tabCharMetrics) return this.tabCharMetrics;
-    const cs = getComputedStyle($('tabFollowText'));
-    const ctx = document.createElement('canvas').getContext('2d')!;
-    ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
-    const w = ctx.measureText('0').width || 8;
-    const h = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.5;
-    this.tabCharMetrics = { w, h };
-    return this.tabCharMetrics;
-  }
-
-  /** Moves the tab+ cursor to where playback is, interpolated between tapped anchors, and scrolls
-   * it into view. Called every frame like updateLyricsFollow, but cheaper per call (no classList
-   * work across every line), so it doesn't need that one's "only touch the page on a real change"
-   * guard beyond skipping redundant scrollTo calls. */
   /** The tab's block layout and tap coordinates, cached until the text or the taps change. */
   private timeline() {
     // The text box's own value, not scratch.tab: an untouched song shows the placeholder template there.
@@ -1974,22 +1941,41 @@ export class Deck {
     return this.tabTimeline;
   }
 
-  /** Fills the scroll strip: string labels pinned on the left, the tab joined into one long line per string. */
-  private buildTabStrip() {
-    const tl = this.timeline();
-    tl.strip = stripLayout(tl.text, tl.blocks, STRIP_PAD);
-    // A blank first line on the labels keeps them level with the strings under the bar numbers.
-    $('tabStripLabels').textContent = ['', ...tl.strip.labels].join('\n');
-    $('tabStripBars').textContent = tl.strip.header;
-    $('tabStripText').textContent = tl.strip.rows.join('\n');
-    const { w, h } = this.measureTabChar();
-    const cursor = $('tabStripCursor');
-    cursor.style.width = `${w}px`;
-    cursor.style.top = `${h}px`;
-    cursor.style.height = `${tl.strip.rows.length * h}px`;
+  /** Redraws the engraved tab (fret numbers + rhythm row) from the tab as it is now, only if it's
+   * actually changed since the last drawing. Same shape as renderStaff just below, for the same
+   * reason: drawn into a spare element first, so a stale or failed drawing is never visible even for
+   * a moment, and a token guards against two overlapping redraws (typing fast) finishing out of order. */
+  private async renderTabStrip() {
+    const text = this.scratchAreas.tab.value;
+    if (text === this.stripText && this.stripLayout) return;
+    const token = ++this.stripToken;
+    const { notes, bars } = parseScore(text);
+    const track = $('tabStripTrack');
+    if (!notes.length) {
+      if (token !== this.stripToken) return;
+      track.replaceChildren(h('div', { class: 'tab-staff-note' }, 'No notes to show yet: type some fret numbers on the strings above.'));
+      this.stripLayout = null;
+      this.stripText = null;
+      return;
+    }
+    const spare = document.createElement('div');
+    const layout = await drawTabScore(spare, notes, bars).catch(() => null);
+    if (token !== this.stripToken) return;
+    if (!layout) {
+      track.replaceChildren(h('div', { class: 'tab-staff-note' }, "Couldn't draw the tab."));
+      this.stripLayout = null;
+      this.stripText = null;
+      return;
+    }
+    track.replaceChildren(...spare.childNodes);
+    this.stripLayout = layout;
+    this.stripText = text;
+    $('tabStripView').style.height = `${layout.height}px`;
+    this.lastStripPx = NaN;
+    this.dirty = true;
   }
 
-  /** Redraws the staff from the tab as it is now (only if it has changed since the last drawing). */
+  /** Redraws the full staff from the tab as it is now (only if it has changed since the last drawing). */
   private async renderStaff() {
     const text = this.scratchAreas.tab.value;
     if (text === this.staffText && this.staffLayout) return;
@@ -2028,10 +2014,10 @@ export class Deck {
     const tl = this.timeline();
     const coord = charOffsetAt(tl.coords, this.smoothStripPos() / SR);
     const staffView = $('tabStaffView');
-    // Where the strip's own highlight actually sits on the page — not 40% of the staff's own width,
-    // which was wrong: the strip has a pinned string-label column eating into its 40%, the staff
-    // doesn't, so an independent 40%-of-own-width guess put the two boxes' marks at different x.
-    // Falls back to that guess only when there's no strip to line up with.
+    // Where the engraved tab's own cursor actually sits on the page — not 40% of the staff's own
+    // width, which was wrong: an independent 40%-of-own-width guess put the two boxes' marks at
+    // different x whenever their content didn't happen to be the same width. Falls back to that
+    // guess only when there's no engraved tab to line up with.
     const stripCursor = $('tabStrip').hidden ? null : $('tabStripCursor').getBoundingClientRect();
     const holdAt = stripCursor ? stripCursor.left + stripCursor.width / 2 - staffView.getBoundingClientRect().left : staffView.clientWidth * 0.4;
     const x = coord === null ? 0 : staffX(layout.map, coord);
@@ -2055,10 +2041,10 @@ export class Deck {
     $('tabStaffTrack').style.transform = `translateX(${px}px)`;
   }
 
-  /** The single marker line down through both boxes, tracing the strip's real highlight (same left
-   * edge, same width) rather than a separate thin line at its own guessed position — before this, the
-   * strip's block and the staff's line didn't actually agree on where "now" was (see updateTabStaff).
-   * Shown only when both boxes are visible. */
+  /** The single marker line down through both boxes, tracing the engraved tab's real cursor (same
+   * left edge, same width) rather than a separate thin line at its own guessed position — before
+   * this, the two didn't actually agree on where "now" was (see updateTabStaff). Shown only when
+   * both boxes are visible. */
   private syncTimelineCursor(atSomething: boolean, stripCursor: DOMRect | null) {
     const joined = !$('tabStrip').hidden && !$('tabStaff').hidden;
     $('tabTimeline').classList.toggle('joined', joined);
@@ -2082,56 +2068,32 @@ export class Deck {
     return this.stripPos;
   }
 
-  /** Scroll-strip mode: the tab slides past a fixed spot, so the playing note stays where your eyes are. */
+  /** Slides the engraved tab past its fixed cursor in step with the music, and highlights the
+   * fret(s)/note actually sounding right now — the read-only view the Tab pane shows once Follow
+   * along is on. Same pattern as updateTabStaff just above (that one optional, full staff). */
   private updateTabStrip() {
+    const layout = this.stripLayout;
+    if (!layout || $('tabStrip').hidden) return;
     const tl = this.timeline();
-    if (!tl.strip) this.buildTabStrip();
-    const layout = tl.strip!;
     const coord = charOffsetAt(tl.coords, this.smoothStripPos() / SR);
-    const { w } = this.measureTabChar();
-    const holdAt = $('tabStripView').clientWidth * 0.4; // matches .tab-strip-cursor's left: 40%
-    const x = coord === null ? 0 : coordToStripX(tl.blocks, layout, coord);
-    const px = holdAt - x * w;
+    const stripView = $('tabStripView');
+    const holdAt = stripView.clientWidth * 0.4; // matches .tab-staff-cursor's left: 40%
+    const x = coord === null ? 0 : staffX(layout.map, coord);
+    const px = coord === null ? 0 : holdAt - x;
+    $('tabStripCursor').style.left = `${holdAt}px`;
+    $('tabStripCursor').hidden = coord === null;
+    const note = coord === null ? null : noteAt(layout.notes, coord);
+    const box = $('tabStripNoteBox');
+    box.hidden = !note;
+    if (note) {
+      box.style.left = `${note.x + px - 3}px`;
+      box.style.top = `${note.y - 4}px`;
+      box.style.width = `${note.w + 6}px`;
+      box.style.height = `${note.h + 8}px`;
+    }
     if (Math.abs(px - this.lastStripPx) < 0.05) return;
     this.lastStripPx = px;
     $('tabStripTrack').style.transform = `translateX(${px}px)`;
-    $('tabStripCursor').hidden = coord === null;
-  }
-
-  private updateTabFollow(pos: number) {
-    if (!$('tabStrip').hidden) return this.updateTabStrip();
-    const box = $('tabFollow');
-    const cursor = $('tabFollowCursor');
-    if (box.hidden) return;
-    const tl = this.timeline();
-    const coord = charOffsetAt(tl.coords, pos / SR);
-    const place = coord === null ? null : coordToPlace(tl.blocks, coord);
-    if (!place) {
-      cursor.hidden = true;
-      return;
-    }
-    const { firstRow: first, lastRow: last, col } = place;
-    const rounded = { row: first, col: Math.round(col) };
-    if (this.lastTabRowCol && rounded.row === this.lastTabRowCol.row && rounded.col === this.lastTabRowCol.col) return;
-    this.lastTabRowCol = rounded;
-    const { w, h } = this.measureTabChar();
-    cursor.hidden = false;
-    cursor.style.width = `${w}px`;
-    // Highlight the whole stacked block (all six strings) at this column, so it reads as "this beat"
-    // across every string, whichever row the tap happened to land on.
-    cursor.style.height = `${(last - first + 1) * h}px`;
-    cursor.style.transform = `translate(${col * w}px, ${first * h}px)`;
-    // Only scroll once the cursor nears an edge, not every frame — a continuous sweep across a bar
-    // shouldn't fight a constantly-restarting recentring animation.
-    const x = col * w;
-    const y = first * h;
-    const xMargin = Math.min(80, box.clientWidth / 4);
-    const yMargin = h * 2;
-    let left: number | undefined;
-    let top: number | undefined;
-    if (x < box.scrollLeft + xMargin || x > box.scrollLeft + box.clientWidth - xMargin) left = Math.max(0, x - box.clientWidth / 2);
-    if (y < box.scrollTop + yMargin || y > box.scrollTop + box.clientHeight - yMargin) top = Math.max(0, y - box.clientHeight / 2);
-    if (left !== undefined || top !== undefined) box.scrollTo({ left, top, behavior: 'smooth' });
   }
 
   private updateScratchSummary() {
@@ -3332,7 +3294,7 @@ export class Deck {
     const pos = this.player.state.pos;
     $('timeNow').textContent = fmtTime(pos / SR);
     this.updateLyricsFollow(pos);
-    this.updateTabFollow(pos);
+    this.updateTabStrip();
     this.updateTabStaff();
     // Keep the playhead in view while zoomed in.
     const span = this.view.end - this.view.start;

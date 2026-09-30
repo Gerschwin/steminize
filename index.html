@@ -395,32 +395,28 @@
                   <button class="btn tiny ghost" type="button" id="tabRhythmBtn" title="Add a rhythm line under each block of strings. Put a letter under each note for how long it lasts: w whole, h half, q quarter, e eighth, s sixteenth (add a dot for dotted; capital letter = a rest). A note with no letter repeats the last one. Timing then follows the rhythm exactly.">Add rhythm line</button>
                   <button class="btn tiny ghost" type="button" id="tabTapBtn" hidden title="Tap this in time with the music to mark where the cursor is right now — a few taps per song is enough to follow along (keyboard: Ctrl/⌘+Enter while the cursor is in the tab)">Tap ⏱</button>
                   <span class="muted small" id="tabAnchorCount" hidden></span>
-                  <button class="btn tiny ghost toggle" type="button" id="tabFollowBtn" aria-pressed="false" hidden title="Show the tab as a follow-along view that scrolls to where you're tapped in">Follow along</button>
+                  <button class="btn tiny ghost toggle" type="button" id="tabFollowBtn" aria-pressed="false" hidden title="Show the tab engraved — fret numbers on a tab stave, with a rhythm row above showing the exact timing — and follow where you're tapped in, instead of the plain typed text">Follow along</button>
                   <span class="tab-tap-sel" id="tabTapSel" hidden>
                     <span class="muted small" id="tabTapSelLabel"></span>
                     <button class="btn tiny ghost" type="button" id="tabTapLockBtn" title="Lock this tap so it can't be dragged, re-tapped over or removed">Lock</button>
                     <button class="btn tiny ghost" type="button" id="tabTapRemoveBtn" title="Remove this tap (or press Delete)">Remove</button>
                   </span>
-                  <button class="btn tiny ghost toggle" type="button" id="tabStaffBtn" aria-pressed="false" hidden title="Show the tab as standard music notation underneath, built from the tab and its rhythm line. With taps set, it follows the music too.">Staff</button>
-                  <button class="btn tiny ghost toggle" type="button" id="tabStripBtn" aria-pressed="false" hidden title="Follow along as one long scrolling line, with the playing spot held in place, instead of a page that shows the whole tab">Scroll strip</button>
+                  <button class="btn tiny ghost toggle" type="button" id="tabStaffBtn" aria-pressed="false" hidden title="Also show a full standard-notation staff underneath, with real pitches — the engraved tab above already shows the rhythm on its own. With taps set, it follows the music too.">Staff</button>
                   <button class="btn tiny ghost" type="button" id="tabClearAnchorsBtn" hidden title="Clear this tab's timing and start tapping again">Clear timing</button>
                 </div>
                 <textarea class="scratch-area" id="scratchLyrics" placeholder="Lyrics… or paste synced lyrics in LRC format ([mm:ss.xx] words) to follow along" spellcheck="true"></textarea>
                 <div class="lyrics-follow" id="lyricsFollow" hidden aria-live="off"></div>
                 <textarea class="scratch-area mono" id="scratchTab" placeholder="e|--------------------|&#10;B|--------------------|&#10;G|--------------------|&#10;D|--------------------|&#10;A|--------------------|&#10;E|--------------------|" spellcheck="false" wrap="off" hidden></textarea>
-                <div class="tab-follow scratch-area mono" id="tabFollow" hidden aria-live="off">
-                  <pre class="tab-follow-text" id="tabFollowText"></pre>
-                  <div class="tab-follow-cursor" id="tabFollowCursor" hidden></div>
-                </div>
                 <div class="tab-timeline" id="tabTimeline">
-                  <div class="tab-strip scratch-area mono" id="tabStrip" hidden aria-live="off">
-                    <pre class="tab-strip-labels" id="tabStripLabels"></pre>
-                    <div class="tab-strip-view" id="tabStripView">
-                      <div class="tab-strip-track" id="tabStripTrack">
-                        <pre class="tab-strip-bars" id="tabStripBars"></pre>
-                        <pre class="tab-strip-text" id="tabStripText"></pre>
-                      </div>
-                      <div class="tab-strip-cursor" id="tabStripCursor"></div>
+                  <!-- The engraved tab (tab stave + rhythm row above it): follow-along's read-only view for
+                       the Tab pane, replacing what used to be the plain typed text scrolled past a marker.
+                       Same view/track/cursor/notebox structure as the staff below (shared CSS classes), since
+                       both are now VexFlow-drawn notation sliding past a fixed point the same way. -->
+                  <div class="tab-strip scratch-area" id="tabStrip" hidden aria-live="off">
+                    <div class="tab-staff-view" id="tabStripView">
+                      <div class="tab-staff-track" id="tabStripTrack"></div>
+                      <div class="tab-staff-notebox" id="tabStripNoteBox" hidden></div>
+                      <div class="tab-staff-cursor" id="tabStripCursor" hidden></div>
                     </div>
                   </div>
                   <div class="tab-staff scratch-area" id="tabStaff" hidden aria-live="off">
@@ -430,8 +426,8 @@
                       <div class="tab-staff-cursor" id="tabStaffCursor" hidden></div>
                     </div>
                   </div>
-                  <!-- Shown only when Scroll strip and Staff are both on: one continuous line down through
-                       both, at the same fixed spot (left: 40%) each already holds its own content at, so
+                  <!-- Shown only when the engraved tab and the full Staff are both on: one continuous line
+                       down through both, at the same fixed spot each already holds its own content at, so
                        it's clear they're marking the same instant. -->
                   <div class="tab-timeline-cursor" id="tabTimelineCursor" hidden></div>
                 </div>
@@ -596,7 +592,7 @@
           <div class="kb-row"><kbd>Ctrl</kbd>/<kbd>⌘</kbd><kbd>Enter</kbd><span>In the Scratchpad's Tab box: tap the current playback time onto the text cursor (same as Tap ⏱)</span></div>
           <div class="kb-row"><kbd>Delete</kbd><span>Remove the selected tab tap (click its green T-tag on the overview first; drag a tag to move it, Lock to protect it)</span></div>
           <div class="kb-row"><kbd>q</kbd><kbd>e</kbd><kbd>s</kbd><span>Tab rhythm line (last line under the strings): w whole, h half, q quarter, e eighth, s sixteenth, a dot after = dotted, CAPITAL = rest. Set with "Add rhythm line".</span></div>
-          <div class="kb-row"><kbd>Staff</kbd><span>In the Tab pane: standard notation under the tab, built from the fret numbers and the rhythm line (guitar written an octave up, as usual). It follows the music when the tab has taps set. With Scroll strip also on, one line marks the position across both.</span></div>
+          <div class="kb-row"><kbd>Staff</kbd><span>In the Tab pane: also show a full standard-notation staff underneath the engraved tab, built from the fret numbers and the rhythm line (guitar written an octave up, as usual). Follows the music when the tab has taps set, with one line marking the position across both.</span></div>
           <div class="kb-row"><kbd>Ctrl</kbd>/<kbd>⌘</kbd><kbd>Z</kbd><span>Undo the last mixer change (mute, solo, volume, pan, EQ)</span></div>
           <div class="kb-row"><kbd>Ctrl</kbd>/<kbd>⌘</kbd><kbd>Shift</kbd><kbd>Z</kbd><span>Redo</span></div>
         </div>

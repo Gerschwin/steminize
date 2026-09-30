@@ -701,53 +701,43 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
 .lyric-line.past { opacity: 0.55; }
 .lyric-line.current { color: var(--text); font-weight: 700; font-size: 20px; }
 
-/* ---------- tab+ (synced tab follow-along) ---------- */
-/* white-space:normal on the box (its .scratch-area.mono class sets pre): otherwise the whitespace between
-   its child elements in the HTML source renders as stray blank lines above the text. */
+/* ---------- tab+ (engraved tab follow-along, and the separate full staff) ----------
+   The engraved tab (#tabStrip: a tab stave with fret numbers, rhythm row above it — see
+   ui/staff.ts's drawTabScore) and the full notation staff (#tabStaff: drawStaff) are drawn the
+   same way (both VexFlow SVGs sliding past a fixed point) and so share one set of view/track/
+   cursor/notebox classes below, applied to both; only the outer wrapper classes (.tab-strip,
+   .tab-staff) differ, for the height-sizing rule just under this comment. */
 .tab-timeline { position: relative; display: flex; flex-direction: column; }
+/* .dpane[data-pane='scratch'] .scratch-area.tab-strip's flex:0 0 auto, set earlier in this file
+   (it's about the Scratchpad's own capped height, not specific to this section), is what makes the
+   engraved tab take exactly its own content's height while the staff gets whatever's left over. */
 /* When both boxes show, remove the seam between them so the shared cursor line reads as one strip. */
 .tab-timeline.joined #tabStrip { margin-bottom: -1px; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .tab-timeline.joined #tabStaff { border-top-left-radius: 0; border-top-right-radius: 0; }
-/* The strip's own highlight and the staff's own thin line both go invisible when joined: the single
-   shared bar below (positioned and sized to match the strip's highlight exactly, in deck.ts) replaces
-   both, rather than sitting alongside a thin line that — before this — didn't even line up with it.
-   opacity, not display:none or hidden: deck.ts measures the strip's own cursor's rendered position to
-   place the shared bar, which needs it to stay laid out (display:none zeroes getBoundingClientRect). */
-.tab-timeline.joined .tab-strip-cursor, .tab-timeline.joined .tab-staff-cursor { opacity: 0; }
+/* Each box's own cursor line goes invisible when joined: the single shared bar below (positioned
+   and sized to match the engraved tab's own cursor exactly, in deck.ts) replaces both, rather than
+   sitting alongside a thin line that — before this — didn't even line up with it. opacity, not
+   display:none or hidden: deck.ts measures the tab's own cursor's rendered position to place the
+   shared bar, which needs it to stay laid out (display:none zeroes getBoundingClientRect). */
+.tab-timeline.joined .tab-staff-cursor { opacity: 0; }
 .tab-timeline-cursor { position: absolute; top: 0; bottom: 0; background: var(--accent); opacity: 0.35; border-radius: 2px; pointer-events: none; }
-/* overflow-x stays hidden (it crops the horizontally-sliding track, same reason as ever); overflow-y is
-   now auto rather than hidden, so a tab with more string rows than the box has room for scrolls into
-   view instead of being clipped off — this matters more now that a docked/floating Scratchpad caps its
-   own total height (see .dpane[data-pane='scratch']) rather than growing to fit whatever's inside it. */
-.scratch-area.tab-strip { display: flex; overflow-x: hidden; overflow-y: auto; white-space: normal; min-height: 0; }
-.scratch-area.tab-strip[hidden] { display: none; }
-.tab-strip-labels { margin: 0; font: inherit; white-space: pre; }
-.tab-strip-view { position: relative; flex: 1; overflow: hidden; }
-.tab-strip-track { will-change: transform; }
-.tab-strip-bars, .tab-strip-text { margin: 0; font: inherit; white-space: pre; }
-.tab-strip-bars { color: var(--muted); }
-/* The fixed spot the strip scrolls past; its width and height are set from the measured font in deck.ts. */
-.tab-strip-cursor { position: absolute; top: 0; left: 40%; /* top is set in deck.ts to sit below the bar-number line */ background: var(--accent); opacity: 0.35; border-radius: 2px; pointer-events: none; }
-/* Same reasoning as .tab-strip just above: x stays clipped (the staff also slides horizontally), y is
-   scrollable instead of clipped — the staff's own height is sized to the tab's pitch range now, which
-   can be taller than a capped panel has room for. */
-.scratch-area.tab-staff { overflow-x: hidden; overflow-y: auto; min-height: 0; padding: 2px 12px; color: var(--text); }
-.scratch-area.tab-staff[hidden] { display: none; }
+/* x stays clipped (both boxes slide their content horizontally via transform, past the fixed
+   cursor); y is scrollable rather than clipped, since a wide-ranging tab or a tall rhythm row can
+   need more height than a capped panel has room for — see .dpane[data-pane='scratch'] below for
+   why the panel itself is capped rather than growing to fit whatever's inside it. */
+.scratch-area.tab-strip, .scratch-area.tab-staff { overflow-x: hidden; overflow-y: auto; min-height: 0; padding: 2px 12px; color: var(--text); }
+.scratch-area.tab-strip[hidden], .scratch-area.tab-staff[hidden] { display: none; }
 .tab-staff-view { position: relative; overflow: hidden; }
 .tab-staff-track { will-change: transform; width: max-content; }
 .tab-staff-note { color: var(--muted); font-size: 13px; padding: 8px 0; }
-/* The fixed spot the staff slides past, level with the tab strip's. */
+/* The fixed spot each box's content slides past — the engraved tab's and the staff's line up (see
+   the .joined rule above), since both use this same left:40% and deck.ts lines the staff's content
+   up with wherever the tab's cursor actually renders, not an independent 40%-of-its-own-width guess. */
 .tab-staff-cursor { position: absolute; top: 0; bottom: 0; left: 40%; width: 2px; background: var(--accent); opacity: 0.7; border-radius: 1px; pointer-events: none; }
-/* The actual notehead sounding right now, behind the moving line rather than instead of it — the line
-   still says "this instant", the box says "this note" (useful once several notes sit close together). */
+/* The actual note (or fret) sounding right now, behind the moving line rather than instead of it —
+   the line still says "this instant", the box says "this note" (useful once several are close together). */
 .tab-staff-notebox { position: absolute; top: 0; background: var(--accent); opacity: 0.18; border-radius: 4px; pointer-events: none; }
 .tab-tap-sel { display: inline-flex; align-items: center; gap: 6px; }
-.scratch-area.tab-follow { position: relative; max-height: 260px; overflow: auto; scroll-behavior: smooth; white-space: normal; }
-.tab-follow-text { margin: 0; font: inherit; white-space: pre; }
-/* Positioned with transform (updated in JS as row/col, in char-width/line-height units), not
-   left/top — cheaper to animate, and keeps the positioning math in one place (deck.ts) rather than
-   split between JS-computed pixels and CSS. Width/height set once from the measured font metrics. */
-.tab-follow-cursor { position: absolute; top: 10px; left: 12px; /* = .scratch-area padding */ background: var(--accent); opacity: 0.35; border-radius: 2px; pointer-events: none; transition: transform 0.1s linear; }
 
 .about-support .btn { display: inline-block; text-decoration: none; margin-top: 4px; }
 .about-update { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0 0 8px; }
