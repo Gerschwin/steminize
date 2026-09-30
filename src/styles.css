@@ -45,6 +45,25 @@
   --shadow: 0 10px 30px rgba(20, 24, 40, 0.12);
   color-scheme: light;
 }
+/* The Scratchpad always renders light, regardless of the app's own theme — a workaround for the tab+
+   engraved view's fret numbers going invisible in dark mode on one real device (Linux/WebKitGTK; never
+   reproduced elsewhere, and multiple targeted rendering fixes didn't resolve it there either). Same
+   variables as :root[data-theme='light'] above, just re-declared on the panel itself so every element
+   inside it (docked or floating — same element either way, just repositioned) inherits the light
+   palette no matter what :root is set to. Revisit if the underlying WebKitGTK cause is ever found. */
+.dpane[data-pane='scratch'] {
+  --bg: #f5f6fa;
+  --panel: #ffffff;
+  --panel-2: #f0f1f6;
+  --line: #dfe2ea;
+  --text: #151821;
+  --muted: #5f677a;
+  --accent: #c97a1a;
+  --accent-2: #a8630f;
+  --loop: #0891b2;
+  --shadow: 0 10px 30px rgba(20, 24, 40, 0.12);
+  color-scheme: light;
+}
 
 * { box-sizing: border-box; }
 /* A themed, always-reserved-space scrollbar everywhere, instead of the platform default. Doesn't
