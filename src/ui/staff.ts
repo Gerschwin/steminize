@@ -406,6 +406,16 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
   if (svg) {
     svg.style.overflow = 'visible';
     svg.style.display = 'block';
+    // Belt and suspenders on the fret digits' own dark fill (see the #111 comment above): that relies
+    // on the digits' own <text> inheriting fill from their enclosing <g> (VexFlow skips writing a
+    // redundant attribute when a child's colour already matches its group's, leaning on ordinary SVG
+    // inheritance to fill in the rest) — reported not to reach the page in one real-world dark-theme
+    // run (Linux/WebKitGTK; never reproduced here in Chromium testing), fret digits invisible against
+    // their white eraser rectangle exactly as if this whole mechanism had been skipped. Setting fill
+    // directly, as an inline style, on every digit's own element removes any dependency on inheritance
+    // or on exactly when a context's fill state was read, at the cost of doing it twice when it isn't
+    // needed — cheap insurance against a real gap this app has no way to reproduce and confirm fixed.
+    for (const el of svg.querySelectorAll<SVGTextElement>('.vf-tabnote text')) el.style.fill = '#111';
   }
   return { map, notes: notesOut, width: total, height: ROW };
 }
