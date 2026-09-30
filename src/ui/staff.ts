@@ -229,7 +229,7 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
   vex ??= import('vexflow/bravura');
   const vf = await vex;
   if (typeof document !== 'undefined' && document.fonts) await document.fonts.ready.catch(() => {});
-  const { Renderer, Stave, TabStave, StaveNote, TabNote: VFTabNote, GhostNote, Voice, Formatter, Accidental, Dot, Beam, Stem } = vf;
+  const { Renderer, Stave, TabStave, StaveNote, TabNote: VFTabNote, GhostNote, Voice, Formatter, Accidental, Dot, Beam, Stem, Barline } = vf;
   host.replaceChildren();
 
   const CLEF = 64;
@@ -289,6 +289,12 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
     const rhythmY = pitched ? TAB_H + GAP : TAB_H + GAP - RHYTHM_KEY_OFFSET;
     const rhythmStave = new Stave(x, rhythmY, w, pitched ? undefined : { numLines: 0 });
     if (bi === 0 && pitched) rhythmStave.addClef('treble', 'default', '8vb');
+    // The rhythm row is its own Stave underneath the tab, and by default draws its own begin/end bar
+    // lines too — a short stub that, even with numLines:0 hiding its 5 string lines, still pokes out
+    // a few px below the tab's own bar line into the gap between the two rows, reading as one
+    // over-long line rather than two separate staves. The tab stave's own bar line (kept) already
+    // marks the bar boundary; this second one directly underneath it added nothing but the overhang.
+    rhythmStave.setBegBarType(Barline.type.NONE).setEndBarType(Barline.type.NONE);
     rhythmStave.setContext(ctx).draw();
 
     const inBar = notes.filter((n) => n.bar === bi);
