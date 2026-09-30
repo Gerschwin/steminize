@@ -229,7 +229,19 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
   vex ??= import('vexflow/bravura');
   const vf = await vex;
   if (typeof document !== 'undefined' && document.fonts) await document.fonts.ready.catch(() => {});
-  const { Renderer, Stave, TabStave, StaveNote, TabNote: VFTabNote, GhostNote, Voice, Formatter, Accidental, Dot, Beam, Stem, Barline } = vf;
+  const { Renderer, Stave, TabStave, StaveNote, TabNote: VFTabNote, GhostNote, Voice, Formatter, Accidental, Dot, Beam, Stem, Barline, Metrics, MetricsDefaults } = vf;
+  // A dead/muted note ('x') isn't drawn as the character "x" — VexFlow draws it as a music-font glyph
+  // (the "double sharp" symbol, conventionally used for a muted string) under the plain 'TabNote'
+  // category, not 'TabNote.text' (the fret digits' own category). VexFlow's own metrics table sizes
+  // 'TabNote.text' at 9pt but has no entry at all for bare 'TabNote', so it silently falls through to
+  // the library's global default (30pt) — more than 3x the digits' own size, dwarfing this stave's
+  // deliberately compact ~13px string spacing and overlapping neighbouring lines. Pinned to match the
+  // digits once, the first time this runs (a library-wide default, not scoped to one draw call, so it
+  // isn't reset after — nothing else in this app uses VexFlow's TabNote category at a different size).
+  if (MetricsDefaults.TabNote.fontSize === undefined) {
+    MetricsDefaults.TabNote.fontSize = MetricsDefaults.TabNote.text.fontSize;
+    Metrics.clear('TabNote');
+  }
   host.replaceChildren();
 
   const CLEF = 64;
