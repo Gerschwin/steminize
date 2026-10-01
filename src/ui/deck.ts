@@ -16,6 +16,7 @@ import {
   addAnchor,
   anchorCoords,
   charOffsetAt,
+  coordAtBpm,
   isLockedAt,
   isRhythmRow,
   MIN_ANCHORS,
@@ -1693,8 +1694,7 @@ export class Deck {
       // measurement) — without this, the note looked up is whichever one the track was actually
       // playing *before* what's being heard right now, not the one it's testing against.
       const latencySamples = (loadRecLatencyMs() / 1000) * SR;
-      const tl = this.timeline();
-      const u = charOffsetAt(tl.coords, (this.smoothStripPos() - latencySamples) / SR);
+      const u = this.coordAt((this.smoothStripPos() - latencySamples) / SR);
       if (u !== null && u < this.trainerLastU - 0.5) this.resetTrainerTally();
       if (u !== null) this.trainerLastU = u;
       const group = u === null ? [] : noteGroupAt(this.stripNotes ?? [], u);
@@ -2022,7 +2022,9 @@ export class Deck {
   private updateTabView() {
     const onTab = this.scratchTab === 'tab';
     const anchors = this.scratch.tabAnchors ?? [];
-    const canFollow = anchors.length >= MIN_ANCHORS;
+    // One tap is enough once the song has its own detected tempo to drive timing from (coordAt);
+    // without one, still needs a second tap for charOffsetAt's own interpolation to mean anything.
+    const canFollow = anchors.length >= 1 && (anchors.length >= MIN_ANCHORS || !!this.r?.analysis?.bpm);
     const follow = canFollow && !!this.scratch.tabFollow;
     $('tabTapBtn').hidden = !onTab;
     $('tabRhythmBtn').hidden = !onTab;
@@ -2068,6 +2070,18 @@ export class Deck {
     const blocks = tabBlocks(text);
     this.tabTimeline = { text, anchors, blocks, coords: anchorCoords(text, blocks, anchors) };
     return this.tabTimeline;
+  }
+
+  /** The tab's current position (same u-space as TabNote.start), preferring the song's own tempo
+   * over interpolation whenever there's only one tap to anchor it — exact, since there's nothing to
+   * interpolate between, rather than approximate between two taps whose spacing might not exactly
+   * match the beat. Two or more taps still interpolate between them exactly as before (charOffsetAt),
+   * for a song whose tempo isn't reliable enough, or wasn't detected, to trust alone. */
+  private coordAt(t: number): number | null {
+    const tl = this.timeline();
+    const bpm = this.r?.analysis?.bpm;
+    if (tl.coords.length === 1 && bpm) return coordAtBpm(tl.coords[0], bpm, t);
+    return charOffsetAt(tl.coords, t);
   }
 
   /** Redraws the engraved tab (fret numbers + rhythm row) from the tab as it is now, only if it's
@@ -2143,8 +2157,7 @@ export class Deck {
   private updateTabStaff() {
     const layout = this.staffLayout;
     if (!layout || $('tabStaff').hidden) return;
-    const tl = this.timeline();
-    const coord = charOffsetAt(tl.coords, this.smoothStripPos() / SR);
+    const coord = this.coordAt(this.smoothStripPos() / SR);
     const staffView = $('tabStaffView');
     // Where the engraved tab's own cursor actually sits on the page — not 40% of the staff's own
     // width, which was wrong: an independent 40%-of-own-width guess put the two boxes' marks at
@@ -2206,8 +2219,7 @@ export class Deck {
   private updateTabStrip() {
     const layout = this.stripLayout;
     if (!layout || $('tabStrip').hidden) return;
-    const tl = this.timeline();
-    const coord = charOffsetAt(tl.coords, this.smoothStripPos() / SR);
+    const coord = this.coordAt(this.smoothStripPos() / SR);
     const stripView = $('tabStripView');
     const holdAt = stripView.clientWidth * 0.4; // matches .tab-staff-cursor's left: 40%
     const x = coord === null ? 0 : staffX(layout.map, coord);

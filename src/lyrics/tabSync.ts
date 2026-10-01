@@ -70,6 +70,16 @@ export function charOffsetAt(anchors: TabAnchor[], t: number): number | null {
   return a.charOffset + (b.charOffset - a.charOffset) * frac;
 }
 
+/** Position at time `t`, computed directly from one anchor and the song's own tempo (BPM) — no
+ * interpolation, so nothing can drift the way it might between two taps whose spacing doesn't
+ * exactly match the beat. A quarter note is `60 / bpm` seconds, so a sixteenth (the unit `anchor`'s
+ * own coordinate and TabNote.start/length are both in) is a quarter of that. `anchor` is expected in
+ * the same coordinate space charOffsetAt's own anchors are (i.e. already run through anchorCoords —
+ * its own `charOffset` field is actually a coordinate by that point, not a literal text offset). */
+export function coordAtBpm(anchor: TabAnchor, bpm: number, t: number): number {
+  return anchor.charOffset + (t - anchor.time) * (bpm / 60) * 4;
+}
+
 /** Row/column (0-based) of a possibly-fractional character offset within monospace text, for
  * positioning a cursor overlay. The fractional part carries into a fractional column, for a smooth
  * sweep rather than a per-character stutter. */

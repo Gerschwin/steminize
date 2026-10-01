@@ -24,7 +24,7 @@ import { centsFrom, detectPitch, freqToNote } from '../src/analysis/pitch.ts';
 import { isNewer, parseVersion } from '../src/version.ts';
 import { lineAt, parseLrc } from '../src/lyrics/lrc.ts';
 import { splitLength, staffX, vexKey } from '../src/ui/staff.ts';
-import { addAnchor, charOffsetAt, coordToPlace, coordToStripX, noteGroupAt, parseScore, parseTab, stripLayout, isLockedAt, moveAnchor, offsetToCoord, removeAnchor, rowCol, tabBlocks, tabPositionAt, toggleAnchorLock, type TabAnchor, type TabNote } from '../src/lyrics/tabSync.ts';
+import { addAnchor, charOffsetAt, coordAtBpm, coordToPlace, coordToStripX, noteGroupAt, parseScore, parseTab, stripLayout, isLockedAt, moveAnchor, offsetToCoord, removeAnchor, rowCol, tabBlocks, tabPositionAt, toggleAnchorLock, type TabAnchor, type TabNote } from '../src/lyrics/tabSync.ts';
 import { moveItem, nextSong, parseSetlists, prevSong, pruneSongs, totalSeconds, uniqueName, type Setlist } from '../src/setlists.ts';
 import { detectLatency } from '../src/player/latency.ts';
 import { placeTake } from '../src/player/placement.ts';
@@ -578,6 +578,11 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('tabSync: works even if anchors are not passed in time order', charOffsetAt(unsorted, 2) === 20);
   const sameTime: TabAnchor[] = [{ charOffset: 0, time: 2 }, { charOffset: 10, time: 2 }];
   ok('tabSync: two anchors at the same time do not divide by zero', charOffsetAt(sameTime, 2) === 0);
+
+  ok('tabSync: coordAtBpm sits exactly on the anchor at its own time', coordAtBpm({ charOffset: 10, time: 2 }, 60, 2) === 10);
+  ok('tabSync: coordAtBpm advances a quarter note (4 sixteenths) per beat at 60 BPM', coordAtBpm({ charOffset: 0, time: 0 }, 60, 1) === 4);
+  ok('tabSync: coordAtBpm doubles the rate at double the tempo', coordAtBpm({ charOffset: 0, time: 0 }, 120, 1) === 8);
+  ok('tabSync: coordAtBpm extrapolates before the anchor too, unlike charOffsetAt', coordAtBpm({ charOffset: 10, time: 2 }, 60, 1) === 6);
 
   const text = 'e|----3----|\nB|----0----|\nsecond block here';
   ok('tabSync: rowCol at the very start', JSON.stringify(rowCol(text, 0)) === JSON.stringify({ row: 0, col: 0 }));
