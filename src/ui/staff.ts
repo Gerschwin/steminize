@@ -208,8 +208,10 @@ export function staffX(map: { u: number; x: number }[], u: number): number {
 export interface TabScoreLayout {
   map: { u: number; x: number }[];
   /** One entry per drawn note/chord (rests excluded): the union of its fret number(s)' own box, in the
-   * same px space as `map`, for highlighting exactly what's sounding right now. */
-  notes: { u: number; len: number; x: number; y: number; w: number; h: number }[];
+   * same px space as `map`, for highlighting exactly what's sounding right now. `bar`/`col` match the
+   * same note's own TabNote (and the data-bar/data-col attributes on its drawn elements, below) — for
+   * looking its box up again given a click rather than a playback position. */
+  notes: { u: number; len: number; x: number; y: number; w: number; h: number; bar: number; col: number }[];
   width: number;
   height: number;
 }
@@ -317,7 +319,7 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
     const rhythmTickables: InstanceType<typeof StaveNote>[] = [];
     const tabTickables: (InstanceType<typeof VFTabNote> | InstanceType<typeof GhostNote>)[] = [];
     const startsOf: number[] = []; // parallel to rhythmTickables/tabTickables: tab time (rests: NaN)
-    const groupFirst: { u: number; len: number; idx: number }[] = [];
+    const groupFirst: { u: number; len: number; idx: number; col: number }[] = [];
     const add = (code: string, rest: boolean, group: TabNote[], u: number) => {
       const dots = code.endsWith('d') ? 1 : 0;
       const base = dots ? code.slice(0, -1) : code;
@@ -354,7 +356,7 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
       const room = bar.start + bar.length - s;
       const len = Math.min(Math.min(...group.map((n) => n.length)), room);
       const pieces = splitLength(len);
-      if (pieces.length) groupFirst.push({ u: s, len, idx: rhythmTickables.length });
+      if (pieces.length) groupFirst.push({ u: s, len, idx: rhythmTickables.length, col: group[0].col });
       pieces.forEach((code, i) => add(code, i > 0, group, s));
       at = s + (pieces.length ? len : 0);
     }
@@ -405,14 +407,28 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
     // contributes no entry to newTabnotes. tabIdx tracks that separately, advancing only on an actual
     // tab note, to stay matched to the right one.
     let tabIdx = 0;
+    // Only groupFirst's own idx values are a real note's *first* piece — a note too long for one
+    // drawable length splits into more than one tickable (see splitLength), and only the first of
+    // those represents the note itself for data-col/data-bar's purposes (clicking it to edit).
+    const colByIdx = new Map(groupFirst.map((g) => [g.idx, g.col]));
     rhythmTickables.forEach((rt, i) => {
       // rest/not-rest always matches between the two at the same index — add() uses the same flag
       // for both pushes at once — so this also tells us whether tabTickables[i] had a group to count.
       const rest = rt.isRest();
       const tabGroup = rest ? undefined : (newTabnotes[tabIdx++] as SVGGElement | undefined);
-      if (rest) return; // a rest centres on its own glyph already, nothing to correct
-      const tabRect = tabGroup?.querySelector('rect');
+      if (rest) return; // a rest centres on its own glyph already, nothing to correct, nothing to click
+      const col = colByIdx.get(i);
       const rhythmGroup = newStavenotes[i] as SVGGElement | undefined;
+      // Tagged on both the fret number and the stem, so a click lands the same note either way — read
+      // back by deck.ts's click handler (event.target.closest('[data-col]')) to edit this note's own
+      // rhythm letter without any coordinate math or scroll-offset accounting.
+      if (col !== undefined) {
+        tabGroup?.setAttribute('data-bar', String(bi));
+        tabGroup?.setAttribute('data-col', String(col));
+        rhythmGroup?.setAttribute('data-bar', String(bi));
+        rhythmGroup?.setAttribute('data-col', String(col));
+      }
+      const tabRect = tabGroup?.querySelector('rect');
       const stemPath = rhythmGroup?.querySelector<SVGPathElement>('.vf-stem path');
       const stemD = stemPath?.getAttribute('d')?.match(/^M([\d.-]+)/);
       if (!tabRect || !rhythmGroup || !stemD) return;
@@ -433,7 +449,7 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
       } catch {
         bb = { getX: () => boxes.x - 8, getY: () => boxes.y - 8, getW: () => 16, getH: () => 16 };
       }
-      notesOut.push({ u: g.u, len: g.len, x: bb.getX(), y: bb.getY(), w: bb.getW(), h: bb.getH() });
+      notesOut.push({ u: g.u, len: g.len, x: bb.getX(), y: bb.getY(), w: bb.getW(), h: bb.getH(), bar: bi, col: g.col });
     }
     x += w;
   });

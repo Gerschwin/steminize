@@ -398,6 +398,42 @@ export function noteGroupAt(notes: TabNote[], u: number): TabNote[] {
   return notes.filter((n) => u >= n.start && u < n.start + n.length);
 }
 
+/** The note at a specific bar + column — turns a click on the engraved tab's own data-bar/data-col
+ * attributes (see drawTabScore in staff.ts) back into the TabNote it represents, to edit its rhythm. */
+export function findNoteAt(notes: TabNote[], bar: number, col: number): TabNote | undefined {
+  return notes.find((n) => n.bar === bar && n.col === col);
+}
+
+/** Sets (or replaces) one note's rhythm letter at its own column, inserting a rhythm line for the
+ * block first if it doesn't have one yet — the same shape "Add rhythm line" itself inserts (see
+ * tabRhythmBtn in deck.ts), just with this specific note's own column set instead of only the
+ * block's first note. A trailing dot is cleared if there was one, since setting a plain length this
+ * way always means "exactly this," not whatever dotted status happened to be there before. Returns
+ * the full new text, plus where the change starts and how much the text grew there, for shifting any
+ * tap anchors past that point the same way "Add rhythm line"'s own insertion already does. */
+export function setRhythmLetter(text: string, block: TabBlock, col: number, letter: string): { text: string; insertAt: number; grew: number } {
+  const lines = text.split('\n');
+  const starts: number[] = [];
+  let at = 0;
+  for (const l of lines) {
+    starts.push(at);
+    at += l.length + 1;
+  }
+  if (block.rhythmRow !== undefined) {
+    const row = block.rhythmRow;
+    const old = lines[row];
+    const padded = col < old.length ? old : old.padEnd(col + 1, ' ');
+    const hadDot = padded[col + 1] === '.';
+    const newLine = padded.slice(0, col) + letter + padded.slice(col + 1 + (hadDot ? 1 : 0));
+    lines[row] = newLine;
+    return { text: lines.join('\n'), insertAt: starts[row] + Math.min(col, old.length), grew: newLine.length - old.length };
+  }
+  const line = ' '.repeat(col) + letter;
+  lines.splice(block.lastRow + 1, 0, line);
+  const insertAt = block.lastRow + 1 < starts.length ? starts[block.lastRow + 1] : text.length + 1;
+  return { text: lines.join('\n'), insertAt, grew: line.length + 1 };
+}
+
 export function parseTab(text: string): TabNote[] {
   return parseScore(text).notes;
 }

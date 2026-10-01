@@ -17,6 +17,7 @@ import {
   anchorCoords,
   charOffsetAt,
   coordAtBpm,
+  findNoteAt,
   isLockedAt,
   isRhythmRow,
   MIN_ANCHORS,
@@ -24,6 +25,7 @@ import {
   noteGroupAt,
   parseScore,
   removeAnchor,
+  setRhythmLetter,
   tabBlocks,
   toggleAnchorLock,
   type TabAnchor,
@@ -1819,6 +1821,7 @@ export class Deck {
     $('lyricsLater').onclick = () => nudge(0.2);
     areas.tab.oninput = () => {
       this.scratch.tab = areas.tab.value;
+      this.selectedRhythmNote = null; // a direct text edit can move/remove what was selected
       if (!$('tabStrip').hidden) {
         clearTimeout(this.stripTimer);
         this.stripTimer = window.setTimeout(() => void this.renderTabStrip(), 250);
@@ -1879,11 +1882,22 @@ export class Deck {
       if (!confirm("Clear this tab's timing? You'll need to tap it back in.")) return;
       this.scratch.tabAnchors = [];
       this.selectedTap = null;
+      this.selectedRhythmNote = null;
       this.scratch.tabFollow = false;
       this.scratch.tabTrainer = false;
       this.updateTabView();
       this.emit();
     };
+    // Tab+ rhythm editing: click a note in Follow along (its fret number or its stem — both are
+    // tagged the same way, see drawTabScore in staff.ts) to select it, then press w/h/q/e/s to set
+    // its length, written straight into the rhythm line (inserting one for the block first if it
+    // doesn't have one yet). Delegated on the track itself rather than per-note listeners, since the
+    // view is redrawn from scratch on every change.
+    $('tabStripTrack').addEventListener('click', (e) => {
+      const el = (e.target as HTMLElement).closest<HTMLElement>('[data-col]');
+      this.selectedRhythmNote = el ? { bar: Number(el.dataset.bar), col: Number(el.dataset.col) } : null;
+      this.updateTabStrip();
+    });
     // "Add rhythm line": a line under each block of strings for note lengths (see tabSync.ts). Taps are
     // positions in the text, so each insertion shifts the taps after it by the length of what went in.
     $('tabRhythmBtn').onclick = () => {
@@ -2234,6 +2248,19 @@ export class Deck {
       box.style.top = `${note.y - 4}px`;
       box.style.width = `${note.w + 6}px`;
       box.style.height = `${note.h + 8}px`;
+    }
+    // The note picked for rhythm editing (see tabStripTrack's own click handler) — looked up by bar
+    // + col, not kept as the note object itself, so it still finds its box after a redraw moves
+    // everything (a new length changes that note's own width, and can reflow the notes after it).
+    const sel = this.selectedRhythmNote;
+    const editNote = sel ? layout.notes.find((n) => n.bar === sel.bar && n.col === sel.col) : undefined;
+    const editBox = $('tabStripEditBox');
+    editBox.hidden = !editNote;
+    if (editNote) {
+      editBox.style.left = `${editNote.x + px - 3}px`;
+      editBox.style.top = `${editNote.y - 4}px`;
+      editBox.style.width = `${editNote.w + 6}px`;
+      editBox.style.height = `${editNote.h + 8}px`;
     }
     if (Math.abs(px - this.lastStripPx) < 0.05) return;
     this.lastStripPx = px;
@@ -2805,6 +2832,10 @@ export class Deck {
   /** The tap picked by clicking its tag (by tab position, so it survives other taps being added). */
   private selectedTap: number | null = null;
   private tapDrag: { charOffset: number; x0: number; moved: boolean } | null = null;
+  /** The note picked by clicking it in Follow along, for setting its rhythm with w/h/q/e/s — by bar
+   * + column (see TabNote/TabScoreLayout.notes) rather than a DOM reference, so it survives the
+   * re-render that same key press causes (the note's new stem shape needs to show, still selected). */
+  private selectedRhythmNote: { bar: number; col: number } | null = null;
   private lastGrain = 0;
   /** Moves the playhead to `frame` while dragging, and, if the song isn't playing, sounds a short
    * snippet from there so you can find a spot by ear (playing already makes the seek audible). */
@@ -3272,7 +3303,11 @@ export class Deck {
       }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key;
-      if (e.code === 'Space' || k === 'PageDown' || k === 'MediaPlayPause' || (this.pedal && ['ArrowRight', 'ArrowDown', 'Enter'].includes(k))) this.toggle();
+      // Tab+ rhythm editing: a note selected in Follow along (tabStripTrack's own click handler) sets
+      // its length from w/h/q/e/s directly — checked ahead of the rest so it doesn't fight with them
+      // (a bare "e", for instance, isn't bound to anything else here, but being explicit costs nothing).
+      if (this.selectedRhythmNote && /^[whqes]$/.test(k)) this.setSelectedNoteDuration(k);
+      else if (e.code === 'Space' || k === 'PageDown' || k === 'MediaPlayPause' || (this.pedal && ['ArrowRight', 'ArrowDown', 'Enter'].includes(k))) this.toggle();
       else if (k === 'PageUp' || k === 'Home' || (this.pedal && ['ArrowLeft', 'ArrowUp'].includes(k))) this.restart();
       else if (k === 'm' || k === 'M') this.addMarker();
       else if (e.shiftKey && (k === '+' || k === '=')) this.resizeLanes(20);
@@ -3347,6 +3382,32 @@ export class Deck {
     }
     g.fillStyle = getComputedStyle(document.body).color;
     g.fillRect(Math.round(px), 0, Math.max(1, devicePixelRatio), hh);
+  }
+
+  /** Sets the selected note's (see tabStripTrack's click handler) rhythm length from a single key
+   * press (w/h/q/e/s) — writes the letter into the rhythm line under it (inserting one for its block
+   * first if it doesn't have one yet), the same text parseScore already reads everything else from.
+   * See setRhythmLetter (tabSync.ts) for the actual text edit; this is just locating the right note
+   * and block for it, and the surrounding bookkeeping (shifting tap anchors past the edit, the same
+   * way "Add rhythm line" already does for its own insertions, and re-rendering). */
+  private setSelectedNoteDuration(letter: string) {
+    const sel = this.selectedRhythmNote;
+    if (!sel) return;
+    const text = this.scratchAreas.tab.value;
+    const note = findNoteAt(parseScore(text).notes, sel.bar, sel.col);
+    if (!note) {
+      this.selectedRhythmNote = null; // the tab changed under us; nothing there to edit any more
+      return;
+    }
+    const block = tabBlocks(text)[note.block];
+    const { text: newText, insertAt, grew } = setRhythmLetter(text, block, sel.col, letter);
+    this.scratchAreas.tab.value = newText;
+    this.scratch.tab = newText;
+    this.scratch.tabAnchors = (this.scratch.tabAnchors ?? []).map((a) => (a.charOffset >= insertAt ? { ...a, charOffset: a.charOffset + grew } : a));
+    void this.renderTabStrip();
+    this.updateTabStrip();
+    this.updateScratchSummary();
+    this.emit();
   }
 
   private removeSelectedTap() {

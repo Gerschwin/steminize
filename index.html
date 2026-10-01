@@ -424,6 +424,12 @@
                     <div class="tab-staff-view" id="tabStripView">
                       <div class="tab-staff-track" id="tabStripTrack"></div>
                       <div class="tab-staff-notebox" id="tabStripNoteBox" hidden></div>
+                      <!-- Click a note here (its fret number or stem, tagged with data-bar/data-col at
+                           draw time — see drawTabScore in staff.ts) to select it, shown with this
+                           outline rather than tabStripNoteBox's own fill so the two read differently if
+                           they ever land on the same note; then press w/h/q/e/s to set its length,
+                           written straight back into the rhythm line in the ASCII tab above. -->
+                      <div class="tab-staff-notebox tab-staff-editbox" id="tabStripEditBox" hidden></div>
                       <div class="tab-staff-cursor" id="tabStripCursor" hidden></div>
                     </div>
                   </div>

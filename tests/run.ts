@@ -24,7 +24,7 @@ import { centsFrom, detectPitch, freqToNote } from '../src/analysis/pitch.ts';
 import { isNewer, parseVersion } from '../src/version.ts';
 import { lineAt, parseLrc } from '../src/lyrics/lrc.ts';
 import { splitLength, staffX, vexKey } from '../src/ui/staff.ts';
-import { addAnchor, charOffsetAt, coordAtBpm, coordToPlace, coordToStripX, noteGroupAt, parseScore, parseTab, stripLayout, isLockedAt, moveAnchor, offsetToCoord, removeAnchor, rowCol, tabBlocks, tabPositionAt, toggleAnchorLock, type TabAnchor, type TabNote } from '../src/lyrics/tabSync.ts';
+import { addAnchor, charOffsetAt, coordAtBpm, coordToPlace, coordToStripX, findNoteAt, noteGroupAt, parseScore, parseTab, setRhythmLetter, stripLayout, isLockedAt, moveAnchor, offsetToCoord, removeAnchor, rowCol, tabBlocks, tabPositionAt, toggleAnchorLock, type TabAnchor, type TabNote } from '../src/lyrics/tabSync.ts';
 import { moveItem, nextSong, parseSetlists, prevSong, pruneSongs, totalSeconds, uniqueName, type Setlist } from '../src/setlists.ts';
 import { detectLatency } from '../src/player/latency.ts';
 import { placeTake } from '../src/player/placement.ts';
@@ -737,6 +737,30 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('parse: a two-digit fret is read whole', two.length === 1 && two[0].fret === 12);
   const timed = parseTab('e|0-0-|\nB|----|\nG|----|\nD|----|\nA|----|\nE|----|\n  q q');
   ok('parse: a rhythm line gives each note its length', timed.length === 2 && timed[0].length === 4 && timed[1].start === 4);
+}
+
+// ---- tab+ rhythm editing: click a note in Follow along, press a key to set its length
+{
+  const text = 'e|--0---3---|\nB|-----------|\nG|-----------|\nD|-----------|\nA|-----------|\nE|-----------|';
+  const notes = parseTab(text);
+  ok('tabSync: findNoteAt finds a note by its bar and column', findNoteAt(notes, 0, 4)?.fret === 0 && findNoteAt(notes, 0, 8)?.fret === 3);
+  ok('tabSync: findNoteAt is undefined off any note', findNoteAt(notes, 0, 5) === undefined);
+
+  const block = tabBlocks(text)[0];
+  const added = setRhythmLetter(text, block, 4, 'q');
+  ok('setRhythmLetter: inserts a new rhythm line for a block that has none', added.text.split('\n')[6] === '    q');
+  ok('setRhythmLetter: a fresh insertion grows by the whole new line plus its newline', added.grew === 6 && added.insertAt === text.length + 1);
+
+  const withRhythm = added.text; // one block, rhythm line now "    q" (just the first note set)
+  const edited = setRhythmLetter(withRhythm, tabBlocks(withRhythm)[0], 8, 'e');
+  ok('setRhythmLetter: pads a short existing line out to reach a later column', edited.text.split('\n')[6][8] === 'e' && edited.text.split('\n')[6][4] === 'q');
+
+  const replaced = setRhythmLetter(edited.text, tabBlocks(edited.text)[0], 4, 'h');
+  ok('setRhythmLetter: replaces an existing letter in place at the same length', replaced.text.split('\n')[6][4] === 'h' && replaced.grew === 0);
+
+  const dottedText = withRhythm.replace('    q', '    q.');
+  const undotted = setRhythmLetter(dottedText, tabBlocks(dottedText)[0], 4, 'e');
+  ok('setRhythmLetter: clears a trailing dot when the base letter changes', undotted.text.split('\n')[6] === '    e');
 }
 
 // ---- tab+ score: bars for the staff view

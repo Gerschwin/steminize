@@ -757,6 +757,9 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
    swap (.in-tune) — a class toggled each tick from live mic pitch, not a separate element. */
 .tab-staff-notebox.trainer-hit { background: var(--ok); opacity: 0.35; }
 .tab-staff-notebox.trainer-miss { background: var(--bad); opacity: 0.35; }
+/* The note currently selected for rhythm editing (click it, then press w/h/q/e/s) — an outline, not a
+   fill, so it still reads clearly if it ever lands on the same note as the fill-based box above. */
+.tab-staff-editbox { background: none; border: 2px solid var(--accent-2); opacity: 1; }
 .tab-tap-sel { display: inline-flex; align-items: center; gap: 6px; }
 
 .about-support .btn { display: inline-block; text-decoration: none; margin-top: 4px; }
