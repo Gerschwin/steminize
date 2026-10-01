@@ -337,7 +337,11 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
       // it's drawn into a detached element first, on purpose (see drawTabScore's own doc comment), so
       // a stale or failed drawing is never visible even for a moment — only moved into the real page,
       // by the caller, once it's finished.
-      if (!rest && !pitched) rNote.setKeyStyle(0, { fillStyle: 'transparent', strokeStyle: 'transparent' });
+      // A whole note never gets a stem at all (VexFlow never draws one for 'w', by standard notation
+      // convention) — with the notehead also hidden, as every other duration's is, there'd be nothing
+      // left on the page to show it has any length at all. Left visible for 'w' specifically so it's
+      // still the one duration that reads by its notehead rather than its stem.
+      if (!rest && !pitched && base !== 'w') rNote.setKeyStyle(0, { fillStyle: 'transparent', strokeStyle: 'transparent' });
       rhythmTickables.push(rNote);
       // A rest in the tab row: a GhostNote occupies the right amount of time (for the rhythm/tab
       // columns to still line up) without drawing anything — VFTabNote's own .setGhost(true) is a
@@ -420,6 +424,18 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
     beams.forEach((bm) => bm.setContext(ctx).draw());
     ctx.closeGroup();
     const newStavenotes = [...host.querySelectorAll('g.vf-stavenote')].slice(stavenotesBefore);
+    // Beam.draw() opens one '.vf-beam' group per beam, in the same order as `beams`, and
+    // Beam.drawStems() draws its member notes' stems inside it in the same order as the beam's own
+    // `.notes` array — so a beamed note's stem can be found this way even though it's nowhere inside
+    // that note's own '.vf-stavenote' group (see the big comment below for why it isn't there at all).
+    const beamedStemOf = new Map<InstanceType<typeof StaveNote>, SVGGElement>();
+    const newBeamGroups = [...rhythmRowGroup.querySelectorAll(':scope > g.vf-beam')] as SVGGElement[];
+    beams.forEach((beam, bi) => {
+      const stems = [...(newBeamGroups[bi]?.querySelectorAll(':scope > g.vf-stem') ?? [])] as SVGGElement[];
+      beam.getNotes().forEach((note, ni) => {
+        if (stems[ni]) beamedStemOf.set(note as InstanceType<typeof StaveNote>, stems[ni]);
+      });
+    });
     // newStavenotes lines up 1:1 with rhythmTickables (every StaveNote — rest or not — opens its own
     // group when drawn) but newTabnotes doesn't line up with tabTickables the same way: a rest there
     // is a GhostNote, which (deliberately — it draws nothing) never opens a group at all, so it
@@ -470,11 +486,14 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
           h: Number(tabRect.getAttribute('height')),
         });
       }
-      // The reference note for the whole row's correction: the first *unbeamed* real note, whose own
-      // stem is reliably inside its own group (a beamed one's isn't, per the comment above) — stop at
-      // the first one found, since every note needs the same correction anyway.
-      if (rowDeltaFound || rt.getBeam()) return;
-      const stemPath = rhythmGroup?.querySelector<SVGPathElement>('.vf-stem path');
+      // The reference note for the whole row's correction: the first real note, beamed or not — stop
+      // at the first one found, since every note needs the same correction anyway. A row that's
+      // entirely beamed (no unbeamed note anywhere to fall back on, e.g. all eighth-note pairs) needs
+      // this to work for a beamed note too, not just skip it: its stem lives in its beam's own group
+      // (beamedStemOf, built above), not in its own note group, so it's looked up there instead.
+      if (rowDeltaFound) return;
+      const stemGroup = rt.getBeam() ? beamedStemOf.get(rt) : rhythmGroup;
+      const stemPath = stemGroup?.querySelector<SVGPathElement>(rt.getBeam() ? 'path' : '.vf-stem path');
       const stemD = stemPath?.getAttribute('d')?.match(/^M([\d.-]+)/);
       if (!tabRect || !stemD) return;
       const tabCentreX = Number(tabRect.getAttribute('x')) + Number(tabRect.getAttribute('width')) / 2;
