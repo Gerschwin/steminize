@@ -22,6 +22,7 @@ import {
   isRhythmRow,
   MIN_ANCHORS,
   moveAnchor,
+  noteCols,
   noteGroupAt,
   parseScore,
   removeAnchor,
@@ -3307,6 +3308,10 @@ export class Deck {
       // its length from w/h/q/e/s directly — checked ahead of the rest so it doesn't fight with them
       // (a bare "e", for instance, isn't bound to anything else here, but being explicit costs nothing).
       if (this.selectedRhythmNote && /^[whqes]$/.test(k)) this.setSelectedNoteDuration(k);
+      // Same precedence reasoning: Left/Right already means something else below (skip ±5s, or — in
+      // pedal mode — play/restart), but once a note is selected for editing, moving the selection is
+      // the more useful thing for the arrow keys to do. Shift+arrow steps a whole bar at a time.
+      else if (this.selectedRhythmNote && (k === 'ArrowLeft' || k === 'ArrowRight')) this.moveSelectedRhythmNote(k === 'ArrowRight' ? 1 : -1, e.shiftKey);
       else if (e.code === 'Space' || k === 'PageDown' || k === 'MediaPlayPause' || (this.pedal && ['ArrowRight', 'ArrowDown', 'Enter'].includes(k))) this.toggle();
       else if (k === 'PageUp' || k === 'Home' || (this.pedal && ['ArrowLeft', 'ArrowUp'].includes(k))) this.restart();
       else if (k === 'm' || k === 'M') this.addMarker();
@@ -3408,6 +3413,30 @@ export class Deck {
     this.updateTabStrip();
     this.updateScratchSummary();
     this.emit();
+  }
+
+  /** Arrow-key navigation between notes in Follow along: plain Left/Right to the previous/next note in
+   * playing order (noteCols — one entry per chord, not per string); Shift+Left/Right a whole bar at a
+   * time, to the first note of the previous/next bar that actually has one (an empty bar is skipped
+   * over, not landed on). Just moves the selection — no text edit, so no anchor-shifting or re-render
+   * of the tab itself, only the highlight box's position. */
+  private moveSelectedRhythmNote(dir: 1 | -1, byBar: boolean) {
+    const sel = this.selectedRhythmNote;
+    if (!sel) return;
+    const cols = noteCols(parseScore(this.scratchAreas.tab.value).notes);
+    let target: { bar: number; col: number } | undefined;
+    if (byBar) {
+      const bars = [...new Set(cols.map((c) => c.bar))].sort((a, b) => a - b);
+      const bi = bars.indexOf(sel.bar);
+      const targetBar = bi === -1 ? undefined : bars[bi + dir];
+      target = targetBar === undefined ? undefined : cols.find((c) => c.bar === targetBar); // cols is start-sorted, so this is that bar's first note
+    } else {
+      const idx = cols.findIndex((c) => c.bar === sel.bar && c.col === sel.col);
+      target = idx === -1 ? undefined : cols[idx + dir];
+    }
+    if (!target) return;
+    this.selectedRhythmNote = { bar: target.bar, col: target.col };
+    this.updateTabStrip();
   }
 
   private removeSelectedTap() {

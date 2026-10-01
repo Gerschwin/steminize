@@ -404,6 +404,17 @@ export function findNoteAt(notes: TabNote[], bar: number, col: number): TabNote 
   return notes.find((n) => n.bar === bar && n.col === col);
 }
 
+/** Every distinct clickable instant in the tab (one entry per chord, not per string), in playing
+ * order — for arrow-key navigation between notes in Follow along. A chord's several TabNotes share
+ * one start and one column (they're written at the same character position, stacked across string
+ * rows), so de-duping by start already de-dupes by column too; the first note found for a given
+ * start just supplies that shared column. */
+export function noteCols(notes: TabNote[]): { bar: number; col: number; start: number }[] {
+  const seen = new Map<number, { bar: number; col: number; start: number }>();
+  for (const n of notes) if (!seen.has(n.start)) seen.set(n.start, { bar: n.bar, col: n.col, start: n.start });
+  return [...seen.values()].sort((a, b) => a.start - b.start);
+}
+
 /** Sets (or replaces) one note's rhythm letter at its own column, inserting a rhythm line for the
  * block first if it doesn't have one yet — the same shape "Add rhythm line" itself inserts (see
  * tabRhythmBtn in deck.ts), just with this specific note's own column set instead of only the

@@ -24,7 +24,7 @@ import { centsFrom, detectPitch, freqToNote } from '../src/analysis/pitch.ts';
 import { isNewer, parseVersion } from '../src/version.ts';
 import { lineAt, parseLrc } from '../src/lyrics/lrc.ts';
 import { splitLength, staffX, vexKey } from '../src/ui/staff.ts';
-import { addAnchor, charOffsetAt, coordAtBpm, coordToPlace, coordToStripX, findNoteAt, noteGroupAt, parseScore, parseTab, setRhythmLetter, stripLayout, isLockedAt, moveAnchor, offsetToCoord, removeAnchor, rowCol, tabBlocks, tabPositionAt, toggleAnchorLock, type TabAnchor, type TabNote } from '../src/lyrics/tabSync.ts';
+import { addAnchor, charOffsetAt, coordAtBpm, coordToPlace, coordToStripX, findNoteAt, noteCols, noteGroupAt, parseScore, parseTab, setRhythmLetter, stripLayout, isLockedAt, moveAnchor, offsetToCoord, removeAnchor, rowCol, tabBlocks, tabPositionAt, toggleAnchorLock, type TabAnchor, type TabNote } from '../src/lyrics/tabSync.ts';
 import { moveItem, nextSong, parseSetlists, prevSong, pruneSongs, totalSeconds, uniqueName, type Setlist } from '../src/setlists.ts';
 import { detectLatency } from '../src/player/latency.ts';
 import { placeTake } from '../src/player/placement.ts';
@@ -745,6 +745,14 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   const notes = parseTab(text);
   ok('tabSync: findNoteAt finds a note by its bar and column', findNoteAt(notes, 0, 4)?.fret === 0 && findNoteAt(notes, 0, 8)?.fret === 3);
   ok('tabSync: findNoteAt is undefined off any note', findNoteAt(notes, 0, 5) === undefined);
+
+  const mkNote = (bar: number, col: number, start: number): TabNote => ({ block: 0, string: 0, fret: 0, midi: null, col, start, length: 4, bar });
+  const cols = noteCols([mkNote(0, 4, 0), mkNote(0, 8, 4), mkNote(0, 4, 0), mkNote(1, 4, 8)]); // a chord (two notes sharing a start) plus two later notes, given out of order
+  ok('tabSync: noteCols collapses a chord to one entry', cols.length === 3);
+  ok(
+    'tabSync: noteCols sorts by playing order regardless of input order',
+    cols[0].bar === 0 && cols[0].col === 4 && cols[1].bar === 0 && cols[1].col === 8 && cols[2].bar === 1 && cols[2].col === 4,
+  );
 
   const block = tabBlocks(text)[0];
   const added = setRhythmLetter(text, block, 4, 'q');
