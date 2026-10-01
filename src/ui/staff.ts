@@ -388,7 +388,6 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
     ctx.restore();
     const newTabnotes = [...host.querySelectorAll('g.vf-tabnote')].slice(tabnotesBefore);
     const stavenotesBefore = host.querySelectorAll('g.vf-stavenote').length;
-    rhythmVoice.draw(ctx, rhythmStave);
     // VexFlow places a stem-down note's own stem at its glyph's left edge, not its centre (the usual
     // convention: a stem attaches to one side of a real notehead, not through its middle), and every
     // placeholder note in this row is forced stem-down (see RHYTHM_KEY's own comment above). With no
@@ -396,10 +395,30 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
     // left of the fret number it times. The two voices share one time grid, so in principle the gap
     // should be predictable from each note's own pre-draw geometry (getStemX()) — in practice it
     // wasn't: a correction computed that way, before drawing, didn't land where it should have once
-    // actually drawn (beaming likely reshapes stem geometry between the two). So this measures the
-    // real, drawn result on both sides instead — each rhythm note's own eraser-rect-centre counterpart
-    // already drawn above — and corrects that directly: the same "ask the render, don't guess"
-    // approach already used for this file's other hard-won geometry fixes.
+    // actually drawn. So this measures the real, drawn result instead and corrects that directly: the
+    // same "ask the render, don't guess" approach already used for this file's other geometry fixes.
+    //
+    // Correcting *per note* (an early version of this) doesn't hold up once beaming is involved: a
+    // beamed note's own stem isn't drawn as part of its note at all — StaveNote skips it entirely when
+    // the note has a beam, since Beam.drawStems() draws every member note's stem itself once the whole
+    // group's slope is known — so at the point each note finishes drawing, a beamed one simply has no
+    // stem yet to measure. And even given that stem once the beam does draw it, nudging it on its own
+    // would leave it visually detached from the beam line connecting it to its neighbours, which is
+    // computed once from the *original* positions and never reshaped afterwards. Both knock out doing
+    // this note-by-note for anything beamed.
+    //
+    // So instead: draw the whole row — every note, every beam — into one wrapping group, measure the
+    // gap from a single reliable reference note once up front, and nudge that whole group by the one
+    // shared amount. The gap turns out not to depend on which note it's measured from (confirmed by
+    // comparing several notes of differing fret-digit width, all needing the identical correction),
+    // consistent with its cause being a fixed drawing convention rather than anything note-specific —
+    // so correcting the row as a single rigid block keeps every stem *and* every beam line that
+    // connects them in exactly the same relative arrangement they were formatted in, just moved
+    // together to where the tab digits actually are.
+    const rhythmRowGroup = ctx.openGroup('tab-rhythm-row');
+    rhythmVoice.draw(ctx, rhythmStave);
+    beams.forEach((bm) => bm.setContext(ctx).draw());
+    ctx.closeGroup();
     const newStavenotes = [...host.querySelectorAll('g.vf-stavenote')].slice(stavenotesBefore);
     // newStavenotes lines up 1:1 with rhythmTickables (every StaveNote — rest or not — opens its own
     // group when drawn) but newTabnotes doesn't line up with tabTickables the same way: a rest there
@@ -411,6 +430,15 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
     // drawable length splits into more than one tickable (see splitLength), and only the first of
     // those represents the note itself for data-col/data-bar's purposes (clicking it to edit).
     const colByIdx = new Map(groupFirst.map((g) => [g.idx, g.col]));
+    // TabNote doesn't override Element's generic getBoundingBox(), which reports Element's own
+    // x/y fields — left at their class default of 0 here, since a TabNote positions itself via the
+    // stave/string line it's drawn on, not those fields. Using it for notesOut (below) silently gave
+    // every note the same y:0, off-stave position. The fret digit's own eraser rect is drawn exactly
+    // where the digit actually ends up, so it's recorded here, per real note, as the one honest source
+    // for notesOut's geometry too — the same "ask the render, don't guess" rect already used just below
+    // to correct the rhythm row's horizontal alignment.
+    const rectByIdx = new Map<number, { x: number; y: number; w: number; h: number }>();
+    let rowDeltaFound = false;
     rhythmTickables.forEach((rt, i) => {
       // rest/not-rest always matches between the two at the same index — add() uses the same flag
       // for both pushes at once — so this also tells us whether tabTickables[i] had a group to count.
@@ -421,33 +449,54 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
       const rhythmGroup = newStavenotes[i] as SVGGElement | undefined;
       // Tagged on both the fret number and the stem, so a click lands the same note either way — read
       // back by deck.ts's click handler (event.target.closest('[data-col]')) to edit this note's own
-      // rhythm letter without any coordinate math or scroll-offset accounting.
+      // rhythm letter without any coordinate math or scroll-offset accounting. VexFlow's SVGContext
+      // sets pointer-events: none on the root SVG it creates (svgcontext.js), making the whole engraved
+      // view click-through by default — overridden back to auto here, on just these two tagged
+      // elements, so the rest of the notation stays inert and only real notes are clickable.
       if (col !== undefined) {
         tabGroup?.setAttribute('data-bar', String(bi));
         tabGroup?.setAttribute('data-col', String(col));
+        if (tabGroup) tabGroup.style.pointerEvents = 'auto';
         rhythmGroup?.setAttribute('data-bar', String(bi));
         rhythmGroup?.setAttribute('data-col', String(col));
+        if (rhythmGroup) rhythmGroup.style.pointerEvents = 'auto';
       }
       const tabRect = tabGroup?.querySelector('rect');
+      if (tabRect) {
+        rectByIdx.set(i, {
+          x: Number(tabRect.getAttribute('x')),
+          y: Number(tabRect.getAttribute('y')),
+          w: Number(tabRect.getAttribute('width')),
+          h: Number(tabRect.getAttribute('height')),
+        });
+      }
+      // The reference note for the whole row's correction: the first *unbeamed* real note, whose own
+      // stem is reliably inside its own group (a beamed one's isn't, per the comment above) — stop at
+      // the first one found, since every note needs the same correction anyway.
+      if (rowDeltaFound || rt.getBeam()) return;
       const stemPath = rhythmGroup?.querySelector<SVGPathElement>('.vf-stem path');
       const stemD = stemPath?.getAttribute('d')?.match(/^M([\d.-]+)/);
-      if (!tabRect || !rhythmGroup || !stemD) return;
+      if (!tabRect || !stemD) return;
       const tabCentreX = Number(tabRect.getAttribute('x')) + Number(tabRect.getAttribute('width')) / 2;
-      const drawnStemX = Number(stemD[1]);
-      rhythmGroup.style.transform = `translateX(${tabCentreX - drawnStemX}px)`;
+      rhythmRowGroup.style.transform = `translateX(${tabCentreX - Number(stemD[1])}px)`;
+      rowDeltaFound = true;
     });
-    beams.forEach((bm) => bm.setContext(ctx).draw());
 
     tabTickables.forEach((t, i) => {
       if (!Number.isNaN(startsOf[i])) map.push({ u: startsOf[i], x: t.getAbsoluteX() });
     });
     for (const g of groupFirst) {
-      const boxes = tabTickables[g.idx].getModifierStartXY(0, 0); // fallback if getBoundingBox is unhelpful for a ghost-free tab note
+      const rect = rectByIdx.get(g.idx);
       let bb: { getX(): number; getY(): number; getW(): number; getH(): number };
-      try {
-        bb = tabTickables[g.idx].getBoundingBox();
-      } catch {
-        bb = { getX: () => boxes.x - 8, getY: () => boxes.y - 8, getW: () => 16, getH: () => 16 };
+      if (rect) {
+        bb = { getX: () => rect.x, getY: () => rect.y, getW: () => rect.w, getH: () => rect.h };
+      } else {
+        const boxes = tabTickables[g.idx].getModifierStartXY(0, 0); // fallback if getBoundingBox is unhelpful for a ghost-free tab note
+        try {
+          bb = tabTickables[g.idx].getBoundingBox();
+        } catch {
+          bb = { getX: () => boxes.x - 8, getY: () => boxes.y - 8, getW: () => 16, getH: () => 16 };
+        }
       }
       notesOut.push({ u: g.u, len: g.len, x: bb.getX(), y: bb.getY(), w: bb.getW(), h: bb.getH(), bar: bi, col: g.col });
     }
