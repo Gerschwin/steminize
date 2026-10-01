@@ -371,7 +371,10 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
     if (pitched) Accidental.applyAccidentals([rhythmVoice], 'C');
     const beams = Beam.generateBeams(rhythmTickables.filter((t) => !t.isRest()));
     new Formatter().joinVoices([rhythmVoice, tabVoice]).format([rhythmVoice, tabVoice], Math.max(40, w - (bi === 0 ? CLEF : 0) - 30));
-    rhythmVoice.draw(ctx, rhythmStave);
+    // Tab drawn first, before the rhythm row underneath it, so the row's own notes can be measured
+    // against the fret digits' *actual drawn position* right after — see the comment below, where
+    // that measurement is used.
+    const tabnotesBefore = host.querySelectorAll('g.vf-tabnote').length;
     // Every fret digit sits on its own small solid-white "eraser" rectangle (VexFlow's own, to blank
     // out the tab line it would otherwise cross) — always white, regardless of theme. Drawn in the
     // app's usual near-white currentColor, a digit there is nearly invisible on its own background;
@@ -381,6 +384,42 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
     ctx.setFillStyle('#111');
     tabVoice.draw(ctx, tabStave);
     ctx.restore();
+    const newTabnotes = [...host.querySelectorAll('g.vf-tabnote')].slice(tabnotesBefore);
+    const stavenotesBefore = host.querySelectorAll('g.vf-stavenote').length;
+    rhythmVoice.draw(ctx, rhythmStave);
+    // VexFlow places a stem-down note's own stem at its glyph's left edge, not its centre (the usual
+    // convention: a stem attaches to one side of a real notehead, not through its middle), and every
+    // placeholder note in this row is forced stem-down (see RHYTHM_KEY's own comment above). With no
+    // real notehead for that convention to visually justify here, the result reads as the stem sitting
+    // left of the fret number it times. The two voices share one time grid, so in principle the gap
+    // should be predictable from each note's own pre-draw geometry (getStemX()) — in practice it
+    // wasn't: a correction computed that way, before drawing, didn't land where it should have once
+    // actually drawn (beaming likely reshapes stem geometry between the two). So this measures the
+    // real, drawn result on both sides instead — each rhythm note's own eraser-rect-centre counterpart
+    // already drawn above — and corrects that directly: the same "ask the render, don't guess"
+    // approach already used for this file's other hard-won geometry fixes.
+    const newStavenotes = [...host.querySelectorAll('g.vf-stavenote')].slice(stavenotesBefore);
+    // newStavenotes lines up 1:1 with rhythmTickables (every StaveNote — rest or not — opens its own
+    // group when drawn) but newTabnotes doesn't line up with tabTickables the same way: a rest there
+    // is a GhostNote, which (deliberately — it draws nothing) never opens a group at all, so it
+    // contributes no entry to newTabnotes. tabIdx tracks that separately, advancing only on an actual
+    // tab note, to stay matched to the right one.
+    let tabIdx = 0;
+    rhythmTickables.forEach((rt, i) => {
+      // rest/not-rest always matches between the two at the same index — add() uses the same flag
+      // for both pushes at once — so this also tells us whether tabTickables[i] had a group to count.
+      const rest = rt.isRest();
+      const tabGroup = rest ? undefined : (newTabnotes[tabIdx++] as SVGGElement | undefined);
+      if (rest) return; // a rest centres on its own glyph already, nothing to correct
+      const tabRect = tabGroup?.querySelector('rect');
+      const rhythmGroup = newStavenotes[i] as SVGGElement | undefined;
+      const stemPath = rhythmGroup?.querySelector<SVGPathElement>('.vf-stem path');
+      const stemD = stemPath?.getAttribute('d')?.match(/^M([\d.-]+)/);
+      if (!tabRect || !rhythmGroup || !stemD) return;
+      const tabCentreX = Number(tabRect.getAttribute('x')) + Number(tabRect.getAttribute('width')) / 2;
+      const drawnStemX = Number(stemD[1]);
+      rhythmGroup.style.transform = `translateX(${tabCentreX - drawnStemX}px)`;
+    });
     beams.forEach((bm) => bm.setContext(ctx).draw());
 
     tabTickables.forEach((t, i) => {
