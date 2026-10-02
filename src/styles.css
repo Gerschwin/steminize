@@ -397,6 +397,8 @@ details.more[open] summary { color: var(--text); }
 .time { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 92px; margin-left: auto; }
 .overview { height: 64px; position: relative; border-radius: 8px; background: var(--panel-2); overflow: hidden; cursor: crosshair; touch-action: none; -webkit-user-select: none; user-select: none; }
 .overview canvas, .lane canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* WebKit lets a canvas (like an image) be picked up and dragged as a ghost image of itself, which showed up as the waveform following the mouse across the page. -webkit-user-drag:none is its own switch for exactly that; user-select/dragstart alone didn't stop it reliably. */
+canvas, img, svg { -webkit-user-drag: none; user-drag: none; }
 @media (max-width: 600px) {
   .deck-actions { width: 100%; }
   .deck-actions .btn { flex: 1; }

@@ -296,6 +296,17 @@ function waveLayer(peaks: Float32Array, w: number, hgt: number, colour: string, 
   return c;
 }
 
+/** Cancels the mouse press's own default on a waveform/overview, the thing that lets WebKit start a
+ * native drag (a ghost image of the canvas following the mouse) or a text selection. Pointer events
+ * carry the actual scrub/section dragging and are untouched. Cancelling mousedown also stops the
+ * press moving focus off a text box as usual, and the global shortcut keys are ignored while one has
+ * focus — so focus is dropped by hand, as the press would have. */
+function noNativeDrag(e: MouseEvent) {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  (document.activeElement as HTMLElement | null)?.blur?.();
+}
+
 export class Deck {
   player = new Player();
   private seekToastAt = 0;
@@ -635,6 +646,7 @@ export class Deck {
     // this drag only ever means scrub/section, never "select text" or "drag this somewhere".
     wave.addEventListener('selectstart', (e) => e.preventDefault());
     wave.addEventListener('dragstart', (e) => e.preventDefault());
+    wave.addEventListener('mousedown', noNativeDrag);
     wave.addEventListener('pointerdown', (e) => {
       swallowClick = false; // a drag that produced no click must not eat the next real one
       if (e.button !== 0 || e.pointerType === 'touch') return;
@@ -3220,6 +3232,7 @@ export class Deck {
     // (fractions are of the visible range; frameAt() converts)
     wrap.addEventListener('selectstart', (e) => e.preventDefault());
     wrap.addEventListener('dragstart', (e) => e.preventDefault());
+    wrap.addEventListener('mousedown', noNativeDrag);
     wrap.addEventListener('pointerdown', (e) => {
       if ((e.target as HTMLElement).closest('button')) return; // let the zoom overlay's buttons handle their own clicks
       wrap.setPointerCapture(e.pointerId);
