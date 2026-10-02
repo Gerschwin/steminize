@@ -749,7 +749,8 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
 /* The fixed spot each box's content slides past — the engraved tab's and the staff's line up (see
    the .joined rule above), since both use this same left:40% and deck.ts lines the staff's content
    up with wherever the tab's cursor actually renders, not an independent 40%-of-its-own-width guess. */
-.tab-staff-cursor { position: absolute; top: 0; bottom: 0; left: 40%; width: 3px; background: var(--accent); opacity: 0.85; border-radius: 1.5px; pointer-events: none; }
+/* 8px and translucent: a thin line was easy to lose, and a solid thick one would hide the fret digit under it. margin-left nudges the bar to centre on a typical fret digit (~10px wide, left edge at 40%) rather than start at its left edge. */
+.tab-staff-cursor { position: absolute; top: 0; bottom: 0; left: 40%; width: 8px; margin-left: 1px; background: var(--accent); opacity: 0.5; border-radius: 4px; pointer-events: none; }
 /* The actual note (or fret) sounding right now, behind the moving line rather than instead of it —
    the line still says "this instant", the box says "this note" (useful once several are close together). */
 .tab-staff-notebox { position: absolute; top: 0; background: var(--accent); opacity: 0.18; border-radius: 4px; pointer-events: none; }
