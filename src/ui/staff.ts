@@ -232,6 +232,11 @@ export interface TabScoreLayout {
   height: number;
 }
 
+/** Size (pt) of the muted-note X glyph: the double-sharp symbol is small for its em, so it's set well above a digit's 9pt. */
+const MUTED_X_PT = 24;
+/** How far (in em) that glyph's ink centre sits above its baseline in Bravura — measured, not guessed. */
+const MUTED_X_INK_RISE_EM = 0.0078125;
+
 /** A tab note's fret text, or 'x' for a dead/unknown-fret note (parseTab gives fret:null for that). */
 const fretText = (fret: number | null): string => (fret === null ? 'x' : String(fret));
 
@@ -264,11 +269,11 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
   // deliberately compact ~13px string spacing and overlapping neighbouring lines. Pinned to match the
   // digits once, the first time this runs (a library-wide default, not scoped to one draw call, so it
   // isn't reset after — nothing else in this app uses VexFlow's TabNote category at a different size).
-  // Set to 20pt rather than the digits' own 9pt: that first fix made the glyph the right *size class*
+  // MUTED_X_PT (below) rather than the digits' own 9pt: that first fix made the glyph the right *size class*
   // but the double-sharp symbol itself is tiny drawn that small (a ~3px speck, easy to read as a stray
   // dot), so it needs to be a good deal bigger than a digit to read as an X of similar weight.
   if (MetricsDefaults.TabNote.fontSize === undefined) {
-    MetricsDefaults.TabNote.fontSize = 20;
+    MetricsDefaults.TabNote.fontSize = MUTED_X_PT;
     Metrics.clear('TabNote');
   }
   host.replaceChildren();
@@ -645,6 +650,11 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
     for (const el of svg.querySelectorAll<SVGTextElement>('.vf-tabnote text')) {
       el.style.fill = '#111';
       el.style.fontFamily = 'Bravura, Academico, sans-serif';
+      // Centre the muted-note X on its string line. VexFlow puts its baseline on the whole pixel above
+      // the line's true centre (a 1px line spans y..y+1, so its centre is y+0.5), and the glyph's own ink
+      // sits a hair above its baseline (measured in Bravura: about 0.0078em, 0.25px at this size) —
+      // together a visible ~0.75px high at this size. Nudged down by exactly that.
+      if (el.textContent?.codePointAt(0) === 0xe263) el.setAttribute('y', String(Number(el.getAttribute('y')) + 0.5 + MUTED_X_INK_RISE_EM * ((MUTED_X_PT * 4) / 3)));
     }
   }
   return { map, notes: notesOut, width: total, height: ROW };
