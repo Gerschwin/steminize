@@ -237,7 +237,7 @@ export function tabBlocks(text: string): TabBlock[] {
         const ch = r[c];
         if (ch === undefined) continue;
         const prev = r[c - 1];
-        if (ch === 'b' || ch === 'r' || ch === '(' || ch === ')' || ch === '^' || (isDigit(ch) && (isDigit(prev) || prev === 'b' || prev === 'r'))) extra = true;
+        if (ch === 'b' || ch === 'r' || ch === '(' || ch === ')' || ch === '^' || (ch === 't' && isDigit(r[c + 1])) || (isDigit(ch) && (isDigit(prev) || prev === 'b' || prev === 'r'))) extra = true;
         else if (isDigit(ch) || ch === 'x' || ch === 'X') note = true;
       }
       counts.push(c >= label && !bar && !(extra && !note));
@@ -337,6 +337,15 @@ export interface TabNote {
   length: number;
   /** Which bar it is in, counting through the whole tab from 0 (an index into the bars from parseScore). */
   bar: number;
+  /** A bend written `7b9` (fret bent up to `to`), with `release` set when it's let back down (`7b9r7`). */
+  bend?: { to: number; release?: number };
+  /** The note is joined to the previous note on the same string by what's written between them: `h`
+   * hammer-on, `p` pull-off, `/` slide up, `\` slide down. */
+  link?: 'h' | 'p' | '/' | '\\';
+  /** Vibrato, written `~` (or `v`) straight after the note. */
+  vibrato?: boolean;
+  /** Tapped with the picking hand, written `t` straight before the fret. */
+  tap?: boolean;
 }
 
 /** A bar of the tab: where it starts and how long it is, in sixteenth notes. */
@@ -358,6 +367,40 @@ function barSegments(b: TabBlock): [number, number][] {
     }
   }
   return segs;
+}
+
+/** The playing techniques written around the fret that starts at `c` in one string's row: what's
+ * between it and the previous note (`h` `p` `/` `\`), a bend (`7b9`, released `7b9r7`), `~`/`v` vibrato
+ * straight after, `t` straight before for a tap. Read only — they change how the note is drawn, not
+ * when it sounds. */
+function techniques(line: string, c: number): Partial<Pick<TabNote, 'bend' | 'link' | 'vibrato' | 'tap'>> {
+  const out: Partial<Pick<TabNote, 'bend' | 'link' | 'vibrato' | 'tap'>> = {};
+  const before = line[c - 1];
+  if ((before === 'h' || before === 'p' || before === '/' || before === '\\') && isDigit(line[c - 2])) out.link = before;
+  if (before === 't') out.tap = true;
+  let e = c;
+  while (isDigit(line[e + 1])) e++;
+  const num = (from: number) => {
+    let to = from;
+    while (isDigit(line[to + 1])) to++;
+    return to >= from && isDigit(line[from]) ? { value: Number(line.slice(from, to + 1)), end: to } : null;
+  };
+  if (line[e + 1] === 'b') {
+    const target = num(e + 2);
+    if (target) {
+      out.bend = { to: target.value };
+      e = target.end;
+      if (line[e + 1] === 'r') {
+        const back = num(e + 2);
+        if (back) {
+          out.bend.release = back.value;
+          e = back.end;
+        }
+      }
+    }
+  }
+  if (line[e + 1] === '~' || line[e + 1] === 'v') out.vibrato = true;
+  return out;
 }
 
 /** The tab as bars and a list of notes with pitch and timing, for the staff view and the playing trainer. */
@@ -411,7 +454,9 @@ export function parseScore(text: string): { notes: TabNote[]; bars: TabBar[] } {
         const segIdx = segs.findIndex(([from, to]) => c >= from && c < to);
         const start = b.start + (b.events ? colToUnits(b, c) : remapCol(c, segIdx));
         const bar = barBase + Math.max(0, segIdx);
-        found.push({ block: bi, string: k, fret, midi: open && fret !== null ? open[k] + fret : null, col: c, start, length: 0, bar });
+        const note: TabNote = { block: bi, string: k, fret, midi: open && fret !== null ? open[k] + fret : null, col: c, start, length: 0, bar };
+        if (fret !== null) Object.assign(note, techniques(line, c));
+        found.push(note);
       }
     }
     // length: from the rhythm line's event when there is one, else up to the next note in the block

@@ -771,6 +771,24 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('setRhythmLetter: clears a trailing dot when the base letter changes', undotted.text.split('\n')[6] === '    e');
 }
 
+// ---- tab+ playing techniques: h p b r / \\ ~ t, read off the text for drawing
+{
+  const six = (e: string) => `e|${e}|\nB|${'-'.repeat(e.length)}|\nG|${'-'.repeat(e.length)}|\nD|${'-'.repeat(e.length)}|\nA|${'-'.repeat(e.length)}|\nE|${'-'.repeat(e.length)}|`;
+  const t = (e: string) => parseScore(six(e)).notes;
+  const ho = t('-5h7-7p5-5/7-9\\7-');
+  ok('technique: h, p, / and \\ link a note to the one before it', ho.map((n) => n.link ?? '').join() === ',h,,p,,/,,\\');
+  ok('technique: the first note of a pair carries no link', ho[0].link === undefined && ho[2].link === undefined);
+  const bend = t('-7b9r7-5b6-')[0];
+  ok('technique: a bend with a release', bend.bend?.to === 9 && bend.bend?.release === 7 && bend.fret === 7);
+  ok('technique: a bend without a release', t('-7b9r7-5b6-')[1].bend?.to === 6 && t('-7b9r7-5b6-')[1].bend?.release === undefined);
+  ok('technique: a bend is still just the one note', t('-7b9r7-5b6-').length === 2);
+  ok('technique: ~ and v after a fret are vibrato', t('-7~-5v-')[0].vibrato === true && t('-7~-5v-')[1].vibrato === true && t('-7-')[0].vibrato === undefined);
+  ok('technique: t before a fret is a tap', t('-t12-5-')[0].tap === true && t('-t12-5-')[0].fret === 12 && t('-t12-5-')[1].tap === undefined);
+  ok('technique: a plain note has none of them', Object.keys(t('-5-')[0]).every((k) => !['bend', 'link', 'vibrato', 'tap'].includes(k)));
+  const tapTimed = parseScore(six('-t5---5-')); // the t takes no time of its own
+  ok('technique: a tap marker takes no time, so the note starts where it would without it', tapTimed.notes[0].start === parseScore(six('-5----5-')).notes[0].start);
+}
+
 // ---- tab+ score: bars for the staff view
 {
   const sc = parseScore('e|0-0-|0-0-|\nB|----|----|\nG|----|----|\nD|----|----|\nA|----|----|\nE|----|----|\n  q q  q q');

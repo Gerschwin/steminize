@@ -235,6 +235,14 @@ export interface TabScoreLayout {
 /** A tab note's fret text, or 'x' for a dead/unknown-fret note (parseTab gives fret:null for that). */
 const fretText = (fret: number | null): string => (fret === null ? 'x' : String(fret));
 
+/** The label over a bend arrow, from how many semitones (frets) it goes up: 1/2, Full, 1 1/2, 2 ... */
+const bendText = (semis: number): string => {
+  if (semis <= 0) return '';
+  if (semis === 1) return '1/2';
+  const whole = Math.floor(semis / 2);
+  return semis % 2 ? `${whole} 1/2` : whole === 1 ? 'Full' : String(whole);
+};
+
 /** Draws fret numbers on a tab stave (6 lines, a "TAB" glyph instead of a clef) with a compact rhythm
  * row under it showing the same notes' exact durations as stems, beams, dots and flags — no 5-line
  * staff, just enough notation to read the timing, unless `pitched` asks for real noteheads there too.
@@ -247,7 +255,7 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
   vex ??= import('vexflow/bravura');
   const vf = await vex;
   if (typeof document !== 'undefined' && document.fonts) await document.fonts.ready.catch(() => {});
-  const { Renderer, Stave, TabStave, StaveNote, TabNote: VFTabNote, GhostNote, Voice, Formatter, Accidental, Dot, Beam, Stem, Barline, Metrics, MetricsDefaults } = vf;
+  const { Renderer, Stave, TabStave, StaveNote, TabNote: VFTabNote, GhostNote, Voice, Formatter, Accidental, Dot, Beam, Stem, Barline, Metrics, MetricsDefaults, Bend, Vibrato, Annotation, TabTie, TabSlide } = vf;
   // A dead/muted note ('x') isn't drawn as the character "x" — VexFlow draws it as a music-font glyph
   // (the "double sharp" symbol, conventionally used for a muted string) under the plain 'TabNote'
   // category, not 'TabNote.text' (the fret digits' own category). VexFlow's own metrics table sizes
@@ -364,6 +372,7 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
     const rhythmTickables: InstanceType<typeof StaveNote>[] = [];
     const tabTickables: (InstanceType<typeof VFTabNote> | InstanceType<typeof GhostNote>)[] = [];
     const startsOf: number[] = []; // parallel to rhythmTickables/tabTickables: tab time (rests: NaN)
+    const realTabs: { tNote: InstanceType<typeof VFTabNote>; group: TabNote[] }[] = []; // the actual (non-rest) tab notes, in order, for joining h/p/slides below
     const groupFirst: { u: number; len: number; idx: number; col: number }[] = [];
     const add = (code: string, rest: boolean, group: TabNote[], u: number) => {
       const dots = code.endsWith('d') ? 1 : 0;
@@ -395,6 +404,23 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
         ? new GhostNote(base + (dots ? 'd' : ''))
         : new VFTabNote({ positions: group.map((n) => ({ str: n.string + 1, fret: fretText(n.fret) })), duration: base }, false);
       if (dots && !rest) Dot.buildAndAttach([tNote], { all: true });
+      if (!rest) {
+        const real = tNote as InstanceType<typeof VFTabNote>;
+        realTabs.push({ tNote: real, group });
+        // Techniques written on a fret (bend, vibrato, tap — see tabSync's techniques()): VexFlow
+        // modifiers on that note, drawn above the stave with the note itself. h/p/slides join two
+        // notes, so they wait until every note of the bar exists (below, after drawing).
+        group.forEach((n, k) => {
+          if (n.bend) {
+            const semis = n.bend.to - (n.fret ?? 0);
+            const phrase = [{ type: Bend.UP, text: bendText(semis) }];
+            if (n.bend.release !== undefined) phrase.push({ type: Bend.DOWN, text: '' });
+            real.addModifier(new Bend(phrase), k);
+          }
+          if (n.vibrato) real.addModifier(new Vibrato(), k);
+          if (n.tap) real.addModifier(new Annotation('T').setVerticalJustification(Annotation.VerticalJustify.TOP), k);
+        });
+      }
       tabTickables.push(tNote);
       startsOf.push(rest ? NaN : u);
     };
@@ -436,6 +462,25 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
     tabVoice.draw(ctx, tabStave);
     ctx.restore();
     const newTabnotes = [...host.querySelectorAll('g.vf-tabnote')].slice(tabnotesBefore);
+    // Hammer-ons, pull-offs and slides: each joins a note to the previous note on the same string in
+    // this bar. A join across a bar line isn't drawn (each bar is its own stave here).
+    realTabs.forEach((cur, i) => {
+      cur.group.forEach((n, k) => {
+        if (!n.link) return;
+        for (let j = i - 1; j >= 0; j--) {
+          const fromIdx = realTabs[j].group.findIndex((m) => m.string === n.string);
+          if (fromIdx === -1) continue;
+          const notes = { firstNote: realTabs[j].tNote, lastNote: cur.tNote, firstIndexes: [fromIdx], lastIndexes: [k] };
+          const tie = n.link === 'h' ? TabTie.createHammeron(notes) : n.link === 'p' ? TabTie.createPulloff(notes) : n.link === '/' ? TabSlide.createSlideUp(notes) : TabSlide.createSlideDown(notes);
+          try {
+            tie.setContext(ctx).draw();
+          } catch {
+            /* a join that can't be drawn is left out rather than losing the whole bar */
+          }
+          break;
+        }
+      });
+    });
     const stavenotesBefore = host.querySelectorAll('g.vf-stavenote').length;
     // VexFlow places a stem-down note's own stem at its glyph's left edge, not its centre (the usual
     // convention: a stem attaches to one side of a real notehead, not through its middle), and every
