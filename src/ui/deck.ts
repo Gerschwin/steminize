@@ -3437,6 +3437,38 @@ export class Deck {
     if (!target) return;
     this.selectedRhythmNote = { bar: target.bar, col: target.col };
     this.updateTabStrip();
+    this.scrollSelectedRhythmNoteIntoView();
+  }
+
+  /** A click can only ever select something already on screen, but keyboard navigation
+   * (moveSelectedRhythmNote, above) can land on a note or bar well past either edge of the current
+   * view — nudges the scroll just enough to bring it back into view when that happens, holding it at
+   * the same 40%-from-left position updateTabStrip holds the playback cursor at. Left alone (most
+   * presses — the usual case of moving a note or two) when the note's already comfortably visible, so
+   * this doesn't re-centre the view on every single press. Rewrites the track's own translateX
+   * directly rather than through updateTabStrip (which always derives it from the current playback
+   * position) — repositioning the other, playback-position highlight box to match, since it's a
+   * sibling of the track, not a child, and so doesn't move with it automatically. If playback is
+   * actually running, the very next tick's own updateTabStrip overwrites this with the
+   * playback-correct position anyway, so there's nothing from this to keep in sync beyond one frame. */
+  private scrollSelectedRhythmNoteIntoView() {
+    const layout = this.stripLayout;
+    const sel = this.selectedRhythmNote;
+    if (!layout || !sel) return;
+    const note = layout.notes.find((n) => n.bar === sel.bar && n.col === sel.col);
+    if (!note) return;
+    const stripView = $('tabStripView');
+    const holdAt = stripView.clientWidth * 0.4; // matches .tab-staff-cursor's left: 40%, see updateTabStrip
+    const margin = 24;
+    const left = note.x + this.lastStripPx;
+    if (left >= margin && left + note.w <= stripView.clientWidth - margin) return; // already comfortably visible
+    const px = holdAt - note.x;
+    this.lastStripPx = px;
+    $('tabStripTrack').style.transform = `translateX(${px}px)`;
+    $('tabStripEditBox').style.left = `${note.x + px - 3}px`;
+    const coord = this.coordAt(this.smoothStripPos() / SR);
+    const playingNote = coord === null ? null : noteAt(layout.notes, coord);
+    if (playingNote) $('tabStripNoteBox').style.left = `${playingNote.x + px - 3}px`;
   }
 
   private removeSelectedTap() {
