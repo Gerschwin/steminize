@@ -264,8 +264,11 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
   // deliberately compact ~13px string spacing and overlapping neighbouring lines. Pinned to match the
   // digits once, the first time this runs (a library-wide default, not scoped to one draw call, so it
   // isn't reset after — nothing else in this app uses VexFlow's TabNote category at a different size).
+  // Set to 20pt rather than the digits' own 9pt: that first fix made the glyph the right *size class*
+  // but the double-sharp symbol itself is tiny drawn that small (a ~3px speck, easy to read as a stray
+  // dot), so it needs to be a good deal bigger than a digit to read as an X of similar weight.
   if (MetricsDefaults.TabNote.fontSize === undefined) {
-    MetricsDefaults.TabNote.fontSize = MetricsDefaults.TabNote.text.fontSize;
+    MetricsDefaults.TabNote.fontSize = 20;
     Metrics.clear('TabNote');
   }
   host.replaceChildren();
