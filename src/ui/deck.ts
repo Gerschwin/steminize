@@ -631,6 +631,10 @@ export class Deck {
     };
     let laneDrag: { f0: number; frame0: number; moved: boolean; edge?: 'a' | 'b'; scrub?: boolean } | null = null;
     let swallowClick = false; // a drag ends in a click event; don't let it also seek
+    // Belt and braces with user-select:none (styles.css): WebKitGTK is what the real app runs on, and
+    // this drag only ever means scrub/section, never "select text" or "drag this somewhere".
+    wave.addEventListener('selectstart', (e) => e.preventDefault());
+    wave.addEventListener('dragstart', (e) => e.preventDefault());
     wave.addEventListener('pointerdown', (e) => {
       swallowClick = false; // a drag that produced no click must not eat the next real one
       if (e.button !== 0 || e.pointerType === 'touch') return;
@@ -3214,6 +3218,8 @@ export class Deck {
     const wrap = $('overviewWrap');
     const frac = (e: PointerEvent) => Math.max(0, Math.min(1, (e.clientX - wrap.getBoundingClientRect().left) / wrap.clientWidth));
     // (fractions are of the visible range; frameAt() converts)
+    wrap.addEventListener('selectstart', (e) => e.preventDefault());
+    wrap.addEventListener('dragstart', (e) => e.preventDefault());
     wrap.addEventListener('pointerdown', (e) => {
       if ((e.target as HTMLElement).closest('button')) return; // let the zoom overlay's buttons handle their own clicks
       wrap.setPointerCapture(e.pointerId);
