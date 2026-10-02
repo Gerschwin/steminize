@@ -126,6 +126,10 @@ export interface TabBlock {
   events?: RhythmEvent[];
   /** Index (into the text's lines) of the rhythm line, if any. */
   rhythmRow?: number;
+  /** Set by a "4/4"-style line of its own right before the strings: every bar in the block is fixed to
+   * exactly this many sixteenth notes, instead of however many time-columns it happens to have — see
+   * parseScore. Ignored where there's a rhythm line too: exact event lengths already win over it. */
+  timeSig?: number;
 }
 
 /** A note or rest in a block with a rhythm line. Times are in sixteenth notes from the start of the block. */
@@ -201,7 +205,19 @@ export function tabBlocks(text: string): TabBlock[] {
     }
     let j = i;
     while (j < lines.length && lines[j].trim()) j++;
-    const allRows = lines.slice(i, j);
+    let allRows = lines.slice(i, j);
+    let firstRow = i;
+    // An optional time signature ("4/4"), on its own line right before the strings: fixes every bar in
+    // this block to a real musical length instead of however many time-columns it happens to have (see
+    // parseScore) — an easier way to get a decent timing estimate than writing out a full rhythm line.
+    // Matched only as the block's *entire* first line, so it can't collide with "7/9" (a slide) inside
+    // an actual string row, which is never a whole line on its own.
+    const sigMatch = allRows.length > 1 ? allRows[0].trim().match(/^(\d+)\s*\/\s*(\d+)$/) : null;
+    const timeSig = sigMatch ? (Number(sigMatch[1]) * 16) / Number(sigMatch[2]) : undefined;
+    if (sigMatch) {
+      allRows = allRows.slice(1);
+      firstRow += 1;
+    }
     // A rhythm line is the last line of the block, under the strings: only rhythm letters and spaces.
     const rhythmLine = allRows.length >= 2 && isRhythmRow(allRows[allRows.length - 1]) ? allRows[allRows.length - 1] : undefined;
     const rows = rhythmLine === undefined ? allRows : allRows.slice(0, -1);
@@ -231,12 +247,15 @@ export function tabBlocks(text: string): TabBlock[] {
     const cum = [0];
     for (let c = 0; c < chars; c++) cum.push(cum[c] + (counts[c] ? 1 : 0));
     let width = cum[chars];
-    const block: TabBlock = { firstRow: i, lastRow: j - 1, start, width, chars, label, cum, counts, barLine };
+    const block: TabBlock = { firstRow, lastRow: j - 1, start, width, chars, label, cum, counts, barLine, timeSig };
     if (rhythmLine !== undefined) {
       block.events = rhythmEvents(rhythmLine, noteCol, barLine, label, chars);
       block.rhythmRow = j - 1;
       const last = block.events[block.events.length - 1];
       width = last ? last.u + last.d : 0;
+      block.width = width;
+    } else if (timeSig !== undefined) {
+      width = barSegments(block).length * timeSig;
       block.width = width;
     }
     blocks.push(block);
@@ -352,12 +371,29 @@ export function parseScore(text: string): { notes: TabNote[]; bars: TabBar[] } {
     const open = OPEN_STRINGS[nStrings];
     const segs = barSegments(b);
     const barBase = bars.length;
-    for (const [from, to] of segs) {
+    // A fixed time signature (b.timeSig, no rhythm line) rescales each bar's raw *column* span to its
+    // real musical length instead of taking it literally, and later bars shift to stay contiguous —
+    // worked out per bar as a simple affine remap (rawStart, rawLength) -> (fixedStart, fixedLength),
+    // then applied identically to every note's own column position within that bar, below. A rhythm
+    // line (b.events) already gives exact lengths, so it's left out of this entirely — scale 1,
+    // fixedStart == rawStart — and colToUnits (unaffected) is used for its notes' positions as before.
+    let fixedStart = 0;
+    const segFixed = segs.map(([from, to]) => {
+      const rawStart = b.cum[from];
+      const rawLen = b.cum[to] - rawStart;
+      const fixedLen = b.events ? rawLen : (b.timeSig ?? rawLen);
+      const seg = { from, to, rawStart, fixedStart, scale: rawLen > 0 ? fixedLen / rawLen : 1, fixedLen };
+      fixedStart += fixedLen;
+      return seg;
+    });
+    segFixed.forEach((seg, i) => {
+      const [from, to] = segs[i];
       if (b.events) {
         const ev = b.events.filter((e) => e.col >= from && e.col < to);
         bars.push({ start: b.start + (ev[0]?.u ?? 0), length: ev.reduce((n, e) => n + e.d, 0) });
-      } else bars.push({ start: b.start + b.cum[from], length: b.cum[to] - b.cum[from] });
-    }
+      } else bars.push({ start: b.start + seg.fixedStart, length: seg.fixedLen });
+    });
+    const remapCol = (c: number, segIdx: number) => (segIdx === -1 ? b.cum[c] : segFixed[segIdx].fixedStart + (b.cum[c] - segFixed[segIdx].rawStart) * segFixed[segIdx].scale);
     const found: TabNote[] = [];
     for (let k = 0; k < nStrings; k++) {
       const line = lines[b.firstRow + k];
@@ -372,8 +408,9 @@ export function parseScore(text: string): { notes: TabNote[]; bars: TabBar[] } {
           while (isDigit(line[e + 1])) e++;
           fret = Number(line.slice(c, e + 1));
         }
-        const start = b.start + (b.events ? colToUnits(b, c) : b.cum[c]);
-        const bar = barBase + Math.max(0, segs.findIndex(([from, to]) => c >= from && c < to));
+        const segIdx = segs.findIndex(([from, to]) => c >= from && c < to);
+        const start = b.start + (b.events ? colToUnits(b, c) : remapCol(c, segIdx));
+        const bar = barBase + Math.max(0, segIdx);
         found.push({ block: bi, string: k, fret, midi: open && fret !== null ? open[k] + fret : null, col: c, start, length: 0, bar });
       }
     }

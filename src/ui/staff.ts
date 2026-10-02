@@ -103,6 +103,7 @@ export async function drawStaff(host: HTMLElement, notes: TabNote[], bars: TabBa
     const w = widthOf(bar) + (bi === 0 ? CLEF : 0);
     const stave = new Stave(x, staveY, w);
     if (bi === 0) stave.addClef('treble', 'default', '8vb');
+    stave.setMeasure(bi + 1);
     stave.setContext(ctx).draw();
 
     // the notes that start in this bar, grouped into chords by start time
@@ -279,21 +280,50 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
   const TAB_H = new TabStave(0, 0, 100).addTabGlyph().getBottomLineY() + 10;
   const ROW = RHYTHM_H + GAP + TAB_H;
   const widthOf = (b: TabBar) => Math.max(96, b.length * 14 + 40);
-  const total = CLEF + bars.reduce((n, b) => n + widthOf(b), 0) + 20;
+  // A reminder of this view's own keyboard shortcuts — click a note, a letter sets its length, arrows
+  // move the selection — reserved as blank margin before bar 1, the same way CLEF reserves room for
+  // the TAB glyph right after it. Otherwise that space (visible at/near the start of playback, where
+  // the auto-scroll holds the current position at 40% from the left) is just empty, and these
+  // shortcuts aren't discoverable anywhere else in Follow along itself.
+  const INTRO = 200;
+  const total = INTRO + CLEF + bars.reduce((n, b) => n + widthOf(b), 0) + 20;
   const renderer = new Renderer(host as HTMLDivElement, Renderer.Backends.SVG);
   renderer.resize(total, ROW);
   const ctx = renderer.getContext();
   ctx.setFillStyle('currentColor');
   ctx.setStrokeStyle('currentColor');
 
+  // Drawn as plain SVG, part of the track's own content rather than a fixed overlay, so it scrolls
+  // away with everything else once playback or a selection moves past it — exactly like real musical
+  // content sitting before bar 1 would.
+  const introSvg = host.querySelector('svg');
+  if (introSvg) {
+    const introLines = ['Click a note, then:', 'w h q e s — set length', '← → note   ⇧ bar'];
+    const lineH = 16;
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('font-size', '11px');
+    text.setAttribute('font-family', 'Academico, sans-serif');
+    text.style.fill = '#666';
+    text.style.pointerEvents = 'none';
+    introLines.forEach((line, i) => {
+      const tspan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+      tspan.setAttribute('x', '14');
+      tspan.setAttribute('y', String(ROW / 2 - ((introLines.length - 1) * lineH) / 2 + i * lineH));
+      tspan.textContent = line;
+      text.appendChild(tspan);
+    });
+    introSvg.appendChild(text);
+  }
+
   const map: { u: number; x: number }[] = [];
   const notesOut: TabScoreLayout['notes'] = [];
-  let x = 0;
+  let x = INTRO;
   bars.forEach((bar, bi) => {
     const w = widthOf(bar) + (bi === 0 ? CLEF : 0);
     const tabY = 10;
     const tabStave = new TabStave(x, tabY, w);
     if (bi === 0) tabStave.addTabGlyph();
+    tabStave.setMeasure(bi + 1); // bars is the whole score's list, already numbered across every system
     tabStave.setContext(ctx).draw();
     // TAB_H is already the tab stave's own absolute bottom-line y (its "+10" already covers tabY) —
     // adding tabY again here would double-count it and push the rhythm row, and the SVG's declared

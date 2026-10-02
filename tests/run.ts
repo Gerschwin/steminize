@@ -780,6 +780,21 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('score: without a rhythm line a bar is as long as its columns', plain.bars.length === 2 && plain.bars[0].length === 4 && plain.bars[1].start === 4);
   const two = parseScore('e|0-|\nB|--|\n\ne|0-|\nB|--|');
   ok('score: bars carry on counting through every system', two.bars.length === 2 && two.notes[1].bar === 1);
+
+  // a time signature, typed as its own line right before the strings, fixes bar length instead of
+  // leaving it to raw column counting
+  const noSig = parseScore('e|0-------|\nB|--------|');
+  ok('score: without a time signature a bar of 8 raw columns is 8 long', noSig.bars[0].length === 8);
+  const sig = parseScore('4/4\ne|0-------|\nB|--------|');
+  ok('score: a 4/4 line fixes a bar of 8 raw columns to 16 (a real 4/4 bar) instead', sig.bars.length === 1 && sig.bars[0].start === 0 && sig.bars[0].length === 16);
+  ok('score: a note in a rescaled bar is rescaled the same way', sig.notes[0].start === 0 && sig.notes[0].length === 16);
+  const sigTwoBars = parseScore('4/4\ne|0-------|3-------|\nB|--------|--------|');
+  ok(
+    'score: a later bar in the same block starts after the fixed length, not the raw one',
+    sigTwoBars.bars.length === 2 && sigTwoBars.bars[1].start === 16 && sigTwoBars.bars[1].length === 16 && sigTwoBars.notes[1].start === 16,
+  );
+  const sigWithRhythm = parseScore('4/4\ne|0-0-|0-0-|\nB|----|----|\nG|----|----|\nD|----|----|\nA|----|----|\nE|----|----|\n  q q  q q');
+  ok('score: a rhythm line still wins over a time signature (exact lengths, not a guess)', sigWithRhythm.bars[0].length === 8 && sigWithRhythm.bars[1].start === 8);
 }
 
 // ---- tab+ staff helpers
