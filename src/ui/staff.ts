@@ -199,6 +199,21 @@ export function staffX(map: { u: number; x: number }[], u: number): number {
   return map[map.length - 1].x;
 }
 
+/** The reverse of staffX: the music's position under a given x across the drawing (clamped to the
+ * first/last note's position), for turning a drag across the view back into a position. */
+export function staffU(map: { u: number; x: number }[], x: number): number {
+  if (!map.length) return 0;
+  if (x <= map[0].x) return map[0].u;
+  for (let i = 1; i < map.length; i++) {
+    if (x < map[i].x) {
+      const a = map[i - 1];
+      const b = map[i];
+      return b.x === a.x ? a.u : a.u + ((x - a.x) / (b.x - a.x)) * (b.u - a.u);
+    }
+  }
+  return map[map.length - 1].u;
+}
+
 // ---- rhythm-tab: fret numbers on a tab stave, with note durations shown as stems/beams under it ----
 // (based on the display in BACKLOG's tab+ roadmap screenshot, but with the rhythm row moved below the
 // tab rather than above it: a compact row — no 5-line staff, no pitch, just the beaming a reader needs

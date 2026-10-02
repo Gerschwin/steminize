@@ -743,14 +743,15 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
    ever constrains it smaller than that. */
 .scratch-area.tab-strip, .scratch-area.tab-staff { overflow-x: hidden; overflow-y: auto; min-height: 0; padding: 2px 12px; color: var(--text); }
 .scratch-area.tab-strip[hidden], .scratch-area.tab-staff[hidden] { display: none; }
-.tab-staff-view { position: relative; overflow: hidden; }
+.tab-staff-view { position: relative; overflow: hidden; cursor: grab; touch-action: pan-y; }
+.tab-staff-view.panning { cursor: grabbing; user-select: none; }
 .tab-staff-track { will-change: transform; width: max-content; }
 .tab-staff-note { color: var(--muted); font-size: 13px; padding: 8px 0; }
 /* The fixed spot each box's content slides past — the engraved tab's and the staff's line up (see
    the .joined rule above), since both use this same left:40% and deck.ts lines the staff's content
    up with wherever the tab's cursor actually renders, not an independent 40%-of-its-own-width guess. */
-/* 8px and translucent: a thin line was easy to lose, and a solid thick one would hide the fret digit under it. margin-left nudges the bar to centre on a typical fret digit (~10px wide, left edge at 40%) rather than start at its left edge. */
-.tab-staff-cursor { position: absolute; top: 0; bottom: 0; left: 40%; width: 8px; margin-left: 1px; background: var(--accent); opacity: 0.5; border-radius: 4px; pointer-events: none; }
+/* 8px and translucent: a thin line was easy to lose, and a solid thick one would hide the fret digit under it. The music's own centre (a fret digit's, and its stem's) is what sits at exactly 40% (deck.ts holds staffX() there, which is a note's centre), so the bar is pulled back by half its width to be centred on that rather than start at it. */
+.tab-staff-cursor { position: absolute; top: 0; bottom: 0; left: 40%; width: 8px; margin-left: -4px; background: var(--accent); opacity: 0.5; border-radius: 4px; pointer-events: none; }
 /* The actual note (or fret) sounding right now, behind the moving line rather than instead of it —
    the line still says "this instant", the box says "this note" (useful once several are close together). */
 .tab-staff-notebox { position: absolute; top: 0; background: var(--accent); opacity: 0.18; border-radius: 4px; pointer-events: none; }

@@ -35,7 +35,7 @@ import {
 } from '../lyrics/tabSync.ts';
 import { FLAT, isFlat, sameEq, type EqParams } from '../player/eq.ts';
 import { eqPanel, type EqPanel } from './eqPanel.ts';
-import { drawStaff, drawTabScore, noteAt, staffX, type StaffLayout, type TabScoreLayout } from './staff.ts';
+import { drawStaff, drawTabScore, noteAt, staffU, staffX, type StaffLayout, type TabScoreLayout } from './staff.ts';
 import { $, fitCanvas, fmtDuration, fmtTime, h, pressed, toast } from './dom.ts';
 import { Transcribe, type TxHost, type TxState } from './transcribePanel.ts';
 import type { Chord } from '../analysis/chords.ts';
@@ -391,6 +391,12 @@ export class Deck {
   private stripToken = 0;
   private stripTimer: number | undefined;
   private lastStripPx = NaN;
+  /** A manual scroll of Follow along (dragging it, or arrow-key navigation off the edge): how far, in
+   * the tab's own position units, the view is shifted from where playback actually is. Only means
+   * anything while the position it was set at holds still — see viewCoord. */
+  private tabPan = 0;
+  private tabPanAt = 0;
+  private tabPanMoved = false;
   private staffLayout: StaffLayout | null = null;
   private staffText: string | null = null;
   private staffToken = 0;
@@ -1894,7 +1900,13 @@ export class Deck {
     // its length, written straight into the rhythm line (inserting one for the block first if it
     // doesn't have one yet). Delegated on the track itself rather than per-note listeners, since the
     // view is redrawn from scratch on every change.
+    this.initTabPan('tabStripView', () => this.stripLayout);
+    this.initTabPan('tabStaffView', () => this.staffLayout);
     $('tabStripTrack').addEventListener('click', (e) => {
+      if (this.tabPanMoved) {
+        this.tabPanMoved = false; // the click that ends a drag, not a selection
+        return;
+      }
       const el = (e.target as HTMLElement).closest<HTMLElement>('[data-col]');
       this.selectedRhythmNote = el ? { bar: Number(el.dataset.bar), col: Number(el.dataset.col) } : null;
       this.updateTabStrip();
@@ -2180,7 +2192,7 @@ export class Deck {
     // guess only when there's no engraved tab to line up with.
     const stripCursor = $('tabStrip').hidden ? null : $('tabStripCursor').getBoundingClientRect();
     const holdAt = stripCursor ? stripCursor.left + stripCursor.width / 2 - staffView.getBoundingClientRect().left : staffView.clientWidth * 0.4;
-    const x = coord === null ? 0 : staffX(layout.map, coord);
+    const x = coord === null ? 0 : staffX(layout.map, this.viewCoord(coord));
     const px = coord === null ? 0 : holdAt - x;
     $('tabStaffCursor').style.left = `${holdAt}px`;
     $('tabStaffCursor').hidden = coord === null;
@@ -2228,6 +2240,14 @@ export class Deck {
     return this.stripPos;
   }
 
+  /** The position the tab views are actually centred on: where playback is, plus any manual scroll.
+   * That scroll is dropped the moment playback itself moves (playing, seeking, scrubbing), so the view
+   * never gets stranded away from the music — it's a look-around while stopped, not a second position. */
+  private viewCoord(coord: number): number {
+    if (this.tabPan !== 0 && Math.abs(coord - this.tabPanAt) > 0.01) this.tabPan = 0;
+    return coord + this.tabPan;
+  }
+
   /** Slides the engraved tab past its fixed cursor in step with the music, and highlights the
    * fret(s)/note actually sounding right now — the read-only view the Tab pane shows once Follow
    * along is on. Same pattern as updateTabStaff just above (that one optional, full staff). */
@@ -2237,7 +2257,7 @@ export class Deck {
     const coord = this.coordAt(this.smoothStripPos() / SR);
     const stripView = $('tabStripView');
     const holdAt = stripView.clientWidth * 0.4; // matches .tab-staff-cursor's left: 40%
-    const x = coord === null ? 0 : staffX(layout.map, coord);
+    const x = coord === null ? 0 : staffX(layout.map, this.viewCoord(coord));
     const px = coord === null ? 0 : holdAt - x;
     $('tabStripCursor').style.left = `${holdAt}px`;
     $('tabStripCursor').hidden = coord === null;
@@ -3442,33 +3462,64 @@ export class Deck {
 
   /** A click can only ever select something already on screen, but keyboard navigation
    * (moveSelectedRhythmNote, above) can land on a note or bar well past either edge of the current
-   * view — nudges the scroll just enough to bring it back into view when that happens, holding it at
-   * the same 40%-from-left position updateTabStrip holds the playback cursor at. Left alone (most
-   * presses — the usual case of moving a note or two) when the note's already comfortably visible, so
-   * this doesn't re-centre the view on every single press. Rewrites the track's own translateX
-   * directly rather than through updateTabStrip (which always derives it from the current playback
-   * position) — repositioning the other, playback-position highlight box to match, since it's a
-   * sibling of the track, not a child, and so doesn't move with it automatically. If playback is
-   * actually running, the very next tick's own updateTabStrip overwrites this with the
-   * playback-correct position anyway, so there's nothing from this to keep in sync beyond one frame. */
+   * view — scrolls (see viewCoord) just enough to bring it back into view when that happens, holding
+   * it at the same 40%-from-left position the playback cursor sits at. Left alone (most presses — the
+   * usual case of moving a note or two) when the note's already comfortably visible, so this doesn't
+   * re-centre the view on every single press. Like any manual scroll it's dropped as soon as playback
+   * itself moves. */
   private scrollSelectedRhythmNoteIntoView() {
     const layout = this.stripLayout;
     const sel = this.selectedRhythmNote;
     if (!layout || !sel) return;
     const note = layout.notes.find((n) => n.bar === sel.bar && n.col === sel.col);
-    if (!note) return;
-    const stripView = $('tabStripView');
-    const holdAt = stripView.clientWidth * 0.4; // matches .tab-staff-cursor's left: 40%, see updateTabStrip
+    const coord = this.coordAt(this.smoothStripPos() / SR);
+    if (!note || coord === null) return;
     const margin = 24;
     const left = note.x + this.lastStripPx;
-    if (left >= margin && left + note.w <= stripView.clientWidth - margin) return; // already comfortably visible
-    const px = holdAt - note.x;
-    this.lastStripPx = px;
-    $('tabStripTrack').style.transform = `translateX(${px}px)`;
-    $('tabStripEditBox').style.left = `${note.x + px - 3}px`;
-    const coord = this.coordAt(this.smoothStripPos() / SR);
-    const playingNote = coord === null ? null : noteAt(layout.notes, coord);
-    if (playingNote) $('tabStripNoteBox').style.left = `${playingNote.x + px - 3}px`;
+    if (left >= margin && left + note.w <= $('tabStripView').clientWidth - margin) return; // already comfortably visible
+    this.tabPan = note.u - coord;
+    this.tabPanAt = coord;
+    this.updateTabStrip();
+    this.updateTabStaff();
+  }
+
+  /** Click-and-drag on blank space in Follow along (or the Staff under it) scrolls the tab sideways to
+   * look ahead or back without moving playback. A drag that starts on a note is left alone (that's a
+   * click to select it), and one that did move suppresses the click that follows it, so letting go
+   * doesn't deselect. Only while stopped: while playing, the view follows the music every frame anyway. */
+  private initTabPan(viewId: string, layoutOf: () => { map: { u: number; x: number }[] } | null) {
+    const view = $(viewId);
+    view.addEventListener('pointerdown', (e) => {
+      this.tabPanMoved = false;
+      if (e.button !== 0 || this.player.state.playing || (e.target as HTMLElement).closest('[data-col]')) return;
+      const layout = layoutOf();
+      const coord = this.coordAt(this.smoothStripPos() / SR);
+      if (!layout || coord === null) return;
+      const startX = e.clientX;
+      const startViewX = staffX(layout.map, this.viewCoord(coord));
+      // Captured only once it's really a drag (below), so a plain click on blank space still reaches
+      // tabStripTrack's own click handler unchanged rather than being retargeted to the view.
+      const move = (m: PointerEvent) => {
+        const dx = m.clientX - startX;
+        if (!this.tabPanMoved && Math.abs(dx) < 4) return;
+        if (!this.tabPanMoved) view.setPointerCapture(e.pointerId);
+        this.tabPanMoved = true;
+        view.classList.add('panning');
+        this.tabPan = staffU(layout.map, startViewX - dx) - coord;
+        this.tabPanAt = coord;
+        this.updateTabStrip();
+        this.updateTabStaff();
+      };
+      const up = () => {
+        view.classList.remove('panning');
+        view.removeEventListener('pointermove', move);
+        view.removeEventListener('pointerup', up);
+        view.removeEventListener('pointercancel', up);
+      };
+      view.addEventListener('pointermove', move);
+      view.addEventListener('pointerup', up);
+      view.addEventListener('pointercancel', up);
+    });
   }
 
   private removeSelectedTap() {
