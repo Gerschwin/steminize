@@ -285,7 +285,7 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
   // the TAB glyph right after it. Otherwise that space (visible at/near the start of playback, where
   // the auto-scroll holds the current position at 40% from the left) is just empty, and these
   // shortcuts aren't discoverable anywhere else in Follow along itself.
-  const INTRO = 200;
+  const INTRO = 230;
   const total = INTRO + CLEF + bars.reduce((n, b) => n + widthOf(b), 0) + 20;
   const renderer = new Renderer(host as HTMLDivElement, Renderer.Backends.SVG);
   renderer.resize(total, ROW);
@@ -299,11 +299,11 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
   const introSvg = host.querySelector('svg');
   if (introSvg) {
     const introLines = ['Click a note, then:', 'w h q e s — set length', '← → note   ⇧ bar'];
-    const lineH = 16;
+    const lineH = 26;
     const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    text.setAttribute('font-size', '11px');
+    text.setAttribute('font-size', '17px');
     text.setAttribute('font-family', 'Academico, sans-serif');
-    text.style.fill = '#666';
+    text.style.fill = '#333';
     text.style.pointerEvents = 'none';
     introLines.forEach((line, i) => {
       const tspan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
