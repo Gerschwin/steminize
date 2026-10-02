@@ -405,8 +405,12 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
       // different, notational thing (an implied note shown in parens), not what's wanted here.
       const tNote = rest
         ? new GhostNote(base + (dots ? 'd' : ''))
-        : new VFTabNote({ positions: group.map((n) => ({ str: n.string + 1, fret: fretText(n.fret) })), duration: base }, false);
-      if (dots && !rest) Dot.buildAndAttach([tNote], { all: true });
+        : new VFTabNote({ positions: group.map((n) => ({ str: n.string + 1, fret: fretText(n.fret) })), duration: base, dots }, false);
+      // `dots` has to go in the constructor: a TabNote has no key properties for Dot.buildAndAttach to
+      // hang a Dot on (it silently attaches nothing — measured), so attaching afterwards left the tab
+      // note at the plain, undotted length. Its tick count then ran a sixteenth (or more) short of the
+      // rhythm note's per dotted note, every later tab note landed in an earlier tick context than its
+      // rhythm note, and the stems sat ~9.5px right of their fret numbers from the first dot onwards.
       if (!rest) {
         const real = tNote as InstanceType<typeof VFTabNote>;
         realTabs.push({ tNote: real, group });
