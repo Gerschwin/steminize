@@ -745,7 +745,7 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
 .scratch-area.tab-strip[hidden], .scratch-area.tab-staff[hidden] { display: none; }
 /* user-select off for the whole view, not just while a drag is under way: a drag starts selecting the
    surrounding text (and highlighting it blue) from its very first pixel, before it's known to be one. */
-.tab-staff-view { position: relative; overflow: hidden; cursor: grab; touch-action: pan-y; -webkit-user-select: none; user-select: none; }
+.tab-staff-view { position: relative; overflow: hidden; touch-action: pan-y; -webkit-user-select: none; user-select: none; }
 .tab-staff-view.panning { cursor: grabbing; }
 .tab-staff-track { will-change: transform; width: max-content; }
 .tab-staff-note { color: var(--muted); font-size: 13px; padding: 8px 0; }

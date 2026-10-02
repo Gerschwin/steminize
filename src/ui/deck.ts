@@ -3499,12 +3499,12 @@ export class Deck {
       const startViewX = staffX(layout.map, this.viewCoord(coord));
       // Captured only once it's really a drag (below), so a plain click on blank space still reaches
       // tabStripTrack's own click handler unchanged rather than being retargeted to the view.
+      view.classList.add('panning'); // the grabbing hand shows while the button is down, the arrow otherwise
       const move = (m: PointerEvent) => {
         const dx = m.clientX - startX;
         if (!this.tabPanMoved && Math.abs(dx) < 4) return;
         if (!this.tabPanMoved) view.setPointerCapture(e.pointerId);
         this.tabPanMoved = true;
-        view.classList.add('panning');
         this.tabPan = staffU(layout.map, startViewX - dx) - coord;
         this.tabPanAt = coord;
         this.updateTabStrip();
@@ -3513,12 +3513,14 @@ export class Deck {
       const up = () => {
         view.classList.remove('panning');
         view.removeEventListener('pointermove', move);
-        view.removeEventListener('pointerup', up);
-        view.removeEventListener('pointercancel', up);
+        window.removeEventListener('pointerup', up);
+        window.removeEventListener('pointercancel', up);
       };
       view.addEventListener('pointermove', move);
-      view.addEventListener('pointerup', up);
-      view.addEventListener('pointercancel', up);
+      // On window, not the view: released outside it before a drag has started (and so been captured),
+      // the view would never hear about it and the hand would stay stuck on.
+      window.addEventListener('pointerup', up);
+      window.addEventListener('pointercancel', up);
     });
   }
 
