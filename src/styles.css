@@ -743,8 +743,10 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
    ever constrains it smaller than that. */
 .scratch-area.tab-strip, .scratch-area.tab-staff { overflow-x: hidden; overflow-y: auto; min-height: 0; padding: 2px 12px; color: var(--text); }
 .scratch-area.tab-strip[hidden], .scratch-area.tab-staff[hidden] { display: none; }
-.tab-staff-view { position: relative; overflow: hidden; cursor: grab; touch-action: pan-y; }
-.tab-staff-view.panning { cursor: grabbing; user-select: none; }
+/* user-select off for the whole view, not just while a drag is under way: a drag starts selecting the
+   surrounding text (and highlighting it blue) from its very first pixel, before it's known to be one. */
+.tab-staff-view { position: relative; overflow: hidden; cursor: grab; touch-action: pan-y; -webkit-user-select: none; user-select: none; }
+.tab-staff-view.panning { cursor: grabbing; }
 .tab-staff-track { will-change: transform; width: max-content; }
 .tab-staff-note { color: var(--muted); font-size: 13px; padding: 8px 0; }
 /* The fixed spot each box's content slides past — the engraved tab's and the staff's line up (see
