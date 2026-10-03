@@ -106,8 +106,15 @@ export function rowCol(text: string, charOffset: number): { row: number; col: nu
 // a note that is held longer than its spacing suggests; taps in between correct for that.)
 
 export interface TabBlock {
+  /** First and last line of the block, annotation lines included. */
   firstRow: number;
   lastRow: number;
+  /** First and last line that are actual strings (what `firstRow..lastRow` was before annotation lines existed). */
+  stringFirst: number;
+  stringLast: number;
+  /** Lines of picking/fingering/palm-mute marks written above and below the strings — see annotationTokens. */
+  annAbove: number[];
+  annBelow: number[];
   /** Time-coordinate where this block starts (the widths of the blocks before it, summed). */
   start: number;
   /** Time-width of the block (its columns that count as time). */
@@ -143,6 +150,9 @@ export interface RhythmEvent {
 /** Length in sixteenth notes of each rhythm letter (upper case is a rest of that length). */
 const RHYTHM_UNITS: Record<string, number> = { w: 16, h: 8, q: 4, e: 2, s: 1, t: 0.5 };
 export const isRhythmRow = (line: string) => /^[ whqestWHQEST.]*$/.test(line) && /[whqestWHQEST]/.test(line);
+
+/** A line of picking (D U), fingering (1-4, [1]-[4]) or palm-mute (PM---) marks above or below a block's strings. */
+const isAnnotationRow = (line: string) => /^[ DU1234[\]PM-]*$/.test(line) && /[DU1-4]|PM/.test(line);
 
 const isDigit = (c: string | undefined) => c !== undefined && c >= '0' && c <= '9';
 
@@ -220,7 +230,27 @@ export function tabBlocks(text: string): TabBlock[] {
     }
     // A rhythm line is the last line of the block, under the strings: only rhythm letters and spaces.
     const rhythmLine = allRows.length >= 2 && isRhythmRow(allRows[allRows.length - 1]) ? allRows[allRows.length - 1] : undefined;
-    const rows = rhythmLine === undefined ? allRows : allRows.slice(0, -1);
+    const rowsAll = rhythmLine === undefined ? allRows : allRows.slice(0, -1);
+    // Lines of marks (picking, fingering, palm mute) above the first and below the last row that has a
+    // bar line in it are annotations, not strings — only ever recognised outside the strings, so a
+    // barless row of frets in the middle of a block is still a string. Anything above or below that
+    // isn't wholly marks leaves the block exactly as it was read before these existed.
+    const hasBar = rowsAll.map((r) => r.includes('|'));
+    const firstBar = hasBar.indexOf(true);
+    const lastBar = hasBar.lastIndexOf(true);
+    let sFirst = 0;
+    let sLast = rowsAll.length - 1;
+    if (firstBar !== -1) {
+      if (firstBar > 0 && rowsAll.slice(0, firstBar).every(isAnnotationRow)) sFirst = firstBar;
+      if (lastBar < rowsAll.length - 1 && rowsAll.slice(lastBar + 1).every(isAnnotationRow)) sLast = lastBar;
+    }
+    const rows = rowsAll.slice(sFirst, sLast + 1);
+    const annAbove = rowsAll.slice(0, sFirst).map((_, k) => firstRow + k);
+    const annBelow = rowsAll.slice(sLast + 1).map((_, k) => firstRow + sLast + 1 + k);
+    // Columns taken by a harmonic marker written right after a fret: "12(h)" natural, "12(ph)" pinch.
+    // The marker is part of the note, not time.
+    const markerCols = new Set<number>();
+    for (const r of rows) for (const m of r.matchAll(/\((?:ph|h)\)/g)) for (let k = 0; k < m[0].length; k++) markerCols.add(m.index! + k);
     const chars = Math.max(...allRows.map((r) => r.length));
     const label = Math.max(...rows.map(labelLength));
     const counts: boolean[] = [];
@@ -237,7 +267,8 @@ export function tabBlocks(text: string): TabBlock[] {
         const ch = r[c];
         if (ch === undefined) continue;
         const prev = r[c - 1];
-        if (ch === 'b' || ch === 'r' || ch === '(' || ch === ')' || ch === '^' || (ch === 't' && isDigit(r[c + 1])) || (isDigit(ch) && (isDigit(prev) || prev === 'b' || prev === 'r'))) extra = true;
+        // (and a repeat sign's asterisk, a "pb" pre-bend's p, a tap's T, harmonic markers — none of them time)
+        if (ch === 'b' || ch === 'r' || ch === '(' || ch === ')' || ch === '^' || ch === '*' || markerCols.has(c) || (ch === 'p' && r[c + 1] === 'b') || ((ch === 't' || ch === 'T') && isDigit(r[c + 1])) || (isDigit(ch) && (isDigit(prev) || prev === 'b' || prev === 'r'))) extra = true;
         else if (isDigit(ch) || ch === 'x' || ch === 'X') note = true;
       }
       counts.push(c >= label && !bar && !(extra && !note));
@@ -247,7 +278,7 @@ export function tabBlocks(text: string): TabBlock[] {
     const cum = [0];
     for (let c = 0; c < chars; c++) cum.push(cum[c] + (counts[c] ? 1 : 0));
     let width = cum[chars];
-    const block: TabBlock = { firstRow, lastRow: j - 1, start, width, chars, label, cum, counts, barLine, timeSig };
+    const block: TabBlock = { firstRow, lastRow: j - 1, stringFirst: firstRow + sFirst, stringLast: firstRow + sLast, annAbove, annBelow, start, width, chars, label, cum, counts, barLine, timeSig };
     if (rhythmLine !== undefined) {
       block.events = rhythmEvents(rhythmLine, noteCol, barLine, label, chars);
       block.rhythmRow = j - 1;
@@ -337,14 +368,22 @@ export interface TabNote {
   length: number;
   /** Which bar it is in, counting through the whole tab from 0 (an index into the bars from parseScore). */
   bar: number;
-  /** A bend written `7b9` (fret bent up to `to`), with `release` set when it's let back down (`7b9r7`). */
-  bend?: { to: number; release?: number };
+  /** A bend written `7b9` (fret bent up to `to`), with `release` set when it's let back down (`7b9r7`).
+   * `pre` for a pre-bend, written `7pb9` (bent silently to 9 *before* picking), `7pb9r7` released after. */
+  bend?: { to: number; release?: number; pre?: boolean };
+  /** A harmonic, written straight after the fret: `12(h)` natural, `12(ph)` pinch. */
+  harmonic?: 'natural' | 'pinch';
+  /** Picking / fingering marks written on a line above or below the strings, lined up with this note:
+   * D down-pick, U up-pick, 1-4 left-hand finger, [1]-[4] right-hand finger. */
+  marks?: { kind: 'pick' | 'lh' | 'rh'; text: string; above: boolean }[];
+  /** Under a palm-mute run (`PM----` on a line above or below the strings, over this note). */
+  pm?: { above: boolean };
   /** The note is joined to the previous note on the same string by what's written between them: `h`
    * hammer-on, `p` pull-off, `/` slide up, `\` slide down. */
   link?: 'h' | 'p' | '/' | '\\';
   /** Vibrato, written `~` (or `v`) straight after the note. */
   vibrato?: boolean;
-  /** Tapped with the picking hand, written `t` straight before the fret. */
+  /** Tapped with the picking hand, written `t` or `T` straight before the fret. */
   tap?: boolean;
 }
 
@@ -352,6 +391,9 @@ export interface TabNote {
 export interface TabBar {
   start: number;
   length: number;
+  /** Repeat signs, written as an asterisk right after the opening bar line (`|*`) / right before the closing one (`*|`). */
+  repeatStart?: boolean;
+  repeatEnd?: boolean;
 }
 
 const OPEN_STRINGS: Record<number, number[]> = { 6: [64, 59, 55, 50, 45, 40], 4: [43, 38, 33, 28] };
@@ -370,14 +412,14 @@ function barSegments(b: TabBlock): [number, number][] {
 }
 
 /** The playing techniques written around the fret that starts at `c` in one string's row: what's
- * between it and the previous note (`h` `p` `/` `\`), a bend (`7b9`, released `7b9r7`), `~`/`v` vibrato
- * straight after, `t` straight before for a tap. Read only — they change how the note is drawn, not
- * when it sounds. */
-function techniques(line: string, c: number): Partial<Pick<TabNote, 'bend' | 'link' | 'vibrato' | 'tap'>> {
-  const out: Partial<Pick<TabNote, 'bend' | 'link' | 'vibrato' | 'tap'>> = {};
+ * between it and the previous note (`h` `p` `/` `\`), a bend (`7b9`, released `7b9r7`; pre-bend `7pb9`,
+ * released `7pb9r7`), a harmonic marker (`12(h)`, `12(ph)`), `~`/`v` vibrato straight after, `t`/`T`
+ * straight before for a tap. Read only — they change how the note is drawn, not when it sounds. */
+function techniques(line: string, c: number): Partial<Pick<TabNote, 'bend' | 'link' | 'vibrato' | 'tap' | 'harmonic'>> {
+  const out: Partial<Pick<TabNote, 'bend' | 'link' | 'vibrato' | 'tap' | 'harmonic'>> = {};
   const before = line[c - 1];
   if ((before === 'h' || before === 'p' || before === '/' || before === '\\') && isDigit(line[c - 2])) out.link = before;
-  if (before === 't') out.tap = true;
+  if (before === 't' || before === 'T') out.tap = true;
   let e = c;
   while (isDigit(line[e + 1])) e++;
   const num = (from: number) => {
@@ -385,10 +427,19 @@ function techniques(line: string, c: number): Partial<Pick<TabNote, 'bend' | 'li
     while (isDigit(line[to + 1])) to++;
     return to >= from && isDigit(line[from]) ? { value: Number(line.slice(from, to + 1)), end: to } : null;
   };
-  if (line[e + 1] === 'b') {
-    const target = num(e + 2);
+  const harmonic = () => {
+    const m = /^\((ph|h)\)/.exec(line.slice(e + 1));
+    if (m) {
+      out.harmonic = m[1] === 'ph' ? 'pinch' : 'natural';
+      e += m[0].length;
+    }
+  };
+  harmonic();
+  const pre = line[e + 1] === 'p' && line[e + 2] === 'b';
+  if (pre || line[e + 1] === 'b') {
+    const target = num(e + (pre ? 3 : 2));
     if (target) {
-      out.bend = { to: target.value };
+      out.bend = pre ? { to: target.value, pre: true } : { to: target.value };
       e = target.end;
       if (line[e + 1] === 'r') {
         const back = num(e + 2);
@@ -399,7 +450,28 @@ function techniques(line: string, c: number): Partial<Pick<TabNote, 'bend' | 'li
       }
     }
   }
+  harmonic();
   if (line[e + 1] === '~' || line[e + 1] === 'v') out.vibrato = true;
+  return out;
+}
+
+/** Marks on a line above or below a block's strings, with the columns they cover: D/U picking, 1-4 and
+ * [1]-[4] fingering (left/right hand), and PM followed by dashes for a palm-mute run (the dashes' extent). */
+function annotationTokens(line: string): { kind: 'pick' | 'lh' | 'rh' | 'pm'; text: string; col: number; end: number }[] {
+  const out: { kind: 'pick' | 'lh' | 'rh' | 'pm'; text: string; col: number; end: number }[] = [];
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === 'P' && line[i + 1] === 'M') {
+      let end = i + 1;
+      while (line[end + 1] === '-') end++;
+      out.push({ kind: 'pm', text: 'PM', col: i, end });
+      i = end;
+    } else if (ch === '[' && /[1-4]/.test(line[i + 1] ?? '') && line[i + 2] === ']') {
+      out.push({ kind: 'rh', text: line[i + 1], col: i, end: i + 2 });
+      i += 2;
+    } else if (ch === 'D' || ch === 'U') out.push({ kind: 'pick', text: ch, col: i, end: i });
+    else if (/[1-4]/.test(ch)) out.push({ kind: 'lh', text: ch, col: i, end: i });
+  }
   return out;
 }
 
@@ -410,7 +482,7 @@ export function parseScore(text: string): { notes: TabNote[]; bars: TabBar[] } {
   const notes: TabNote[] = [];
   const bars: TabBar[] = [];
   blocks.forEach((b, bi) => {
-    const nStrings = (b.rhythmRow ?? b.lastRow + 1) - b.firstRow;
+    const nStrings = b.stringLast - b.stringFirst + 1;
     const open = OPEN_STRINGS[nStrings];
     const segs = barSegments(b);
     const barBase = bars.length;
@@ -429,17 +501,23 @@ export function parseScore(text: string): { notes: TabNote[]; bars: TabBar[] } {
       fixedStart += fixedLen;
       return seg;
     });
+    // A repeat sign is an asterisk right inside a bar's opening/closing bar line, on any string.
+    const stringLines = Array.from({ length: nStrings }, (_, k) => lines[b.stringFirst + k] ?? '');
+    const repeats = (from: number, to: number) => ({
+      ...(stringLines.some((l) => l[from] === '*') ? { repeatStart: true } : {}),
+      ...(stringLines.some((l) => l[to - 1] === '*' && to - 1 > from) ? { repeatEnd: true } : {}),
+    });
     segFixed.forEach((seg, i) => {
       const [from, to] = segs[i];
       if (b.events) {
         const ev = b.events.filter((e) => e.col >= from && e.col < to);
-        bars.push({ start: b.start + (ev[0]?.u ?? 0), length: ev.reduce((n, e) => n + e.d, 0) });
-      } else bars.push({ start: b.start + seg.fixedStart, length: seg.fixedLen });
+        bars.push({ start: b.start + (ev[0]?.u ?? 0), length: ev.reduce((n, e) => n + e.d, 0), ...repeats(from, to) });
+      } else bars.push({ start: b.start + seg.fixedStart, length: seg.fixedLen, ...repeats(from, to) });
     });
     const remapCol = (c: number, segIdx: number) => (segIdx === -1 ? b.cum[c] : segFixed[segIdx].fixedStart + (b.cum[c] - segFixed[segIdx].rawStart) * segFixed[segIdx].scale);
     const found: TabNote[] = [];
     for (let k = 0; k < nStrings; k++) {
-      const line = lines[b.firstRow + k];
+      const line = lines[b.stringFirst + k];
       for (let c = b.label; c < line.length; c++) {
         const ch = line[c];
         const prev = line[c - 1];
@@ -457,6 +535,31 @@ export function parseScore(text: string): { notes: TabNote[]; bars: TabBar[] } {
         const note: TabNote = { block: bi, string: k, fret, midi: open && fret !== null ? open[k] + fret : null, col: c, start, length: 0, bar };
         if (fret !== null) Object.assign(note, techniques(line, c));
         found.push(note);
+      }
+    }
+    // Marks on the lines above/below the strings attach to the note they line up over (any column its
+    // fret covers); a palm-mute run covers every note in it.
+    const span = (n: TabNote) => [n.col, n.col + String(n.fret ?? 'x').length - 1] as const;
+    for (const [rows, above] of [[b.annAbove, true], [b.annBelow, false]] as const) {
+      for (const row of rows) {
+        // One mark per note per line, handed out left to right: a mark typed a column off lands on the
+        // nearest note within a column that hasn't already been given one, so a whole line sitting one
+        // column to the left (or right) of its notes still lines up, rather than two marks fighting
+        // over the same note.
+        const taken = new Set<TabNote>();
+        for (const tok of annotationTokens(lines[row] ?? '')) {
+          const gap = (n: TabNote) => Math.max(0, span(n)[0] - tok.end, tok.col - span(n)[1]);
+          const free = found.filter((n) => !taken.has(n));
+          const near = Math.min(...free.map(gap));
+          const over = tok.kind === 'pm' ? found.filter((n) => gap(n) === 0) : near <= 1 ? free.filter((n) => gap(n) === near) : [];
+          if (tok.kind !== 'pm' && over.length) taken.add(over.reduce((a, c2) => (c2.start < a.start || (c2.start === a.start && c2.string < a.string) ? c2 : a)));
+          if (tok.kind === 'pm') {
+            for (const n of over) n.pm = { above };
+          } else if (over.length) {
+            const first = over.reduce((a, c2) => (c2.start < a.start || (c2.start === a.start && c2.string < a.string) ? c2 : a));
+            (first.marks ??= []).push({ kind: tok.kind, text: tok.text, above });
+          }
+        }
       }
     }
     // length: from the rhythm line's event when there is one, else up to the next note in the block
@@ -569,7 +672,7 @@ export function stripLayout(text: string, blocks: TabBlock[], pad = 0): StripLay
   const lines = text.split('\n');
   // A block's rhythm line (if it has one) is annotation, not a string, so it doesn't get a row here —
   // the strip only ever shows the strings, same as it would with no rhythm line at all.
-  const stringRows = (b: TabBlock) => (b.rhythmRow !== undefined ? b.rhythmRow : b.lastRow + 1) - b.firstRow;
+  const stringRows = (b: TabBlock) => b.stringLast - b.stringFirst + 1;
   const nRows = blocks.length ? Math.max(...blocks.map(stringRows)) : 0;
   const labels: string[] = [];
   const rows: string[] = [];
@@ -580,10 +683,10 @@ export function stripLayout(text: string, blocks: TabBlock[], pad = 0): StripLay
     at += b.chars - b.label;
   }
   for (let k = 0; k < nRows; k++) {
-    labels.push(blocks.length ? (lines[blocks[0].firstRow + k] ?? '').padEnd(blocks[0].label).slice(0, blocks[0].label) : '');
+    labels.push(blocks.length ? (lines[blocks[0].stringFirst + k] ?? '').padEnd(blocks[0].label).slice(0, blocks[0].label) : '');
     rows.push(
       '-'.repeat(pad) +
-        blocks.map((b) => (k < stringRows(b) ? (lines[b.firstRow + k] ?? '').padEnd(b.chars).slice(b.label) : ' '.repeat(b.chars - b.label))).join('') +
+        blocks.map((b) => (k < stringRows(b) ? (lines[b.stringFirst + k] ?? '').padEnd(b.chars).slice(b.label) : ' '.repeat(b.chars - b.label))).join('') +
         '-'.repeat(pad),
     );
   }

@@ -789,6 +789,32 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('technique: a tap marker takes no time, so the note starts where it would without it', tapTimed.notes[0].start === parseScore(six('-5----5-')).notes[0].start);
 }
 
+// ---- tab+ more notation: pre-bends, harmonics, repeats, and picking/fingering/palm-mute lines
+{
+  const strs = (e: string, extra: Record<string, string> = {}) => ['e', 'B', 'G', 'D', 'A', 'E'].map((l, i) => `${l}|${i === 0 ? e : extra[l] ?? '-'.repeat(e.length)}|`).join('\n');
+  const one = (e: string) => parseScore(strs(e)).notes[0];
+  ok('pre-bend: 7pb9 is one note, pre-bent to 9', one('-7pb9---').bend?.pre === true && one('-7pb9---').bend?.to === 9 && parseScore(strs('-7pb9---')).notes.length === 1);
+  ok('pre-bend: released after, 7pb9r7', one('-7pb9r7--').bend?.release === 7 && one('-7pb9r7--').bend?.pre === true);
+  ok('pre-bend: a plain bend is not a pre-bend', one('-7b9----').bend?.pre === undefined);
+  ok('harmonic: 12(h) natural, 12(ph) pinch', one('-12(h)--').harmonic === 'natural' && one('-12(ph)-').harmonic === 'pinch' && one('-12-----').harmonic === undefined);
+  ok('harmonic: the marker takes no time', parseScore(strs('-5(h)-5---')).notes[1].start === parseScore(strs('-5-5-----')).notes[1].start);
+  ok('tap: a capital T works as well as t', one('-T12----').tap === true && one('-t12----').tap === true);
+
+  const rep2 = parseScore('e|*-5-|-5-*|\nB|*---|---*|');
+  ok('repeat: * just inside the opening bar line starts a repeat, just inside the closing one ends it', rep2.bars.length === 2 && rep2.bars[0].repeatStart === true && rep2.bars[0].repeatEnd === undefined && rep2.bars[1].repeatEnd === true && rep2.bars[1].repeatStart === undefined);
+  ok('repeat: an asterisk takes no time', rep2.notes[0].start === parseScore('e|-5-|\nB|---|').notes[0].start);
+
+  const withAnn = parseScore(['  D U D', 'e|-5-7-5-|', 'B|-------|', 'G|-------|', 'D|-------|', 'A|-------|', 'E|-------|', '  1 3 1', '    q q q'].join('\n'));
+  ok('annotation lines: pick/finger rows are not strings, so the notes are the same', withAnn.notes.length === 3 && withAnn.notes.map((n) => n.fret).join() === '5,7,5');
+  ok('annotation lines: block knows its string and annotation rows', tabBlocks(['  D U D', 'e|-5-7-5-|', 'B|-------|', 'G|-------|', 'D|-------|', 'A|-------|', 'E|-------|', '  1 3 1'].join('\n'))[0].stringFirst === 1);
+  const above = withAnn.notes.map((n) => n.marks?.map((m) => m.kind + m.text + (m.above ? '^' : 'v')).join('') ?? '');
+  ok('annotation lines: D/U above and 1-4 below attach to the notes beneath them', above.join() === 'pickD^lh1v,pickU^lh3v,pickD^lh1v');
+  const rh = parseScore(['e|-5---7--|', 'B|--------|', 'G|--------|', 'D|--------|', 'A|--------|', 'E|--------|', '  [1] [3]', '  PM---'].join('\n'));
+  ok('annotation lines: [1]-[4] are right-hand fingers, PM-- a palm-mute run over the notes it spans', rh.notes[0].marks?.[0]?.kind === 'rh' && rh.notes[0].marks?.[0]?.text === '1' && rh.notes[0].pm?.above === false && rh.notes[1].pm === undefined);
+  const fretsOnly = parseScore('e|5-7|\nB|-1-|');
+  ok('annotation lines: a barless row that is a real fret row in the middle still counts as a string', parseScore('e|5-7|\nB|---|\n1-2\nE|---|').notes.length >= 2 && fretsOnly.notes.length === 3);
+}
+
 // ---- tab+ score: bars for the staff view
 {
   const sc = parseScore('e|0-0-|0-0-|\nB|----|----|\nG|----|----|\nD|----|----|\nA|----|----|\nE|----|----|\n  q q  q q');

@@ -1945,7 +1945,7 @@ export class Deck {
         if (b.rhythmRow !== undefined) continue;
         let col = b.label;
         for (let c = b.label; c < b.chars; c++) {
-          if (lines.slice(b.firstRow, b.lastRow + 1).some((r) => /[0-9xX]/.test(r[c] ?? ''))) {
+          if (lines.slice(b.stringFirst, b.stringLast + 1).some((r) => /[0-9xX]/.test(r[c] ?? ''))) {
             col = c;
             break;
           }
