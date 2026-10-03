@@ -1,6 +1,6 @@
 {
   "name": "steminize",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Stem separation (Demucs) that runs entirely on your device",
   "scripts": {
     "dev": "vite",

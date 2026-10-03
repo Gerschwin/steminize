@@ -26,7 +26,13 @@ jobs:
         with:
           targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
       - if: matrix.os == 'ubuntu-22.04'
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+        run: |
+          sudo apt-get update
+          # The GStreamer packages are so the AppImage can bundle the audio decoders (FLAC, WAV, MP3, AAC):
+          # without them it can't open a song at all (WebKit decodes audio through GStreamer).
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav
       - run: npm ci
       - uses: tauri-apps/tauri-action@v0
         env: { GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}' }
