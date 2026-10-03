@@ -24,7 +24,7 @@ import { centsFrom, detectPitch, freqToNote } from '../src/analysis/pitch.ts';
 import { isNewer, parseVersion } from '../src/version.ts';
 import { lineAt, parseLrc } from '../src/lyrics/lrc.ts';
 import { splitLength, staffX, vexKey } from '../src/ui/staff.ts';
-import { addAnchor, charOffsetAt, coordAtBpm, coordToPlace, coordToStripX, findNoteAt, noteCols, noteGroupAt, parseScore, parseTab, setRhythmLetter, stripLayout, isLockedAt, moveAnchor, offsetToCoord, removeAnchor, rowCol, tabBlocks, tabPositionAt, toggleAnchorLock, type TabAnchor, type TabNote } from '../src/lyrics/tabSync.ts';
+import { acceptedMidis, fromUnrolled, repeatPlan, toUnrolled, addAnchor, charOffsetAt, coordAtBpm, coordToPlace, coordToStripX, findNoteAt, noteCols, noteGroupAt, parseScore, parseTab, setRhythmLetter, stripLayout, isLockedAt, moveAnchor, offsetToCoord, removeAnchor, rowCol, tabBlocks, tabPositionAt, toggleAnchorLock, type TabAnchor, type TabNote } from '../src/lyrics/tabSync.ts';
 import { moveItem, nextSong, parseSetlists, prevSong, pruneSongs, totalSeconds, uniqueName, type Setlist } from '../src/setlists.ts';
 import { detectLatency } from '../src/player/latency.ts';
 import { placeTake } from '../src/player/placement.ts';
@@ -813,6 +813,37 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('annotation lines: [1]-[4] are right-hand fingers, PM-- a palm-mute run over the notes it spans', rh.notes[0].marks?.[0]?.kind === 'rh' && rh.notes[0].marks?.[0]?.text === '1' && rh.notes[0].pm?.above === false && rh.notes[1].pm === undefined);
   const fretsOnly = parseScore('e|5-7|\nB|-1-|');
   ok('annotation lines: a barless row that is a real fret row in the middle still counts as a string', parseScore('e|5-7|\nB|---|\n1-2\nE|---|').notes.length >= 2 && fretsOnly.notes.length === 3);
+}
+
+// ---- tab+ repeats (played back as repeated) and bends (judged by pitch)
+{
+  const bars = (txt: string) => parseScore(txt).bars;
+  const none = repeatPlan(bars('e|-5-7-|-5-7-|\nB|-----|-----|'));
+  ok('repeat: no repeat signs, no plan', none === null);
+  const rep = bars('e|*-5-7-|-5-7-|-5-7-*|\nB|*-----|-----|-----*|');
+  const plan = repeatPlan(rep)!;
+  ok('repeat: the section is played twice by default', plan.total === rep.reduce((n, b) => n + b.length, 0) * 2);
+  ok('repeat: an x3 over the closing bar plays it three times', repeatPlan(parseScore('     x3\ne|*-5-7-*|\nB|*-----*|').bars)!.total === parseScore('e|*-5-7-*|\nB|*-----*|').bars[0].length * 3);
+  ok('repeat: the count is read off the bar it sits over', parseScore('          x4\ne|-5-7-|-5-7-*|\nB|-----|-----*|').bars[1].repeatCount === 4);
+  const one = bars('e|*-5-7-*|-5-7-|\nB|*-----*|-----|');
+  const p1 = repeatPlan(one)!;
+  const len = one[0].length;
+  ok('repeat: first time through, position is just position', fromUnrolled(p1, 2) === 2 && toUnrolled(p1, 2) === 2);
+  ok('repeat: the second time through, position jumps back to the start of the section', fromUnrolled(p1, len + 2) === 2);
+  ok('repeat: what comes after continues from where it would have been', fromUnrolled(p1, len * 2 + 1) === len + 1);
+  ok('repeat: a tap after the repeat counts both passes', toUnrolled(p1, len + 1) === len * 2 + 1);
+  ok('repeat: an unmarked start repeats from the beginning', repeatPlan(bars('e|-5-|-7-*|\nB|---|---*|'))!.total === bars('e|-5-|-7-|\nB|---|---|').reduce((n, b) => n + b.length, 0) * 2);
+  ok('repeat: past the end carries on beyond the written tab', fromUnrolled(p1, p1.total + 3) === p1.end + 3);
+
+  const nt = (e: string) => parseScore(`e|${e}|\nB|${'-'.repeat(e.length)}|\nG|${'-'.repeat(e.length)}|\nD|${'-'.repeat(e.length)}|\nA|${'-'.repeat(e.length)}|\nE|${'-'.repeat(e.length)}|`).notes[0];
+  ok('bend: a plain note is accepted at just its own pitch', acceptedMidis(nt('-5---')).length === 1 && acceptedMidis(nt('-5---'))[0] === nt('-5---').midi);
+  const bend = nt('-7b9---');
+  ok('bend: a bend is right at its start or at the bent-to pitch', acceptedMidis(bend).join() === [bend.midi!, bend.midi! + 2].join());
+  const rel = nt('-7b9r7--');
+  ok('bend: a released bend is also right at the pitch it comes back to', acceptedMidis(rel).join() === [rel.midi!, rel.midi! + 2, rel.midi!].join());
+  const pre = nt('-7pb9--');
+  ok('bend: a pre-bend is only right at the bent-to pitch', acceptedMidis(pre).join() === [pre.midi! + 2].join());
+  ok('bend: a muted note has no pitch to accept', acceptedMidis(nt('-x---')).length === 0);
 }
 
 // ---- tab+ score: bars for the staff view

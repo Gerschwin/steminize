@@ -13,11 +13,13 @@ import { MAX_REC_LATENCY_MS, loadRecLatencyMs, saveRecLatencyMs, type Settings }
 import { placeTake } from '../player/placement.ts';
 import { lineAt, parseLrc, type Lrc } from '../lyrics/lrc.ts';
 import {
+  acceptedMidis,
   addAnchor,
   anchorCoords,
   charOffsetAt,
   coordAtBpm,
   findNoteAt,
+  fromUnrolled,
   isLockedAt,
   isAnnotationRow,
   isRhythmRow,
@@ -28,9 +30,12 @@ import {
   noteGroupAt,
   parseScore,
   removeAnchor,
+  repeatPlan,
   setRhythmLetter,
   tabBlocks,
   toggleAnchorLock,
+  toUnrolled,
+  type RepeatPlan,
   type TabAnchor,
   type TabBlock,
   type TabNote,
@@ -398,7 +403,7 @@ export class Deck {
   private lyricEls: HTMLElement[] = [];
   private lyricIdx = -2;
   /** The tab's block layout and tap coordinates, rebuilt only when the text or taps change (not every frame). */
-  private tabTimeline: { text: string; anchors: TabAnchor[]; blocks: TabBlock[]; coords: TabAnchor[] } | null = null;
+  private tabTimeline: { text: string; anchors: TabAnchor[]; blocks: TabBlock[]; coords: TabAnchor[]; plan: RepeatPlan | null; coordsU: TabAnchor[] } | null = null;
   // ---- the engraved tab (fret numbers + rhythm row, follow-along's read-only view — see staff.ts's
   // drawTabScore) and the separate, optional full staff (drawStaff): same pattern for both, a redrawn-
   // on-change layout plus a "last drawn x" to skip redundant per-frame work once it hasn't moved. ----
@@ -1728,9 +1733,13 @@ export class Deck {
       // measurement) — without this, the note looked up is whichever one the track was actually
       // playing *before* what's being heard right now, not the one it's testing against.
       const latencySamples = (loadRecLatencyMs() / 1000) * SR;
-      const u = this.coordAt((this.smoothStripPos() - latencySamples) / SR);
-      if (u !== null && u < this.trainerLastU - 0.5) this.resetTrainerTally();
-      if (u !== null) this.trainerLastU = u;
+      const tSec = (this.smoothStripPos() - latencySamples) / SR;
+      const u = this.coordAt(tSec);
+      // Judged against the counting-on position, so a repeat jumping back to its start isn't mistaken
+      // for a scrub back (which restarts the tally) — only a real backward jump is.
+      const uu = this.unrolledAt(tSec);
+      if (uu !== null && uu < this.trainerLastU - 0.5) this.resetTrainerTally();
+      if (uu !== null) this.trainerLastU = uu;
       const group = u === null ? [] : noteGroupAt(this.stripNotes ?? [], u);
 
       if (group.length && group[0].start !== this.trainerGroupStart) {
@@ -1751,7 +1760,7 @@ export class Deck {
         const td = this.player.monitorTimeDomain();
         const result = td && detectPitch(td.buf, td.sampleRate);
         if (result) {
-          const hit = group.some((n) => n.midi !== null && Math.abs(centsFrom(result.freq, n.midi)) <= TRAINER_TOLERANCE_CENTS);
+          const hit = group.some((n) => acceptedMidis(n).some((m) => Math.abs(centsFrom(result.freq, m)) <= TRAINER_TOLERANCE_CENTS));
           cls = hit ? 'trainer-hit' : 'trainer-miss';
           if (hit) this.trainerGroupHit = true;
         }
@@ -2127,7 +2136,12 @@ export class Deck {
     const t = this.tabTimeline;
     if (t && t.text === text && t.anchors === anchors) return t;
     const blocks = tabBlocks(text);
-    this.tabTimeline = { text, anchors, blocks, coords: anchorCoords(text, blocks, anchors) };
+    const coords = anchorCoords(text, blocks, anchors);
+    // Repeats: taps are on the written tab (the first time through); playback keeps counting up through
+    // a repeat, so the taps are converted to that counting-up ("unrolled") position to work from.
+    const plan = repeatPlan(parseScore(text).bars);
+    const coordsU = plan ? coords.map((a) => ({ ...a, charOffset: toUnrolled(plan, a.charOffset) })) : coords;
+    this.tabTimeline = { text, anchors, blocks, coords, plan, coordsU };
     return this.tabTimeline;
   }
 
@@ -2137,10 +2151,19 @@ export class Deck {
    * match the beat. Two or more taps still interpolate between them exactly as before (charOffsetAt),
    * for a song whose tempo isn't reliable enough, or wasn't detected, to trust alone. */
   private coordAt(t: number): number | null {
+    const uu = this.unrolledAt(t);
+    const plan = this.timeline().plan;
+    return uu === null || !plan ? uu : fromUnrolled(plan, uu);
+  }
+
+  /** How far along the *played* music is — counting straight on through a repeat — rather than where
+   * that is on the written tab (coordAt, which jumps back at each repeat). The trainer needs this one
+   * to tell a repeat's jump back from a real scrub back. Same as coordAt when there are no repeats. */
+  private unrolledAt(t: number): number | null {
     const tl = this.timeline();
     const bpm = this.r?.analysis?.bpm;
-    if (tl.coords.length === 1 && bpm) return coordAtBpm(tl.coords[0], bpm, t);
-    return charOffsetAt(tl.coords, t);
+    if (tl.coordsU.length === 1 && bpm) return coordAtBpm(tl.coordsU[0], bpm, t);
+    return charOffsetAt(tl.coordsU, t);
   }
 
   /** Redraws the engraved tab (fret numbers + rhythm row) from the tab as it is now, only if it's

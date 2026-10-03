@@ -155,7 +155,7 @@ export const isRhythmRow = (line: string) => /^[ whqestWHQEST.]*$/.test(line) &&
 export const isTimeSigRow = (line: string) => /^\s*\d+\s*\/\s*\d+\s*$/.test(line);
 
 /** A line of picking (D U), fingering (1-4, [1]-[4]) or palm-mute (PM---) marks above or below a block's strings. */
-export const isAnnotationRow = (line: string) => /^[ DU1234[\]PM-]*$/.test(line) && /[DU1-4]|PM/.test(line);
+export const isAnnotationRow = (line: string) => /^[ DU123456789x[\]PM-]*$/.test(line) && /[DU1-4]|PM|x[2-9]/.test(line);
 
 const isDigit = (c: string | undefined) => c !== undefined && c >= '0' && c <= '9';
 
@@ -397,6 +397,8 @@ export interface TabBar {
   /** Repeat signs, written as an asterisk right after the opening bar line (`|*`) / right before the closing one (`*|`). */
   repeatStart?: boolean;
   repeatEnd?: boolean;
+  /** How many times the section plays in all (`x3` on a line above/below the strings, over the bar that ends it); two when not written. */
+  repeatCount?: number;
 }
 
 const OPEN_STRINGS: Record<number, number[]> = { 6: [64, 59, 55, 50, 45, 40], 4: [43, 38, 33, 28] };
@@ -460,8 +462,8 @@ function techniques(line: string, c: number): Partial<Pick<TabNote, 'bend' | 'li
 
 /** Marks on a line above or below a block's strings, with the columns they cover: D/U picking, 1-4 and
  * [1]-[4] fingering (left/right hand), and PM followed by dashes for a palm-mute run (the dashes' extent). */
-function annotationTokens(line: string): { kind: 'pick' | 'lh' | 'rh' | 'pm'; text: string; col: number; end: number }[] {
-  const out: { kind: 'pick' | 'lh' | 'rh' | 'pm'; text: string; col: number; end: number }[] = [];
+function annotationTokens(line: string): { kind: 'pick' | 'lh' | 'rh' | 'pm' | 'repeat'; text: string; col: number; end: number }[] {
+  const out: { kind: 'pick' | 'lh' | 'rh' | 'pm' | 'repeat'; text: string; col: number; end: number }[] = [];
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];
     if (ch === 'P' && line[i + 1] === 'M') {
@@ -472,6 +474,9 @@ function annotationTokens(line: string): { kind: 'pick' | 'lh' | 'rh' | 'pm'; te
     } else if (ch === '[' && /[1-4]/.test(line[i + 1] ?? '') && line[i + 2] === ']') {
       out.push({ kind: 'rh', text: line[i + 1], col: i, end: i + 2 });
       i += 2;
+    } else if (ch === 'x' && /[2-9]/.test(line[i + 1] ?? '')) {
+      out.push({ kind: 'repeat', text: line[i + 1], col: i, end: i + 1 });
+      i += 1;
     } else if (ch === 'D' || ch === 'U') out.push({ kind: 'pick', text: ch, col: i, end: i });
     else if (/[1-4]/.test(ch)) out.push({ kind: 'lh', text: ch, col: i, end: i });
   }
@@ -551,6 +556,12 @@ export function parseScore(text: string): { notes: TabNote[]; bars: TabBar[] } {
         // over the same note.
         const taken = new Set<TabNote>();
         for (const tok of annotationTokens(lines[row] ?? '')) {
+          // "x3": how many times the repeat that ends in the bar it sits over plays (see repeatPlan)
+          if (tok.kind === 'repeat') {
+            const si = segs.findIndex(([from, to]) => tok.col >= from - 1 && tok.col <= to);
+            if (si !== -1) bars[barBase + si].repeatCount = Number(tok.text);
+            continue;
+          }
           const gap = (n: TabNote) => Math.max(0, span(n)[0] - tok.end, tok.col - span(n)[1]);
           const free = found.filter((n) => !taken.has(n));
           const near = Math.min(...free.map(gap));
@@ -584,6 +595,72 @@ export function parseScore(text: string): { notes: TabNote[]; bars: TabBar[] } {
  * than one for a chord, none for a rest/gap. For the playing trainer: what's expected right now. */
 export function noteGroupAt(notes: TabNote[], u: number): TabNote[] {
   return notes.filter((n) => u >= n.start && u < n.start + n.length);
+}
+
+/** The pitches (MIDI) a note can be played at and still be right: a bend starts at its fret and ends at
+ * the bent-to fret (and, released, comes back down to the release fret); a pre-bend is already at the
+ * bent-to pitch when picked. A plain note is just its own. For the playing trainer, which listens to
+ * whatever pitch it hears at the moment and so can catch a bend anywhere along it. */
+export function acceptedMidis(n: TabNote): number[] {
+  if (n.midi === null) return [];
+  if (!n.bend || n.fret === null) return [n.midi];
+  const out = n.bend.pre ? [n.midi + (n.bend.to - n.fret)] : [n.midi, n.midi + (n.bend.to - n.fret)];
+  if (n.bend.release !== undefined) out.push(n.midi + (n.bend.release - n.fret));
+  return out;
+}
+
+// ---- repeats ------------------------------------------------------------------------------------------
+// A repeat sign (`|*` ... `*|`) means the section plays again. The tab itself is written once, but the
+// music is longer than that, so playback position (which keeps counting up through the repeat) has to be
+// mapped back onto the written tab, jumping from the end of the section to its start for each extra pass.
+// "Unrolled" position = how far along the played music is; "score" position = where that is on the page.
+
+export interface RepeatPlan {
+  /** The bars in the order they're played: where each starts in unrolled position, and where it is on the page. */
+  segs: { u0: number; u1: number; from: number }[];
+  /** Total length played, in the same sixteenth-note units, and where the written tab ends. */
+  total: number;
+  end: number;
+}
+
+/** Null when there are no repeats (position is just position). A closing sign repeats back to the
+ * nearest opening one before it, or to just after the previous repeat (or the start); `x3` on its bar
+ * plays the section three times in all, otherwise twice. */
+export function repeatPlan(bars: TabBar[]): RepeatPlan | null {
+  if (!bars.some((b) => b.repeatEnd)) return null;
+  const order: number[] = [];
+  let sectionStart = 0;
+  for (let i = 0; i < bars.length; i++) {
+    if (bars[i].repeatStart) sectionStart = i;
+    order.push(i);
+    if (bars[i].repeatEnd) {
+      for (let pass = 1; pass < Math.max(2, bars[i].repeatCount ?? 2); pass++) for (let k = sectionStart; k <= i; k++) order.push(k);
+      sectionStart = i + 1;
+    }
+  }
+  const segs: RepeatPlan['segs'] = [];
+  let u = 0;
+  for (const i of order) {
+    if (bars[i].length <= 0) continue;
+    segs.push({ u0: u, u1: u + bars[i].length, from: bars[i].start });
+    u += bars[i].length;
+  }
+  const last = bars[bars.length - 1];
+  return { segs, total: u, end: last.start + last.length };
+}
+
+/** Score position -> unrolled position, for the *first* time through (where a tap was made). */
+export function toUnrolled(plan: RepeatPlan, u: number): number {
+  const seg = plan.segs.find((g) => u >= g.from && u < g.from + (g.u1 - g.u0));
+  if (seg) return seg.u0 + (u - seg.from);
+  return u >= plan.end ? plan.total + (u - plan.end) : u;
+}
+
+/** Unrolled position -> where that is on the written tab. */
+export function fromUnrolled(plan: RepeatPlan, uu: number): number {
+  const seg = plan.segs.find((g) => uu >= g.u0 && uu < g.u1);
+  if (seg) return seg.from + (uu - seg.u0);
+  return uu >= plan.total ? plan.end + (uu - plan.total) : uu;
 }
 
 /** The note at a specific bar + column — turns a click on the engraved tab's own data-bar/data-col

@@ -534,6 +534,8 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
       // little). Pulled back by exactly that, per label, onto the fret it belongs to: they
       // are drawn inside the note's own group, in the order they were added (harmonic, then tap, per
       // position).
+      // "×3" over the bar a repeat of more than the usual two plays ends in
+      if (bar.repeatEnd && (bar.repeatCount ?? 2) > 2) text(`\u00d7${bar.repeatCount}`, tabStave.getX() + tabStave.getWidth() - 12, topY - 8, '10pt');
       realTabs.forEach((rt, i) => {
         const labelled: number[] = [];
         rt.group.forEach((n, k) => {
