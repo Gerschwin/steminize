@@ -282,11 +282,16 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
   const RHYTHM_H = 90;
   // Marks written *below* the strings (fingering, picking, a palm-mute run) need a band of their own
   // between the tab and the rhythm row, which otherwise hangs its stems right up against the bottom line.
-  const hasAbove = notes.some((n) => n.marks?.some((m) => m.above) || n.pm?.above === true);
-  // (and room above the strings likewise, where two stacked marks would otherwise run off the top)
-  const ABOVE = hasAbove ? 22 : 0;
-  const hasBelow = notes.some((n) => n.marks?.some((m) => !m.above) || n.pm?.above === false);
-  const GAP = 6 + (hasBelow ? 18 : 0);
+  // How many rows of marks any one note has stacked above / below the strings (picking, fingering...); a
+  // palm-mute run below gets a row of its own under them. The bands reserved scale with that, and only
+  // exist when there's something in them: room above the strings so the top row isn't clipped, and room
+  // between the tab and the rhythm row, which otherwise hangs its stems and beams right under the bottom line.
+  const marksRows = (above: boolean) => Math.max(0, ...notes.map((n) => (n.marks ?? []).filter((m) => m.above === above).length));
+  const aboveRows = marksRows(true);
+  const belowMarkRows = marksRows(false);
+  const belowRows = belowMarkRows + (notes.some((n) => n.pm?.above === false) ? 1 : 0);
+  const ABOVE = aboveRows ? 8 + 15 * (aboveRows - 1) : 0;
+  const GAP = 6 + (belowRows ? 3 + 15 * belowRows : 0);
   // The unpitched placeholder note's own pitch/line doesn't mean anything — the notehead is invisible
   // — but VexFlow still uses it to decide the note's vertical position, so it's pinned to the stave's
   // own bottom line ('e/4': the lowest line that still needs no ledger line, which a *forced* line
@@ -535,7 +540,7 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
             const top = y0 - 20;
             mk('path', { d: `M${x0} ${y0} L${x0} ${top + 2}`, ...ink });
             mk('polygon', { points: `${x0},${top} ${x0 - 3.5},${top + 7} ${x0 + 3.5},${top + 7}`, fill: '#111' });
-            text(bendText(n.bend.to - (n.fret ?? 0)), x0, top - 3, 10);
+            text(bendText(n.bend.to - (n.fret ?? 0)), x0, top - 3, 9);
             if (n.bend.release !== undefined) {
               mk('path', { d: `M${x0} ${top} Q${x0 + 14} ${top} ${x0 + 14} ${y0 - 7}`, ...ink });
               mk('polygon', { points: `${x0 + 14},${y0 - 1} ${x0 + 10.5},${y0 - 8} ${x0 + 17.5},${y0 - 8}`, fill: '#111' });
@@ -568,11 +573,14 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
           const a = rectOf(i, 0);
           const b = rectOf(j, 0);
           if (a && b) {
-            const lineY = above ? topY - 32 : botY + 26;
+            // "P.M." sits on the first free row: just above the strings when above, and below any rows
+            // of marks (one row of its own) when below; the dashed line runs at the label's mid-height.
+            const labelY = above ? topY - 29 : botY + 17 + belowMarkRows * 15;
+            const lineY = labelY - 3.5;
             const x0 = a.x + a.w / 2 - 6;
             const x1 = b.x + b.w + 6;
             const begins = pmRunStarts.has(realTabs[i].group[0].start);
-            if (begins) text('P.M.', x0 + 13, lineY - 3, 10);
+            if (begins) text('P.M.', x0 + 13, labelY, 10);
             const from = begins ? x0 + 28 : x0;
             if (x1 > from) {
               mk('path', { d: `M${from} ${lineY} L${x1} ${lineY} M${x1} ${lineY} L${x1} ${lineY + (above ? 5 : -5)}`, ...ink, 'stroke-dasharray': '3 3' });
