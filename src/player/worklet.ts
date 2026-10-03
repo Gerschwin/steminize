@@ -1,6 +1,10 @@
 import { MixSource, Renderer, type Stereo } from './mixcore.ts';
 import { DEFAULT_PRACTICE, Transport, type Practice } from './transport.ts';
 import type { EqParams } from './eq.ts';
+import { StreamResampler } from './resample.ts';
+
+/** The audio context's sample rate; a global inside an AudioWorklet. */
+declare const sampleRate: number;
 
 export type PlayerMsg =
   | { type: 'load'; stems: Stereo[]; gains: number[] }
@@ -30,6 +34,8 @@ class StemPlayer extends AudioWorkletProcessor {
   private loop = { on: false, start: 0, end: 0 };
   private tp = { tempo: 1, pitch: 0 };
   private practice: Practice = DEFAULT_PRACTICE;
+  /** Songs are 44.1 kHz; when the context runs at another rate (low-latency mode on a 48 kHz card) the output is converted. */
+  private rs = sampleRate === 44100 ? null : new StreamResampler(44100, sampleRate);
 
   constructor() {
     super();
@@ -38,6 +44,7 @@ class StemPlayer extends AudioWorkletProcessor {
 
   private handle(m: PlayerMsg) {
     if (m.type === 'load') {
+      this.rs?.reset();
       const src = new MixSource(m.stems, m.gains, m.stems[0]?.[0].length ?? 0);
       src.padEnd = 32768;
       const r = new Renderer(src);
@@ -84,13 +91,17 @@ class StemPlayer extends AudioWorkletProcessor {
         if (m.eqs) t.r.src.setEqs(m.eqs);
         break;
       case 'play':
-        if (!this.playing) t.onPlay();
+        if (!this.playing) {
+          this.rs?.reset();
+          t.onPlay();
+        }
         this.playing = true;
         break;
       case 'pause':
         this.playing = false;
         break;
       case 'seek':
+        this.rs?.reset();
         t.seek(m.pos);
         break;
     }
@@ -116,8 +127,11 @@ class StemPlayer extends AudioWorkletProcessor {
     if (!this.t || !this.playing || !out?.length) return true;
     const L = out[0];
     const R = out[1] ?? out[0];
-    if (!this.t.render(L, R, L.length)) {
+    const t = this.t;
+    const ok = this.rs ? this.rs.render((l, r, n) => t.render(l, r, n), L, R, L.length) : t.render(L, R, L.length);
+    if (!ok) {
       this.playing = false;
+      this.rs?.reset();
       this.t.seek(0);
       this.report(true);
       return true;

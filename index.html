@@ -364,7 +364,7 @@
                   <div class="live-grp">
                     <label class="mini latency" id="liveLatencyWrap" hidden title="How late a take lands behind the song (the delay of what you hear plus the delay of what is recorded). It is taken off the take when you stop, so it lines up. Press Measure to find it.">Latency <input type="number" id="liveLatency" min="0" max="500" step="1" value="0" /> ms</label>
                     <button class="btn tiny ghost" id="liveLatencyBtn" type="button" hidden title="Plays clicks and listens for them on the input to measure the delay. Needs the speakers near the microphone, or a cable from the output to the input. With headphones and no cable, record a take against the click and use Line up under it instead.">Measure</button>
-                    <label class="mini" id="liveLowLatWrap" hidden title="Ask the audio system for its smallest buffers, so what you play and hear is less delayed. Some computers may crackle; turn it off if so. Takes effect the next time you open Steminize."><input type="checkbox" id="liveLowLat" /> Low-latency audio</label>
+                    <label class="mini" id="liveLowLatWrap" hidden title="Ask the audio system for its smallest buffers and run at the sound card's own sample rate, so what you play and hear is less delayed. Some computers may crackle; turn it off if so. Takes effect the next time you open Steminize."><input type="checkbox" id="liveLowLat" /> Low-latency audio</label>
                     <span class="muted small" id="liveLatencyInfo" hidden></span>
                   </div>
                   <div class="live-grp live-rec">

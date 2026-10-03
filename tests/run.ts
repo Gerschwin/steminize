@@ -28,6 +28,7 @@ import { acceptedMidis, timeAtCoord, fromUnrolled, repeatPlan, toUnrolled, addAn
 import { moveItem, nextSong, parseSetlists, prevSong, pruneSongs, totalSeconds, uniqueName, type Setlist } from '../src/setlists.ts';
 import { detectLatency } from '../src/player/latency.ts';
 import { placeTake, shiftTake } from '../src/player/placement.ts';
+import { StreamResampler } from '../src/player/resample.ts';
 
 let failed = 0;
 const ok = (name: string, cond: boolean, detail = '') => {
@@ -955,5 +956,39 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('pitch: an octave flat is -1200 cents', Math.abs(centsFrom(220, 69) + 1200) < 1e-6);
 }
 
+
+// ---- streaming resampler (44.1 kHz songs onto a 48 kHz context)
+{
+  const f = 1000;
+  const src = (n: number) => Math.sin((2 * Math.PI * f * n) / 44100);
+  const run = (block: number, total: number) => {
+    let at = 0;
+    const rs = new StreamResampler(44100, 48000);
+    const out = new Float32Array(total);
+    const pull = (l: Float32Array, r: Float32Array, n: number) => {
+      for (let i = 0; i < n; i++) l[i] = r[i] = src(at + i);
+      at += n;
+      return true;
+    };
+    for (let o = 0; o < total; o += block) rs.render(pull, out.subarray(o, o + block), new Float32Array(block), block);
+    return out;
+  };
+  const a = run(128, 4800);
+  let worst = 0;
+  for (let i = 4; i < a.length; i++) worst = Math.max(worst, Math.abs(a[i] - Math.sin((2 * Math.PI * f * i) / 48000)));
+  ok('resample: a 1 kHz sine at 48 kHz matches the true waveform', worst < 2e-3);
+  const b = run(37, 4810);
+  let same = true;
+  for (let i = 0; i < 4800; i++) if (Math.abs(a[i] - b[i]) > 1e-6) same = false;
+  ok('resample: block size does not change the output', same);
+  const rs = new StreamResampler(44100, 48000);
+  let calls = 0;
+  const ended = rs.render((l, r, n) => (l.fill(0), r.fill(0), ++calls < 0), new Float32Array(128), new Float32Array(128), 128);
+  ok('resample: reports when the source has ended', ended === false);
+  rs.reset();
+  ok('resample: reset clears the ended state', rs.render((l, r, n) => true, new Float32Array(64), new Float32Array(64), 64) === true);
+}
+
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');
+
 process.exit(failed ? 1 : 0);

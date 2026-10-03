@@ -71,7 +71,13 @@ export class Player {
   private init() {
     if (this.ready) return this.ready;
     this.ready = (async () => {
-      const ctx = new AudioContext({ sampleRate: 44100, latencyHint: loadLowLatencyAudio() ? 'interactive' : 'playback' });
+      // Low-latency mode runs at the sound card's own rate (the worklet converts the songs to it), which saves the
+      // system a second conversion; the standard mode keeps the fixed 44.1 kHz context.
+      let ctx = loadLowLatencyAudio() ? new AudioContext({ latencyHint: 'interactive' }) : new AudioContext({ sampleRate: 44100, latencyHint: 'playback' });
+      if (ctx.sampleRate < 44100) {
+        void ctx.close();
+        ctx = new AudioContext({ sampleRate: 44100, latencyHint: 'interactive' });
+      }
       await ctx.audioWorklet.addModule(workletUrl);
       const node = new AudioWorkletNode(ctx, 'stem-player', { numberOfInputs: 0, outputChannelCount: [2] });
       const master = ctx.createGain();
@@ -272,6 +278,11 @@ export class Player {
   }
 
   // ---------- live input monitoring ----------
+  /** The audio context's sample rate (Hz), once audio has started. */
+  get rate(): number | null {
+    return this.ctx?.sampleRate ?? null;
+  }
+
   /** What the audio system itself reports for its buffers (ms): output side plus the context's processing block. Not the full round trip, and null if nothing is reported. */
   reportedLatencyMs(): number | null {
     const c = this.ctx;

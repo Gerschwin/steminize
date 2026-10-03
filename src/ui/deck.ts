@@ -1676,7 +1676,7 @@ export class Deck {
         const info = $('liveLatencyInfo');
         info.hidden = rep == null;
         if (rep != null) {
-          info.textContent = `(audio system reports ~${rep} ms)`;
+          info.textContent = `(audio system reports ~${rep} ms at ${this.player.rate} Hz)`;
           info.title = 'The delay the audio system says it adds to what you hear. The real round trip is higher (the interface and the input side), so use Measure or Line up for the number to put in Latency.';
         }
         status.textContent = channels ? `Input has ${channels} channel${channels === 1 ? '' : 's'}.` : '';
