@@ -80,6 +80,26 @@ export function coordAtBpm(anchor: TabAnchor, bpm: number, t: number): number {
   return anchor.charOffset + (t - anchor.time) * (bpm / 60) * 4;
 }
 
+/** The reverse of coordAtBpm / charOffsetAt: the time (seconds) at which the tab reaches position `u`.
+ * Null with nothing to go on (no taps, or just one with no tempo known). With one tap and a tempo it's
+ * exact; with two or more it's interpolated between the taps either side, the same way charOffsetAt
+ * goes the other way. For turning a bar of the tab into a stretch of the song (looping it). */
+export function timeAtCoord(anchors: TabAnchor[], bpm: number | undefined, u: number): number | null {
+  if (anchors.length === 1 && bpm) return anchors[0].time + ((u - anchors[0].charOffset) * 60) / (bpm * 4);
+  if (anchors.length < MIN_ANCHORS) return null;
+  const byTime = [...anchors].sort((a, b) => a.time - b.time);
+  if (u <= byTime[0].charOffset) return byTime[0].time;
+  for (let i = 1; i < byTime.length; i++) {
+    const a = byTime[i - 1];
+    const b = byTime[i];
+    if (u <= b.charOffset) {
+      const span = b.charOffset - a.charOffset;
+      return span > 0 ? a.time + ((u - a.charOffset) / span) * (b.time - a.time) : a.time;
+    }
+  }
+  return byTime[byTime.length - 1].time;
+}
+
 /** Row/column (0-based) of a possibly-fractional character offset within monospace text, for
  * positioning a cursor overlay. The fractional part carries into a fractional column, for a smooth
  * sweep rather than a per-character stutter. */

@@ -33,10 +33,12 @@ import {
   repeatPlan,
   setRhythmLetter,
   tabBlocks,
+  timeAtCoord,
   toggleAnchorLock,
   toUnrolled,
   type RepeatPlan,
   type TabAnchor,
+  type TabBar,
   type TabBlock,
   type TabNote,
 } from '../lyrics/tabSync.ts';
@@ -142,6 +144,9 @@ export interface ScratchState {
   /** Compare live mic pitch against the tab's notes as they play, highlighting right/wrong on the
    * engraved view. Needs Live input monitoring running and turns tabFollow on if it wasn't already. */
   tabTrainer?: boolean;
+  /** Ear training: the engraved tab is hidden while the song plays (the Trainer still judges), so you
+   * play from memory; it comes back when playback stops. Needs tabFollow on. */
+  tabEar?: boolean;
   drums?: string;
   notes?: string;
 }
@@ -412,6 +417,9 @@ export class Deck {
   /** The same parse's raw notes (string/fret/midi/start/length), kept alongside stripLayout's geometry
    * for the playing trainer to compare against, without re-parsing the tab on every trainer tick. */
   private stripNotes: TabNote[] | null = null;
+  private stripBars: TabBar[] = [];
+  /** The last bar clicked to loop it, so a Shift-click can extend from there. */
+  private lastLoopBar: number | null = null;
   private stripToken = 0;
   private stripTimer: number | undefined;
   private lastStripPx = NaN;
@@ -465,6 +473,7 @@ export class Deck {
         this.emit();
       }
       this.updateTrainerInfo(s.passes, s.countingIn);
+      this.updateEarHide();
       this.dirty = true;
     };
     $('trackTitle').ondblclick = () => this.renameSong();
@@ -1961,6 +1970,12 @@ export class Deck {
       this.updateTabView();
       this.emit();
     };
+    $('tabEarBtn').onclick = () => {
+      this.scratch.tabEar = !this.scratch.tabEar;
+      if (this.scratch.tabEar && !this.scratch.tabFollow) this.scratch.tabFollow = true; // it hides the engraved view, so needs it
+      this.updateTabView();
+      this.emit();
+    };
     $('tabClearAnchorsBtn').onclick = () => {
       if (!confirm("Clear this tab's timing? You'll need to tap it back in.")) return;
       this.scratch.tabAnchors = [];
@@ -1968,6 +1983,7 @@ export class Deck {
       this.selectedRhythmNote = null;
       this.scratch.tabFollow = false;
       this.scratch.tabTrainer = false;
+      this.scratch.tabEar = false;
       this.updateTabView();
       this.emit();
     };
@@ -1981,6 +1997,15 @@ export class Deck {
     $('tabStripTrack').addEventListener('click', (e) => {
       if (this.tabPanMoved) {
         this.tabPanMoved = false; // the click that ends a drag, not a selection
+        return;
+      }
+      // A bar number: loop that bar (Shift: from the last one clicked to this one) — see loopBars.
+      const barNum = (e.target as Element).closest<SVGElement>('[data-barnum]');
+      if (barNum) {
+        const bar = Number(barNum.dataset.barnum);
+        const from = e.shiftKey && this.lastLoopBar !== null ? this.lastLoopBar : bar;
+        this.lastLoopBar = bar;
+        this.loopBars(Math.min(from, bar), Math.max(from, bar));
         return;
       }
       const el = (e.target as HTMLElement).closest<HTMLElement>('[data-col]');
@@ -2056,6 +2081,7 @@ export class Deck {
     if (s?.tabFollow) this.scratch.tabFollow = true;
     if (s?.tabStaff) this.scratch.tabStaff = true;
     if (s?.tabTrainer) this.scratch.tabTrainer = true;
+    if (s?.tabEar) this.scratch.tabEar = true;
     this.resetTrainerTally();
     this.scratchAreas.lyrics.value = this.scratch.lyrics ?? '';
     this.setLyricsText(this.scratch.lyrics ?? '');
@@ -2159,11 +2185,21 @@ export class Deck {
     $('tabTrainerBtn').hidden = !(onTab && canFollow);
     pressed($('tabTrainerBtn'), trainer);
     $('tabTrainerStatus').hidden = !(onTab && trainer);
+    $('tabEarBtn').hidden = !(onTab && canFollow);
+    pressed($('tabEarBtn'), canFollow && !!this.scratch.tabEar);
+    this.updateEarHide();
     this.lastStaffPx = NaN;
     this.lastStripPx = NaN;
     this.syncTimelineCursor(false, null); // corrected once the next frame knows where playback actually is
     this.scratchAreas.tab.hidden = !onTab || follow;
     this.dirty = true;
+  }
+
+  /** Ear training: hides the engraved tab (and the staff under it) while the song is playing, shows it
+   * again when it stops. The cursor and the Trainer's right/wrong box stay, so you still get marked. */
+  private updateEarHide() {
+    const hide = !!this.scratch.tabEar && !!this.scratch.tabFollow && this.player.state.playing;
+    $('tabTimeline').classList.toggle('ear-hidden', hide);
   }
 
   /** The tab's block layout and tap coordinates, cached until the text or the taps change. */
@@ -2236,6 +2272,7 @@ export class Deck {
     this.stripLayout = layout;
     this.stripText = text;
     this.stripNotes = notes;
+    this.stripBars = bars;
     $('tabStripView').style.height = `${layout.height}px`;
     this.lastStripPx = NaN;
     this.dirty = true;
@@ -3630,6 +3667,37 @@ export class Deck {
       window.addEventListener('pointerup', up);
       window.addEventListener('pointercancel', up);
     });
+  }
+
+  /** Loops the song over bars `first`..`last` (0-based, inclusive) of the tab — turning the tab's own
+   * position back into song time through the taps (and the song's tempo, with a single tap), so a hard
+   * bar is one click away from a loop, and from the speed trainer. Needs the tab timed, like Follow
+   * along itself does. A repeat's section is looped as written (its first pass). */
+  private loopBars(first: number, last: number) {
+    const bars = this.stripBars;
+    const a = bars[first];
+    const b = bars[last];
+    if (!a || !b) return;
+    const tl = this.timeline();
+    const bpm = this.r?.analysis?.bpm;
+    const uu = (u: number) => (tl.plan ? toUnrolled(tl.plan, u) : u);
+    const t0 = timeAtCoord(tl.coordsU, bpm, uu(a.start));
+    const t1 = timeAtCoord(tl.coordsU, bpm, uu(b.start) + b.length);
+    if (t0 === null || t1 === null) {
+      toast('Tap the tab to time it first, then bar numbers can set the loop');
+      return;
+    }
+    const lo = Math.max(0, Math.min(this.length, Math.round(t0 * SR)));
+    const hi = Math.max(0, Math.min(this.length, Math.round(t1 * SR)));
+    if (hi - lo < SR / 4) {
+      toast("That bar is past the end of the song (or its timing isn't set that far)");
+      return;
+    }
+    this.loop.a = lo;
+    this.loop.b = hi;
+    this.setLoop(true);
+    this.player.seek(lo);
+    toast(first === last ? `Looping bar ${first + 1}` : `Looping bars ${first + 1}–${last + 1}`);
   }
 
   private removeSelectedTap() {

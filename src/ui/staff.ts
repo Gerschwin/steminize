@@ -375,6 +375,18 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
     if (bar.repeatStart) tabStave.setBegBarType(Barline.type.REPEAT_BEGIN);
     if (bar.repeatEnd) tabStave.setEndBarType(Barline.type.REPEAT_END);
     tabStave.setContext(ctx).draw();
+    // A click target over each bar's number (VexFlow draws the number itself; the SVG is click-through,
+    // so this transparent rectangle is what a click lands on) — deck.ts turns a click into "loop this bar".
+    if (introSvg) {
+      const barNumY = tabStave.getYForTopText(0) + 3;
+      const hit = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      for (const [k, v] of Object.entries({ x: tabStave.getX() - 12, y: barNumY - 13, width: 24, height: 18, rx: 4, fill: 'transparent', stroke: 'none', class: 'tab-barnum', 'data-barnum': bi })) hit.setAttribute(k, String(v));
+      hit.style.pointerEvents = 'all';
+      const tip = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+      tip.textContent = `Bar ${bi + 1}: click to loop it · Shift-click to extend the loop to here`;
+      hit.appendChild(tip);
+      introSvg.appendChild(hit);
+    }
     // TAB_H is already the tab stave's own absolute bottom-line y (its "+10" already covers tabY) —
     // adding tabY again here would double-count it and push the rhythm row, and the SVG's declared
     // height, 10px further down than the content actually needs. Unpitched, the stave itself is

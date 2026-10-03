@@ -24,7 +24,7 @@ import { centsFrom, detectPitch, freqToNote } from '../src/analysis/pitch.ts';
 import { isNewer, parseVersion } from '../src/version.ts';
 import { lineAt, parseLrc } from '../src/lyrics/lrc.ts';
 import { splitLength, staffX, vexKey } from '../src/ui/staff.ts';
-import { acceptedMidis, fromUnrolled, repeatPlan, toUnrolled, addAnchor, charOffsetAt, coordAtBpm, coordToPlace, coordToStripX, findNoteAt, noteCols, noteGroupAt, parseScore, parseTab, setRhythmLetter, stripLayout, isLockedAt, moveAnchor, offsetToCoord, removeAnchor, rowCol, tabBlocks, tabPositionAt, toggleAnchorLock, type TabAnchor, type TabNote } from '../src/lyrics/tabSync.ts';
+import { acceptedMidis, timeAtCoord, fromUnrolled, repeatPlan, toUnrolled, addAnchor, charOffsetAt, coordAtBpm, coordToPlace, coordToStripX, findNoteAt, noteCols, noteGroupAt, parseScore, parseTab, setRhythmLetter, stripLayout, isLockedAt, moveAnchor, offsetToCoord, removeAnchor, rowCol, tabBlocks, tabPositionAt, toggleAnchorLock, type TabAnchor, type TabNote } from '../src/lyrics/tabSync.ts';
 import { moveItem, nextSong, parseSetlists, prevSong, pruneSongs, totalSeconds, uniqueName, type Setlist } from '../src/setlists.ts';
 import { detectLatency } from '../src/player/latency.ts';
 import { placeTake } from '../src/player/placement.ts';
@@ -877,6 +877,18 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('gate: needs `every` clean passes in a row, then the count starts again', !r1.step && !r2.step && r3.step && r3.clean === 0);
   ok('gate: a pass with nothing judged neither counts nor spoils the run', gateStep(2, 0, 0, 0.9, 3).clean === 2 && gateStep(2, 0, 0, 0.9, 3).step === false);
   ok('gate: exactly on the target counts', gateStep(0, 9, 10, 0.9, 1).step && gateStep(0, 17, 20, 0.85, 1).step);
+}
+
+// ---- tab bar -> song time (for looping a bar from its number)
+{
+  const one: TabAnchor[] = [{ charOffset: 4, time: 2 }];
+  ok('bar loop: with one tap and a tempo, time is exact (a quarter is 60/bpm seconds)', timeAtCoord(one, 120, 4) === 2 && Math.abs(timeAtCoord(one, 120, 8)! - 2.5) < 1e-9);
+  ok('bar loop: and it is the exact inverse of coordAtBpm', Math.abs(coordAtBpm(one[0], 100, timeAtCoord(one, 100, 13)!) - 13) < 1e-9);
+  const two: TabAnchor[] = [{ charOffset: 0, time: 1 }, { charOffset: 16, time: 3 }, { charOffset: 32, time: 7 }];
+  ok('bar loop: between taps it interpolates', timeAtCoord(two, undefined, 8) === 2 && timeAtCoord(two, undefined, 24) === 5);
+  ok('bar loop: outside the taps it clamps to the first/last', timeAtCoord(two, undefined, -5) === 1 && timeAtCoord(two, undefined, 99) === 7);
+  ok('bar loop: and is the inverse of charOffsetAt', Math.abs(charOffsetAt(two, timeAtCoord(two, undefined, 21)!)! - 21) < 1e-9);
+  ok('bar loop: nothing to go on without taps, or one tap and no tempo', timeAtCoord([], 120, 4) === null && timeAtCoord(one, undefined, 4) === null);
 }
 
 // ---- tab+ score: bars for the staff view

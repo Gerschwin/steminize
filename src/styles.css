@@ -754,6 +754,12 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
 @media (max-width: 720px) { .tab-symbols { grid-template-columns: 1fr; } }
 /* user-select off for the whole view, not just while a drag is under way: a drag starts selecting the
    surrounding text (and highlighting it blue) from its very first pixel, before it's known to be one. */
+/* the click target over a bar number in Follow along (loop that bar), only visible when hovered */
+.tab-barnum { cursor: pointer; }
+.tab-barnum:hover { fill: var(--accent); fill-opacity: 0.25; }
+/* ear training: the tab's content is hidden while it plays (the cursor and the right/wrong box stay) */
+.tab-timeline.ear-hidden .tab-staff-track { visibility: hidden; }
+.tab-timeline.ear-hidden .tab-staff-view::after { content: 'Ear training: tab hidden while playing, pause to look'; position: absolute; left: 14px; top: 50%; transform: translateY(-50%); max-width: 28%; font-size: 14px; line-height: 1.4; color: #555; pointer-events: none; }
 .tab-staff-view { position: relative; overflow: hidden; touch-action: pan-y; -webkit-user-select: none; user-select: none; }
 .tab-staff-view.panning { cursor: grabbing; }
 .tab-staff-track { will-change: transform; width: max-content; }
