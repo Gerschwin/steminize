@@ -280,7 +280,13 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
 
   const CLEF = 64;
   const RHYTHM_H = 90;
-  const GAP = 6;
+  // Marks written *below* the strings (fingering, picking, a palm-mute run) need a band of their own
+  // between the tab and the rhythm row, which otherwise hangs its stems right up against the bottom line.
+  const hasAbove = notes.some((n) => n.marks?.some((m) => m.above) || n.pm?.above === true);
+  // (and room above the strings likewise, where two stacked marks would otherwise run off the top)
+  const ABOVE = hasAbove ? 22 : 0;
+  const hasBelow = notes.some((n) => n.marks?.some((m) => !m.above) || n.pm?.above === false);
+  const GAP = 6 + (hasBelow ? 18 : 0);
   // The unpitched placeholder note's own pitch/line doesn't mean anything — the notehead is invisible
   // — but VexFlow still uses it to decide the note's vertical position, so it's pinned to the stave's
   // own bottom line ('e/4': the lowest line that still needs no ledger line, which a *forced* line
@@ -309,7 +315,7 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
   // real last line by a good 50-60px, enough to read as a stray gap once something (the rhythm row)
   // is meant to sit right underneath it rather than just needing to clear it.
   const TAB_H = new TabStave(0, 0, 100).addTabGlyph().getBottomLineY() + 10;
-  const ROW = RHYTHM_H + GAP + TAB_H;
+  const ROW = RHYTHM_H + GAP + TAB_H + ABOVE;
   const widthOf = (b: TabBar) => Math.max(96, b.length * 14 + 40);
   // A reminder of this view's own keyboard shortcuts — click a note, a letter sets its length, arrows
   // move the selection — reserved as blank margin before bar 1, the same way CLEF reserves room for
@@ -346,22 +352,37 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
     introSvg.appendChild(text);
   }
 
+  // Where each palm-mute run begins, across the whole score — a run carried over a bar line is one
+  // run, so its "P.M." label is only drawn where it actually starts, not again at the next bar.
+  const pmRunStarts = new Set<number>();
+  {
+    const starts = [...new Set(notes.map((n) => n.start))].sort((a, b) => a - b);
+    let prev = false;
+    for (const st of starts) {
+      const on = notes.some((n) => n.start === st && n.pm);
+      if (on && !prev) pmRunStarts.add(st);
+      prev = on;
+    }
+  }
+
   const map: { u: number; x: number }[] = [];
   const notesOut: TabScoreLayout['notes'] = [];
   let x = INTRO;
   bars.forEach((bar, bi) => {
     const w = widthOf(bar) + (bi === 0 ? CLEF : 0);
-    const tabY = 10;
+    const tabY = 10 + ABOVE;
     const tabStave = new TabStave(x, tabY, w);
     if (bi === 0) tabStave.addTabGlyph();
     tabStave.setMeasure(bi + 1); // bars is the whole score's list, already numbered across every system
+    if (bar.repeatStart) tabStave.setBegBarType(Barline.type.REPEAT_BEGIN);
+    if (bar.repeatEnd) tabStave.setEndBarType(Barline.type.REPEAT_END);
     tabStave.setContext(ctx).draw();
     // TAB_H is already the tab stave's own absolute bottom-line y (its "+10" already covers tabY) —
     // adding tabY again here would double-count it and push the rhythm row, and the SVG's declared
     // height, 10px further down than the content actually needs. Unpitched, the stave itself is
     // shifted up by RHYTHM_KEY_OFFSET so the placeholder note (always on the same line) lands right
     // at TAB_H + GAP rather than that much further down.
-    const rhythmY = pitched ? TAB_H + GAP : TAB_H + GAP - RHYTHM_KEY_OFFSET;
+    const rhythmY = (pitched ? TAB_H + GAP : TAB_H + GAP - RHYTHM_KEY_OFFSET) + ABOVE;
     const rhythmStave = new Stave(x, rhythmY, w, pitched ? undefined : { numLines: 0 });
     if (bi === 0 && pitched) rhythmStave.addClef('treble', 'default', '8vb');
     // The rhythm row is its own Stave underneath the tab, and by default draws its own begin/end bar
@@ -410,7 +431,7 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
       // different, notational thing (an implied note shown in parens), not what's wanted here.
       const tNote = rest
         ? new GhostNote(base + (dots ? 'd' : ''))
-        : new VFTabNote({ positions: group.map((n) => ({ str: n.string + 1, fret: fretText(n.fret) })), duration: base, dots }, false);
+        : new VFTabNote({ positions: group.map((n) => ({ str: n.string + 1, fret: n.harmonic ? `<${fretText(n.fret)}>` : fretText(n.fret) })), duration: base, dots }, false);
       // `dots` has to go in the constructor: a TabNote has no key properties for Dot.buildAndAttach to
       // hang a Dot on (it silently attaches nothing — measured), so attaching afterwards left the tab
       // note at the plain, undotted length. Its tick count then ran a sixteenth (or more) short of the
@@ -423,12 +444,15 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
         // modifiers on that note, drawn above the stave with the note itself. h/p/slides join two
         // notes, so they wait until every note of the bar exists (below, after drawing).
         group.forEach((n, k) => {
-          if (n.bend) {
+          // A pre-bend isn't one of VexFlow's (its bends all start with the curve up) — drawn by hand
+          // below instead, once the note's own position is known.
+          if (n.bend && !n.bend.pre) {
             const semis = n.bend.to - (n.fret ?? 0);
             const phrase = [{ type: Bend.UP, text: bendText(semis) }];
             if (n.bend.release !== undefined) phrase.push({ type: Bend.DOWN, text: '' });
             real.addModifier(new Bend(phrase), k);
           }
+          if (n.harmonic) real.addModifier(new Annotation(n.harmonic === 'pinch' ? 'P.H.' : 'N.H.').setVerticalJustification(Annotation.VerticalJustify.TOP), k);
           if (n.vibrato) real.addModifier(new Vibrato(), k);
           if (n.tap) real.addModifier(new Annotation('T').setVerticalJustification(Annotation.VerticalJustify.TOP), k);
         });
@@ -474,6 +498,90 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
     tabVoice.draw(ctx, tabStave);
     ctx.restore();
     const newTabnotes = [...host.querySelectorAll('g.vf-tabnote')].slice(tabnotesBefore);
+    // Notation VexFlow has no modifier for, drawn straight into the SVG at each note's own measured
+    // position (the fret's eraser rectangle — the same "ask the render" geometry used for the click
+    // boxes below): pre-bends, picking / fingering marks above and below the strings, palm-mute runs.
+    const drawNotation = () => {
+      if (!introSvg) return;
+      const NS = 'http://www.w3.org/2000/svg';
+      const mk = (tag: string, attrs: Record<string, string | number>, text?: string) => {
+        const el = document.createElementNS(NS, tag);
+        for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v));
+        if (text !== undefined) el.textContent = text;
+        el.style.pointerEvents = 'none';
+        introSvg.appendChild(el);
+        return el;
+      };
+      const ink = { stroke: '#111', fill: 'none', 'stroke-width': 1 };
+      const topY = tabStave.getYForLine(0);
+      const botY = tabStave.getYForLine(tabStave.getNumLines() - 1);
+      const rectOf = (i: number, k: number) => {
+        const r = newTabnotes[i]?.querySelectorAll('rect')[k];
+        return r ? { x: Number(r.getAttribute('x')), y: Number(r.getAttribute('y')), w: Number(r.getAttribute('width')), h: Number(r.getAttribute('height')) } : null;
+      };
+      const text = (str: string, x: number, y: number, size: number, extra: Record<string, string | number> = {}) => mk('text', { x, y, 'font-size': size, 'text-anchor': 'middle', fill: '#111', 'font-family': 'Academico, sans-serif', ...extra }, str);
+      realTabs.forEach((rt, i) => {
+        const r0 = rectOf(i, 0);
+        if (!r0) return;
+        const cx = r0.x + r0.w / 2;
+        rt.group.forEach((n, k) => {
+          // pre-bend: a straight arrow up from the fret (the string already bent before it's picked), the
+          // curve down after it if it's released again
+          if (n.bend?.pre) {
+            const r = rectOf(i, k);
+            if (!r) return;
+            const x0 = r.x + r.w + 2;
+            const y0 = r.y + r.h / 2;
+            const top = y0 - 20;
+            mk('path', { d: `M${x0} ${y0} L${x0} ${top + 2}`, ...ink });
+            mk('polygon', { points: `${x0},${top} ${x0 - 3.5},${top + 7} ${x0 + 3.5},${top + 7}`, fill: '#111' });
+            text(bendText(n.bend.to - (n.fret ?? 0)), x0, top - 3, 10);
+            if (n.bend.release !== undefined) {
+              mk('path', { d: `M${x0} ${top} Q${x0 + 14} ${top} ${x0 + 14} ${y0 - 7}`, ...ink });
+              mk('polygon', { points: `${x0 + 14},${y0 - 1} ${x0 + 10.5},${y0 - 8} ${x0 + 17.5},${y0 - 8}`, fill: '#111' });
+            }
+          }
+        });
+        // Picking and fingering marks: stacked outwards from the strings when a note has more than one
+        // on the same side (the line nearest the strings sits closest to them).
+        for (const above of [true, false]) {
+          const side = rt.group.flatMap((n) => n.marks ?? []).filter((m) => m.above === above);
+          side.forEach((m, idx) => {
+            const steps = above ? side.length - 1 - idx : idx;
+            const y = above ? topY - 50 - steps * 15 : botY + 17 + steps * 15;
+            if (m.kind === 'pick') text(m.text === 'D' ? '\ue610' : '\ue612', cx, y, 28, { 'font-family': 'Bravura, sans-serif' });
+            else text(m.kind === 'rh' ? `[${m.text}]` : m.text, cx, y, 12);
+          });
+        }
+      });
+      // palm-mute runs, per side: "P.M." then a dashed line to the last muted note, ticked at the end
+      for (const above of [true, false]) {
+        let i = 0;
+        while (i < realTabs.length) {
+          const on = (j: number) => realTabs[j].group.some((n) => n.pm && n.pm.above === above);
+          if (!on(i)) {
+            i++;
+            continue;
+          }
+          let j = i;
+          while (j + 1 < realTabs.length && on(j + 1)) j++;
+          const a = rectOf(i, 0);
+          const b = rectOf(j, 0);
+          if (a && b) {
+            const lineY = above ? topY - 32 : botY + 26;
+            const x0 = a.x + a.w / 2 - 6;
+            const x1 = b.x + b.w + 6;
+            const begins = pmRunStarts.has(realTabs[i].group[0].start);
+            if (begins) text('P.M.', x0 + 13, lineY - 3, 10);
+            const from = begins ? x0 + 28 : x0;
+            if (x1 > from) {
+              mk('path', { d: `M${from} ${lineY} L${x1} ${lineY} M${x1} ${lineY} L${x1} ${lineY + (above ? 5 : -5)}`, ...ink, 'stroke-dasharray': '3 3' });
+            }
+          }
+          i = j + 1;
+        }
+      }
+    };
     // Hammer-ons, pull-offs and slides: each joins a note to the previous note on the same string in
     // this bar. A join across a bar line isn't drawn (each bar is its own stave here).
     realTabs.forEach((cur, i) => {
@@ -493,6 +601,7 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
         }
       });
     });
+    drawNotation();
     const stavenotesBefore = host.querySelectorAll('g.vf-stavenote').length;
     // VexFlow places a stem-down note's own stem at its glyph's left edge, not its centre (the usual
     // convention: a stem attaches to one side of a real notehead, not through its middle), and every

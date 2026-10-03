@@ -151,8 +151,11 @@ export interface RhythmEvent {
 const RHYTHM_UNITS: Record<string, number> = { w: 16, h: 8, q: 4, e: 2, s: 1, t: 0.5 };
 export const isRhythmRow = (line: string) => /^[ whqestWHQEST.]*$/.test(line) && /[whqestWHQEST]/.test(line);
 
+/** A "4/4"-style time signature on a line of its own (see tabBlocks). */
+export const isTimeSigRow = (line: string) => /^\s*\d+\s*\/\s*\d+\s*$/.test(line);
+
 /** A line of picking (D U), fingering (1-4, [1]-[4]) or palm-mute (PM---) marks above or below a block's strings. */
-const isAnnotationRow = (line: string) => /^[ DU1234[\]PM-]*$/.test(line) && /[DU1-4]|PM/.test(line);
+export const isAnnotationRow = (line: string) => /^[ DU1234[\]PM-]*$/.test(line) && /[DU1-4]|PM/.test(line);
 
 const isDigit = (c: string | undefined) => c !== undefined && c >= '0' && c <= '9';
 
@@ -222,7 +225,7 @@ export function tabBlocks(text: string): TabBlock[] {
     // parseScore) — an easier way to get a decent timing estimate than writing out a full rhythm line.
     // Matched only as the block's *entire* first line, so it can't collide with "7/9" (a slide) inside
     // an actual string row, which is never a whole line on its own.
-    const sigMatch = allRows.length > 1 ? allRows[0].trim().match(/^(\d+)\s*\/\s*(\d+)$/) : null;
+    const sigMatch = allRows.length > 1 && isTimeSigRow(allRows[0]) ? allRows[0].trim().match(/^(\d+)\s*\/\s*(\d+)$/) : null;
     const timeSig = sigMatch ? (Number(sigMatch[1]) * 16) / Number(sigMatch[2]) : undefined;
     if (sigMatch) {
       allRows = allRows.slice(1);

@@ -746,6 +746,12 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
    ever constrains it smaller than that. */
 .scratch-area.tab-strip, .scratch-area.tab-staff { overflow-x: hidden; overflow-y: auto; min-height: 0; padding: 2px 12px; color: var(--text); }
 .scratch-area.tab-strip[hidden], .scratch-area.tab-staff[hidden] { display: none; }
+.tab-symbols { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; margin: 0 0 8px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-2); font-size: 12px; line-height: 1.5; color: var(--muted); }
+.tab-symbols[hidden] { display: none; }
+.tab-symbols b { color: var(--text); font-weight: 600; }
+.tab-symbols p { margin: 2px 0 6px; }
+.tab-symbols code { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--text); background: var(--panel); padding: 0 3px; border-radius: 3px; }
+@media (max-width: 720px) { .tab-symbols { grid-template-columns: 1fr; } }
 /* user-select off for the whole view, not just while a drag is under way: a drag starts selecting the
    surrounding text (and highlighting it blue) from its very first pixel, before it's known to be one. */
 .tab-staff-view { position: relative; overflow: hidden; touch-action: pan-y; -webkit-user-select: none; user-select: none; }

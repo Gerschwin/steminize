@@ -19,7 +19,9 @@ import {
   coordAtBpm,
   findNoteAt,
   isLockedAt,
+  isAnnotationRow,
   isRhythmRow,
+  isTimeSigRow,
   MIN_ANCHORS,
   moveAnchor,
   noteCols,
@@ -263,18 +265,24 @@ function fixLinePrefix(line: string, templateLine: string) {
 function extendTabText(text: string, template: string, addChars = 16) {
   if (!text.trim()) return template;
   const templateLines = template.split('\n');
-  const lines = text.split('\n');
+  const all = text.split('\n');
+  // Lines before the strings that aren't strings — a "4/4" time signature, picking/fingering marks —
+  // are set aside and put back untouched: everything below assumes the first lines are the strings.
+  let lead = 0;
+  while (lead < all.length && all[lead].trim() && (isTimeSigRow(all[lead]) || isAnnotationRow(all[lead]))) lead++;
+  const head = all.slice(0, lead);
+  const lines = all.slice(lead);
   while (lines.length < templateLines.length) lines.push('');
   for (let i = 0; i < templateLines.length; i++) lines[i] = lines[i].trim() ? fixLinePrefix(lines[i], templateLines[i]) : templateLines[i];
   const maxLen = Math.max(...lines.slice(0, templateLines.length).map((l) => l.length));
   const pad = (line: string, len: number, ch: string) => (line.endsWith('|') ? `${line.slice(0, -1)}${ch.repeat(len)}|` : line + ch.repeat(len));
-  return lines
-    .map((line, i) => {
-      if (i >= templateLines.length) return line.trim() && !isRhythmRow(line) ? pad(line, addChars, '-') : line; // (a rhythm line has no dashes to extend)
-      if (line.length < maxLen) line = pad(line, maxLen - line.length, '-');
-      return pad(line, addChars, '-');
-    })
-    .join('\n');
+  const extended = lines.map((line, i) => {
+    // (a rhythm line has no dashes to extend; nor does a line of marks — dashes there would stretch a palm-mute run)
+    if (i >= templateLines.length) return line.trim() && !isRhythmRow(line) && !isAnnotationRow(line) ? pad(line, addChars, '-') : line;
+    if (line.length < maxLen) line = pad(line, maxLen - line.length, '-');
+    return pad(line, addChars, '-');
+  });
+  return [...head, ...extended].join('\n');
 }
 
 function waveLayer(peaks: Float32Array, w: number, hgt: number, colour: string, scale: number) {
@@ -408,6 +416,7 @@ export class Deck {
   private tabPan = 0;
   private tabPanAt = 0;
   private tabPanMoved = false;
+  private tabSymbolsOpen = false;
   private staffLayout: StaffLayout | null = null;
   private staffText: string | null = null;
   private staffToken = 0;
@@ -1884,6 +1893,10 @@ export class Deck {
       this.updateTabView();
       this.emit();
     };
+    $('tabSymbolsBtn').onclick = () => {
+      this.tabSymbolsOpen = !this.tabSymbolsOpen;
+      this.updateTabView();
+    };
     $('tabStaffBtn').onclick = () => {
       this.scratch.tabStaff = !this.scratch.tabStaff;
       this.updateTabView();
@@ -2088,6 +2101,9 @@ export class Deck {
     $('tabStrip').hidden = !strip;
     if (strip) void this.renderTabStrip();
     const staff = onTab && !!this.scratch.tabStaff;
+    $('tabSymbolsBtn').hidden = !onTab;
+    $('tabSymbols').hidden = !onTab || !this.tabSymbolsOpen;
+    pressed($('tabSymbolsBtn'), this.tabSymbolsOpen);
     $('tabStaffBtn').hidden = !onTab;
     pressed($('tabStaffBtn'), !!this.scratch.tabStaff);
     $('tabStaff').hidden = !staff;
