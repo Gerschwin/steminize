@@ -524,7 +524,27 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
         const r = newTabnotes[i]?.querySelectorAll('rect')[k];
         return r ? { x: Number(r.getAttribute('x')), y: Number(r.getAttribute('y')), w: Number(r.getAttribute('width')), h: Number(r.getAttribute('height')) } : null;
       };
-      const text = (str: string, x: number, y: number, size: number, extra: Record<string, string | number> = {}) => mk('text', { x, y, 'font-size': size, 'text-anchor': 'middle', fill: '#111', 'font-family': 'Academico, sans-serif', ...extra }, str);
+      // The same size and font stack VexFlow draws its own labels in (10pt Bravura→Academico), and
+      // stroke:none like VexFlow's own text — appended straight under the <svg>, these otherwise
+      // inherit the stroke colour set for the drawing and come out outlined: bold and cramped next to
+      // a bend's own "Full". Numbers are px (the pick glyphs).
+      const text = (str: string, x: number, y: number, size: number | string, extra: Record<string, string | number> = {}) => mk('text', { x, y, 'font-size': typeof size === 'number' ? `${size}px` : size, 'text-anchor': 'middle', fill: '#111', stroke: 'none', 'font-family': 'Bravura, Academico, sans-serif', ...extra }, str);
+      // VexFlow centres a harmonic/tap label about half a fret-width (less 2px) right of the fret's
+      // centre (measured: more the wider the fret — `<12>` is off by a lot, a single digit by a
+      // little). Pulled back by exactly that, per label, onto the fret it belongs to: they
+      // are drawn inside the note's own group, in the order they were added (harmonic, then tap, per
+      // position).
+      realTabs.forEach((rt, i) => {
+        const labelled: number[] = [];
+        rt.group.forEach((n, k) => {
+          if (n.harmonic) labelled.push(k);
+          if (n.tap) labelled.push(k);
+        });
+        newTabnotes[i]?.querySelectorAll<SVGTextElement>('.vf-annotation text').forEach((t, j) => {
+          const r = rectOf(i, labelled[j] ?? 0);
+          if (r) t.setAttribute('x', String(Number(t.getAttribute('x')) - (r.w / 2 - 2)));
+        });
+      });
       realTabs.forEach((rt, i) => {
         const r0 = rectOf(i, 0);
         if (!r0) return;
@@ -540,7 +560,7 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
             const top = y0 - 20;
             mk('path', { d: `M${x0} ${y0} L${x0} ${top + 2}`, ...ink });
             mk('polygon', { points: `${x0},${top} ${x0 - 3.5},${top + 7} ${x0 + 3.5},${top + 7}`, fill: '#111' });
-            text(bendText(n.bend.to - (n.fret ?? 0)), x0, top - 3, 9);
+            text(bendText(n.bend.to - (n.fret ?? 0)), x0, top - 3, '10pt');
             if (n.bend.release !== undefined) {
               mk('path', { d: `M${x0} ${top} Q${x0 + 14} ${top} ${x0 + 14} ${y0 - 7}`, ...ink });
               mk('polygon', { points: `${x0 + 14},${y0 - 1} ${x0 + 10.5},${y0 - 8} ${x0 + 17.5},${y0 - 8}`, fill: '#111' });
@@ -555,7 +575,7 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
             const steps = above ? side.length - 1 - idx : idx;
             const y = above ? topY - 50 - steps * 15 : botY + 17 + steps * 15;
             if (m.kind === 'pick') text(m.text === 'D' ? '\ue610' : '\ue612', cx, y, 28, { 'font-family': 'Bravura, sans-serif' });
-            else text(m.kind === 'rh' ? `[${m.text}]` : m.text, cx, y, 12);
+            else text(m.kind === 'rh' ? `[${m.text}]` : m.text, cx, y, '10pt');
           });
         }
       });
@@ -580,8 +600,8 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
             const x0 = a.x + a.w / 2 - 6;
             const x1 = b.x + b.w + 6;
             const begins = pmRunStarts.has(realTabs[i].group[0].start);
-            if (begins) text('P.M.', x0 + 13, labelY, 10);
-            const from = begins ? x0 + 28 : x0;
+            if (begins) text('P.M.', x0 + 14, labelY, '10pt');
+            const from = begins ? x0 + 32 : x0;
             if (x1 > from) {
               mk('path', { d: `M${from} ${lineY} L${x1} ${lineY} M${x1} ${lineY} L${x1} ${lineY + (above ? 5 : -5)}`, ...ink, 'stroke-dasharray': '3 3' });
             }
