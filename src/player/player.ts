@@ -278,19 +278,6 @@ export class Player {
   }
 
   // ---------- live input monitoring ----------
-  /** The audio context's sample rate (Hz), once audio has started. */
-  get rate(): number | null {
-    return this.ctx?.sampleRate ?? null;
-  }
-
-  /** What the audio system itself reports for its buffers (ms): output side plus the context's processing block. Not the full round trip, and null if nothing is reported. */
-  reportedLatencyMs(): number | null {
-    const c = this.ctx;
-    if (!c) return null;
-    const total = (c.baseLatency || 0) + ((c as AudioContext & { outputLatency?: number }).outputLatency || 0);
-    return total > 0 ? Math.round(total * 1000) : null;
-  }
-
   get monitoring() {
     return !!this.monitorStream;
   }
@@ -324,7 +311,7 @@ export class Player {
     analyser.fftSize = 4096;
     const input = ctx.createGain();
     input.connect(g).connect(panner).connect(ctx.destination);
-    g.connect(analyser);
+    input.connect(analyser); // the meter, tuner and trainer listen to the input itself, not the monitor level
     this.monitorStream = stream;
     this.monitorSource = source;
     this.monitorInput = input;
@@ -406,12 +393,12 @@ export class Player {
     return this.recorder?.state === 'recording';
   }
 
-  /** Starts recording your own take (post gain/pan) while monitoring; call startMonitor() first. */
+  /** Starts recording your own take while monitoring; call startMonitor() first. It records the input itself, before the monitor level and pan, so it works with the level at 0 (hearing yourself through the interface instead). */
   startRecording() {
-    if (!this.ctx || !this.monitorPanner) throw new Error('Start monitoring first.');
+    if (!this.ctx || !this.monitorInput) throw new Error('Start monitoring first.');
     if (this.recording) return;
     const dest = this.ctx.createMediaStreamDestination();
-    this.monitorPanner.connect(dest);
+    this.monitorInput.connect(dest);
     const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'].find((t) => MediaRecorder.isTypeSupported?.(t));
     const rec = new MediaRecorder(dest.stream, mimeType ? { mimeType } : undefined);
     this.recordedChunks = [];
@@ -430,7 +417,7 @@ export class Player {
     if (!rec || rec.state === 'inactive') return Promise.resolve(null);
     return new Promise((resolve) => {
       rec.onstop = () => {
-        this.monitorPanner?.disconnect(dest!);
+        this.monitorInput?.disconnect(dest!);
         const mimeType = rec.mimeType || 'audio/webm';
         resolve(this.recordedChunks.length ? { blob: new Blob(this.recordedChunks, { type: mimeType }), mimeType } : null);
         this.recordedChunks = [];
