@@ -560,6 +560,9 @@ canvas, img, svg { -webkit-user-drag: none; user-drag: none; }
 .lane.recording .wave { outline: 2px solid var(--c); outline-offset: -2px; }
 .take-strip { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 4px; }
 .take-row { display: flex; align-items: center; gap: 4px; }
+.take-block { display: flex; flex-direction: column; gap: 4px; }
+.take-nudge { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.take-nudge-ms { margin: 0 4px; }
 .take-chip {
   flex: 1; text-align: left; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line);
   background: var(--panel); color: var(--muted); font-size: 12px; cursor: pointer;

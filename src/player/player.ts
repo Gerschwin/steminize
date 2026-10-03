@@ -1,6 +1,7 @@
 import workletUrl from './worklet.ts?worker&url';
 import probeUrl from './inputProbe.ts?worker&url';
 import { detectLatency, type LatencyResult } from './latency.ts';
+import { loadLowLatencyAudio } from '../settings.ts';
 import type { PlayerMsg, PlayerReport } from './worklet.ts';
 import type { Practice } from './transport.ts';
 import type { Stereo } from './mixcore.ts';
@@ -65,7 +66,7 @@ export class Player {
   private init() {
     if (this.ready) return this.ready;
     this.ready = (async () => {
-      const ctx = new AudioContext({ sampleRate: 44100, latencyHint: 'playback' });
+      const ctx = new AudioContext({ sampleRate: 44100, latencyHint: loadLowLatencyAudio() ? 'interactive' : 'playback' });
       await ctx.audioWorklet.addModule(workletUrl);
       const node = new AudioWorkletNode(ctx, 'stem-player', { numberOfInputs: 0, outputChannelCount: [2] });
       const master = ctx.createGain();

@@ -27,7 +27,7 @@ import { splitLength, staffX, vexKey } from '../src/ui/staff.ts';
 import { acceptedMidis, timeAtCoord, fromUnrolled, repeatPlan, toUnrolled, addAnchor, charOffsetAt, coordAtBpm, coordToPlace, coordToStripX, findNoteAt, noteCols, noteGroupAt, parseScore, parseTab, setRhythmLetter, stripLayout, isLockedAt, moveAnchor, offsetToCoord, removeAnchor, rowCol, tabBlocks, tabPositionAt, toggleAnchorLock, type TabAnchor, type TabNote } from '../src/lyrics/tabSync.ts';
 import { moveItem, nextSong, parseSetlists, prevSong, pruneSongs, totalSeconds, uniqueName, type Setlist } from '../src/setlists.ts';
 import { detectLatency } from '../src/player/latency.ts';
-import { placeTake } from '../src/player/placement.ts';
+import { placeTake, shiftTake } from '../src/player/placement.ts';
 
 let failed = 0;
 const ok = (name: string, cond: boolean, detail = '') => {
@@ -541,6 +541,11 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('placement: punch-out is in song time, after the latency shift', v.dstStart === 1700 && v.count === 1800);
   ok('placement: nothing to copy when the punch end is already past', placeTake(100, 2000, 0, 10000, 1000).count === 0);
   ok('placement: negative latency is ignored', placeTake(100, 500, -50, 10000).dstStart === 500);
+  const src = [Float32Array.from([1, 2, 3, 4, 5]), Float32Array.from([6, 7, 8, 9, 10])];
+  ok('shiftTake: later pads the start and keeps the length', shiftTake(src, 2)[0].join() === '0,0,1,2,3' && shiftTake(src, 2)[1].join() === '0,0,6,7,8');
+  ok('shiftTake: earlier drops the start and pads the end', shiftTake(src, -2)[0].join() === '3,4,5,0,0');
+  ok('shiftTake: zero is a copy, not the same array', shiftTake(src, 0)[0].join() === '1,2,3,4,5' && shiftTake(src, 0)[0] !== src[0]);
+  ok('shiftTake: a shift longer than the take gives silence', shiftTake(src, 9)[0].join() === '0,0,0,0,0' && shiftTake(src, -9)[0].join() === '0,0,0,0,0');
 }
 
 

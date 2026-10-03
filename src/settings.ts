@@ -78,3 +78,22 @@ export function saveRecLatencyMs(ms: number) {
     /* ignore */
   }
 }
+
+/** Ask the browser for its smallest audio buffers (lower delay when playing live, at more risk of glitches). Read when the audio starts, so it applies from the next launch. */
+const LOW_LATENCY_KEY = 'steminize.lowLatencyAudio';
+
+export function loadLowLatencyAudio(): boolean {
+  try {
+    return localStorage.getItem(LOW_LATENCY_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function saveLowLatencyAudio(on: boolean) {
+  try {
+    localStorage.setItem(LOW_LATENCY_KEY, on ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+}

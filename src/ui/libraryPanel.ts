@@ -100,6 +100,14 @@ export function initLibrary(deck: Deck) {
     g.activeTake = take.id;
     await writeMeta(meta);
   };
+  deck.onTakeReplaced = async (libId, groupId, take) => {
+    const meta = libId && metas.get(libId);
+    if (!meta) return;
+    const tm = await addTake(meta, groupId, take); // same id, so the file is overwritten
+    const g = takeGroup(meta, groupId);
+    g.takes = g.takes.map((t) => (t.id === take.id ? tm : t));
+    await writeMeta(meta);
+  };
   deck.onTakeSelected = (groupId, takeId) => {
     const id = deck.current?.libId;
     const meta = id && metas.get(id);

@@ -23,3 +23,14 @@ export function placeTake(takeLen: number, startPos: number, latencyFrames: numb
   if (punchEnd != null) count = Math.min(count, punchEnd - dstStart);
   return { srcStart, dstStart, count: Math.max(0, count) };
 }
+
+/** A copy of a take moved by `frames` (positive = later, negative = earlier), same length, silence filling the gap. */
+export function shiftTake(data: Float32Array[], frames: number): Float32Array[] {
+  return data.map((ch) => {
+    const out = new Float32Array(ch.length);
+    const n = Math.round(frames);
+    if (n >= 0) out.set(ch.subarray(0, Math.max(0, ch.length - n)), Math.min(n, ch.length));
+    else out.set(ch.subarray(Math.min(-n, ch.length)));
+    return out;
+  });
+}

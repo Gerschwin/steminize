@@ -9,8 +9,8 @@ import { gateStep, type Trainer } from '../player/transport.ts';
 import { extensionFor, mimeFor } from '../encode/meta.ts';
 import { stemColour, MODELS } from '../models.ts';
 import { openSink, safeName, saveFile } from '../platform.ts';
-import { MAX_REC_LATENCY_MS, loadRecLatencyMs, saveRecLatencyMs, type Settings } from '../settings.ts';
-import { placeTake } from '../player/placement.ts';
+import { MAX_REC_LATENCY_MS, loadLowLatencyAudio, loadRecLatencyMs, saveLowLatencyAudio, saveRecLatencyMs, type Settings } from '../settings.ts';
+import { placeTake, shiftTake } from '../player/placement.ts';
 import { lineAt, parseLrc, type Lrc } from '../lyrics/lrc.ts';
 import {
   acceptedMidis,
@@ -196,6 +196,8 @@ interface Take {
   data: Stereo;
   peaks: Float32Array;
   note?: string; // freeform, e.g. "rushed the bridge" — a reminder for telling takes apart later
+  /** Net shift applied by Line up since the last "Use as latency" (ms, negative = earlier). Not saved. */
+  nudgeMs?: number;
 }
 
 type LanePatch = Partial<Pick<Lane, 'vol' | 'pan' | 'mute' | 'solo' | 'eq'>>;
@@ -365,6 +367,8 @@ export class Deck {
   onTakeSelected: (groupId: string, takeId: string) => void = () => {};
   /** A take was discarded; remove it from the library, if this song is kept there. */
   onTakeRemoved: (groupId: string, takeId: string) => Promise<void> = () => Promise.resolve();
+  /** A take's audio was moved by Line up; re-save it under the same id (`libId` is the song it belonged to). */
+  onTakeReplaced: (libId: string | undefined, groupId: string, take: { id: string; data: Stereo; note?: string }) => Promise<void> = () => Promise.resolve();
   /** A take's note was edited; metadata only, no audio to re-save. */
   onTakeNoteChanged: (groupId: string, takeId: string, note: string) => void = () => {};
   /** Ranks keys for the song, or for a range of frames. */
@@ -454,6 +458,9 @@ export class Deck {
   // ---- a live recording being drawn in as its own track while it's captured ----
   private recordLane: Lane | null = null;
   private recordStartPos = 0;
+  private nudgeSaveTimers = new Map<Take, number>();
+  /** Sets the latency box and the saved value; wired up by the Live input panel. */
+  private setRecLatency: (ms: number) => void = (ms) => saveRecLatencyMs(ms);
   /** Song frame a punch-in take must stop at (the end of the loop), or null for an ordinary take. */
   private recordPunchEnd: number | null = null;
   private recordDrawTimer = 0;
@@ -948,7 +955,9 @@ export class Deck {
     lane.takesEl.replaceChildren(
       ...takes.map((t) => {
         const active = t.id === lane.activeTakeId;
-        if (active) return h('div', { class: 'take-row active' }, h('span', { class: 'take-chip current' }, t.id), this.takeNoteEditor(lane, t));
+        if (active) {
+          return h('div', { class: 'take-block' }, h('div', { class: 'take-row active' }, h('span', { class: 'take-chip current' }, t.id), this.takeNoteEditor(lane, t)), this.takeNudger(lane, t));
+        }
         const switchBtn = h('button', { class: 'take-chip', type: 'button', title: `Switch to ${t.id}` }, t.id);
         switchBtn.onclick = () => {
           this.selectTake(lane, t);
@@ -961,6 +970,56 @@ export class Deck {
         };
         return h('div', { class: 'take-row' }, switchBtn, this.takeNoteEditor(lane, t), del);
       }),
+    );
+  }
+
+  /** "Line up": for headphone players who can't Measure. Slide the take earlier/later against the click or song until it feels right, then keep that as the latency for every future take. */
+  private takeNudger(lane: Lane, t: Take): HTMLElement {
+    const net = Math.round(t.nudgeMs ?? 0);
+    const step = (label: string, ms: number) => {
+      const b = h('button', { class: 'btn tiny ghost', type: 'button', title: `Move this take ${ms < 0 ? 'earlier' : 'later'} by ${Math.abs(ms)} ms` }, label);
+      b.onclick = () => this.nudgeTake(lane, t, ms);
+      return b;
+    };
+    const use = h('button', { class: 'btn tiny', type: 'button', disabled: net === 0, title: 'Use this shift as your latency, so every take you record from now on lands where this one now sits' }, 'Use as latency');
+    use.onclick = () => {
+      const next = Math.max(0, Math.min(MAX_REC_LATENCY_MS, loadRecLatencyMs() - net));
+      this.setRecLatency(next);
+      t.nudgeMs = 0;
+      this.renderTakeStrip(lane);
+      toast(`Latency is now ${next} ms`);
+    };
+    const readout = h('span', { class: 'muted small take-nudge-ms' }, net === 0 ? 'in place' : `${net < 0 ? 'earlier' : 'later'} by ${Math.abs(net)} ms`);
+    return h(
+      'div',
+      { class: 'take-nudge', title: 'Played with headphones and no loopback cable? Record against the click, then slide the take until it sits on the beat (zoom in on its waveform to see), then press Use as latency.' },
+      h('span', { class: 'muted small' }, 'Line up'),
+      step('« 10', -10),
+      step('‹ 1', -1),
+      step('1 ›', 1),
+      step('10 »', 10),
+      readout,
+      use,
+    );
+  }
+
+  /** Moves a take's audio by `ms`, updates what is heard and drawn, and saves it again shortly after the last nudge. */
+  private nudgeTake(lane: Lane, t: Take, ms: number) {
+    t.data = shiftTake(t.data, Math.round((ms / 1000) * SR)) as Stereo;
+    t.peaks = peaksOf(t.data);
+    t.nudgeMs = (t.nudgeMs ?? 0) + ms;
+    this.selectTake(lane, t);
+    this.refreshTunerSources();
+    const libId = this.current?.libId;
+    const groupId = lane.groupId;
+    if (!groupId) return;
+    clearTimeout(this.nudgeSaveTimers.get(t));
+    this.nudgeSaveTimers.set(
+      t,
+      window.setTimeout(() => {
+        this.nudgeSaveTimers.delete(t);
+        void this.onTakeReplaced(libId, groupId, { id: t.id, data: t.data, note: t.note }).catch((e) => toast(`Couldn't save the moved take: ${(e as Error).message}`, true));
+      }, 800),
     );
   }
 
@@ -1348,6 +1407,7 @@ export class Deck {
       latencyInput.value = String(v);
       saveRecLatencyMs(v);
     };
+    this.setRecLatency = applyLatency;
     latencyInput.value = String(loadRecLatencyMs());
     latencyInput.onchange = () => applyLatency(Number(latencyInput.value));
     latencyBtn.onclick = async () => {
@@ -1369,6 +1429,13 @@ export class Deck {
         latencyBtn.disabled = false;
         recordBtn.disabled = false;
       }
+    };
+
+    const lowLat = $<HTMLInputElement>('liveLowLat');
+    lowLat.checked = loadLowLatencyAudio();
+    lowLat.onchange = () => {
+      saveLowLatencyAudio(lowLat.checked);
+      status.textContent = lowLat.checked ? 'Low-latency audio will be used the next time you open Steminize.' : 'Standard audio buffers will be used the next time you open Steminize.';
     };
 
     const maxTakesInput = $<HTMLInputElement>('liveMaxTakes');
@@ -1433,6 +1500,7 @@ export class Deck {
       latencyWrap.hidden = !on;
       punchWrap.hidden = !on;
       latencyBtn.hidden = !on;
+      $('liveLowLatWrap').hidden = !on;
       if (on) refreshRecordTargets();
       else recordTarget.hidden = true;
       if (on) {
