@@ -4,12 +4,12 @@ import licenceSteminize from '../../LICENSE?raw';
 import licenceBasicPitch from '../analysis/models/BASIC-PITCH-LICENSE?raw';
 import noticeBasicPitch from '../analysis/models/BASIC-PITCH-NOTICE?raw';
 import { isTauri } from '../platform.ts';
-import { isNewer } from '../version.ts';
+import { pickUpdate, type ReleaseInfo } from '../version.ts';
 import { collectDiagnostics } from './diagnostics.ts';
 import { $, openDialog, toast } from './dom.ts';
 
 const RELEASES_URL = 'https://github.com/Gerschwin/steminize/releases';
-const LATEST_API = 'https://api.github.com/repos/Gerschwin/steminize/releases/latest';
+const RELEASES_API = 'https://api.github.com/repos/Gerschwin/steminize/releases?per_page=30';
 
 /** Asks GitHub for the newest published release, only when the user presses the button. */
 async function checkForUpdates() {
@@ -20,18 +20,21 @@ async function checkForUpdates() {
   link.hidden = true;
   status.textContent = 'Checking…';
   try {
-    const res = await fetch(LATEST_API, { headers: { Accept: 'application/vnd.github+json' } });
+    const res = await fetch(RELEASES_API, { headers: { Accept: 'application/vnd.github+json' } });
     if (res.status === 404) status.textContent = 'No published release found yet.';
     else if (res.status === 403 || res.status === 429) status.textContent = 'GitHub is limiting requests right now. Try again in a while.';
     else if (!res.ok) status.textContent = `GitHub answered ${res.status}. Try again later.`;
     else {
-      const rel = (await res.json()) as { tag_name?: string; html_url?: string };
-      const tag = String(rel.tag_name ?? '');
-      if (isNewer(tag, __APP_VERSION__)) {
-        status.textContent = `${tag} is available (you have v${__APP_VERSION__}).`;
+      const releases = (await res.json()) as ReleaseInfo[];
+      const rel = pickUpdate(releases, __APP_VERSION__);
+      if (rel) {
+        const tag = String(rel.tag_name ?? '');
+        status.textContent = `${tag}${rel.prerelease ? ' (pre-release)' : ''} is available (you have v${__APP_VERSION__}).`;
         // Only ever link to this project's own releases, whatever the response says.
         link.href = rel.html_url?.startsWith(`${RELEASES_URL}/`) ? rel.html_url : RELEASES_URL;
         link.hidden = false;
+      } else if (!releases.some((r) => !r.draft)) {
+        status.textContent = 'No published release found yet.';
       } else {
         status.textContent = `You're up to date (v${__APP_VERSION__}).`;
       }

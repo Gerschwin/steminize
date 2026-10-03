@@ -1,5 +1,6 @@
 # Builds desktop installers for Windows, macOS and Linux when you push a tag
-# like v1.0.1, and attaches them to a draft GitHub Release.
+# like v1.0.1, and attaches them to a draft GitHub Release. Tags starting v0. (the pre-1.0 betas) are
+# flagged as pre-releases; v1.0.0 and later are normal releases.
 name: Desktop builds
 on:
   push:
@@ -33,4 +34,5 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: Steminize ${{ github.ref_name }}
           releaseDraft: true
+          prerelease: ${{ startsWith(github.ref_name, 'v0.') }}
           args: ${{ matrix.args }}

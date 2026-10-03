@@ -69,9 +69,11 @@ On a phone, open that address and choose **Add to Home Screen** (iOS Safari) or 
 Push a version tag:
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag v0.9.0
+git push origin v0.9.0
 ```
+
+**Versioning:** until the features are complete the app is in pre-release, numbered 0.x (v0.9.0, v0.9.1, …). A tag starting `v0.` is flagged as a **pre-release** on GitHub. v1.0.0 will be the first public release; from then on tags are normal releases. (The app's *Check for updates* offers newer 0.x pre-releases to 0.x installs, and only full releases once it is 1.0 or later.)
 
 The *Desktop builds* workflow builds Windows (`.msi` and `.exe`), macOS (`.dmg`, Intel and Apple Silicon) and Linux (`.deb`, `.rpm`, `.AppImage`) installers. It attaches them to a **draft** release under **Releases**; check it, then click **Publish**.
 

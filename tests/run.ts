@@ -21,7 +21,7 @@ import { BP_PITCHES, BP_WINDOW, bpNotes, bpUnwrap, bpWindows, singleLine } from 
 import { decimate2 } from '../src/analysis/resample.ts';
 import { writeMidi } from '../src/encode/midi.ts';
 import { centsFrom, detectPitch, freqToNote } from '../src/analysis/pitch.ts';
-import { isNewer, parseVersion } from '../src/version.ts';
+import { isNewer, parseVersion, pickUpdate } from '../src/version.ts';
 import { lineAt, parseLrc } from '../src/lyrics/lrc.ts';
 import { splitLength, staffX, vexKey } from '../src/ui/staff.ts';
 import { acceptedMidis, timeAtCoord, fromUnrolled, repeatPlan, toUnrolled, addAnchor, charOffsetAt, coordAtBpm, coordToPlace, coordToStripX, findNoteAt, noteCols, noteGroupAt, parseScore, parseTab, setRhythmLetter, stripLayout, isLockedAt, moveAnchor, offsetToCoord, removeAnchor, rowCol, tabBlocks, tabPositionAt, toggleAnchorLock, type TabAnchor, type TabNote } from '../src/lyrics/tabSync.ts';
@@ -490,6 +490,14 @@ ok('version: newer minor wins over larger patch', isNewer('v1.13.0', '1.12.9'));
 ok('version: same is not newer', !isNewer('v1.12.1', '1.12.1'));
 ok('version: older is not newer', !isNewer('v1.11.0', '1.12.1'));
 ok('version: numeric, not lexical (1.10 > 1.9)', isNewer('1.10.0', '1.9.9'));
+const rel = (tag: string, o: { prerelease?: boolean; draft?: boolean } = {}) => ({ tag_name: tag, html_url: `https://github.com/Gerschwin/steminize/releases/tag/${tag}`, ...o });
+ok('update: a 0.x install is offered a newer 0.x pre-release', pickUpdate([rel('v0.9.1', { prerelease: true })], '0.9.0')?.tag_name === 'v0.9.1');
+ok('update: ...and a full release', pickUpdate([rel('v1.0.0')], '0.9.0')?.tag_name === 'v1.0.0');
+ok("update: ...but not the old v1.x pre-release left from before renumbering", pickUpdate([rel('v1.9.0', { prerelease: true })], '0.9.0') === null);
+ok('update: drafts are never offered', pickUpdate([rel('v0.9.1', { draft: true })], '0.9.0') === null);
+ok('update: a 1.x install is not offered pre-releases', pickUpdate([rel('v1.1.0', { prerelease: true })], '1.0.0') === null && pickUpdate([rel('v1.1.0')], '1.0.0')?.tag_name === 'v1.1.0');
+ok('update: the highest eligible version wins whatever the list order', pickUpdate([rel('v0.9.1', { prerelease: true }), rel('v0.9.3', { prerelease: true }), rel('v0.9.2', { prerelease: true })], '0.9.0')?.tag_name === 'v0.9.3');
+ok('update: nothing newer, nothing offered', pickUpdate([rel('v0.9.0', { prerelease: true })], '0.9.0') === null);
 ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1.0.1', 'dev'));
 
 // ---- latency measurement: clicks played at known frames, heard again after a delay

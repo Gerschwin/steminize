@@ -1,6 +1,6 @@
 [package]
 name = "steminize"
-version = "1.12.1"
+version = "0.9.0"
 description = "Stem separation that runs on your own machine"
 edition = "2021"
 license = "MIT"
