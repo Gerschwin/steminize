@@ -1504,6 +1504,7 @@ export class Deck {
       punchWrap.hidden = !on;
       latencyBtn.hidden = !on;
       $('liveLowLatWrap').hidden = !on;
+      if (!on) $('liveLatencyInfo').hidden = true;
       if (on) refreshRecordTargets();
       else recordTarget.hidden = true;
       if (on) {
@@ -1671,6 +1672,13 @@ export class Deck {
         const channels = await this.player.startMonitor(deviceSel.value || undefined, Number(vol.value), Number(pan.value), channelSel.value as LiveChannel);
         await refreshDevices();
         setUi(true);
+        const rep = this.player.reportedLatencyMs();
+        const info = $('liveLatencyInfo');
+        info.hidden = rep == null;
+        if (rep != null) {
+          info.textContent = `(audio system reports ~${rep} ms)`;
+          info.title = 'The delay the audio system says it adds to what you hear. The real round trip is higher (the interface and the input side), so use Measure or Line up for the number to put in Latency.';
+        }
         status.textContent = channels ? `Input has ${channels} channel${channels === 1 ? '' : 's'}.` : '';
       } catch (e) {
         status.textContent = "Couldn't start.";
@@ -1690,7 +1698,7 @@ export class Deck {
     vol.oninput = () => this.player.setMonitorGain(Number(vol.value));
     const setPan = (v: number) => {
       pan.value = String(v);
-      panOut.textContent = v === 0 ? 'C' : `${v < 0 ? 'L' : 'R'}${Math.round(Math.abs(v) * 100)}`;
+      panOut.textContent = v === 0 ? 'Centre' : `${v < 0 ? 'L' : 'R'}${Math.round(Math.abs(v) * 100)}`;
       this.player.setMonitorPan(v);
     };
     pan.oninput = () => setPan(Number(pan.value));

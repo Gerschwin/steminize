@@ -482,6 +482,9 @@ canvas, img, svg { -webkit-user-drag: none; user-drag: none; }
 #scratchTabLyrics[aria-pressed='true'] ~ #lyricsSearchLink { display: inline-flex; }
 #tabExtendBtn { display: none; margin-left: auto; }
 #scratchTabTab[aria-pressed='true'] ~ #tabExtendBtn, #scratchTabDrums[aria-pressed='true'] ~ #tabExtendBtn { display: inline-flex; }
+.tool.live .live-grp { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tool.live .live-rec { flex-wrap: nowrap; }
+.tool.live .live-grp:not(:has(> :not([hidden]))) { display: none; }
 .live-meter { width: 70px; height: 8px; border-radius: 4px; background: var(--panel); overflow: hidden; }
 .live-meter i { display: block; height: 100%; width: 0; background: var(--ok); }
 .tool .snap { margin-left: auto; }

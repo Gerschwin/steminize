@@ -272,6 +272,14 @@ export class Player {
   }
 
   // ---------- live input monitoring ----------
+  /** What the audio system itself reports for its buffers (ms): output side plus the context's processing block. Not the full round trip, and null if nothing is reported. */
+  reportedLatencyMs(): number | null {
+    const c = this.ctx;
+    if (!c) return null;
+    const total = (c.baseLatency || 0) + ((c as AudioContext & { outputLatency?: number }).outputLatency || 0);
+    return total > 0 ? Math.round(total * 1000) : null;
+  }
+
   get monitoring() {
     return !!this.monitorStream;
   }

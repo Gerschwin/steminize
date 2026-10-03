@@ -360,14 +360,19 @@
                   </select>
                   <div class="live-meter" id="liveMeter" hidden><i id="liveMeterBar"></i></div>
                   <label class="mini vol" id="liveVolWrap" hidden><span>Level</span><input type="range" id="liveVol" min="0" max="4" step="0.01" value="0.8" /></label>
-                  <label class="mini pan" id="livePanWrap" hidden title="Pan (double-click to centre)"><span>Pan</span><input type="range" id="livePan" min="-1" max="1" step="0.05" value="0" /><output id="livePanOut">C</output></label>
-                  <label class="mini latency" id="liveLatencyWrap" hidden title="How late a take lands behind the song (the delay of what you hear plus the delay of what is recorded). It is taken off the take when you stop, so it lines up. Press Measure to find it.">Latency <input type="number" id="liveLatency" min="0" max="500" step="1" value="0" /> ms</label>
-                  <button class="btn tiny ghost" id="liveLatencyBtn" type="button" hidden title="Plays clicks and listens for them on the input to measure the delay. Needs the speakers near the microphone, or a cable from the output to the input. With headphones and no cable, record a take against the click and use Line up under it instead.">Measure</button>
-                  <label class="mini" id="liveLowLatWrap" hidden title="Ask the audio system for its smallest buffers, so what you play and hear is less delayed. Some computers may crackle; turn it off if so. Takes effect the next time you open Steminize."><input type="checkbox" id="liveLowLat" /> Low-latency audio</label>
-                  <select id="liveRecordTarget" title="Which track to record into" hidden></select>
-                  <label class="mini punch" id="livePunchWrap" hidden title="Record only across the marked loop section: playback starts a bar before it, recording runs from A to B, then stops."><input type="checkbox" id="livePunch" /> Punch in on loop</label>
-                  <button class="btn tiny toggle rec" id="liveRecordBtn" type="button" aria-pressed="false" title="Record your own take while monitoring, saved as a local audio file" hidden>● Record</button>
-                  <span class="muted small" id="liveRecordTime" hidden>0:00</span>
+                  <label class="mini pan" id="livePanWrap" hidden title="Pan (double-click to centre)"><span>Pan</span><input type="range" id="livePan" min="-1" max="1" step="0.05" value="0" /><output id="livePanOut">Centre</output></label>
+                  <div class="live-grp">
+                    <label class="mini latency" id="liveLatencyWrap" hidden title="How late a take lands behind the song (the delay of what you hear plus the delay of what is recorded). It is taken off the take when you stop, so it lines up. Press Measure to find it.">Latency <input type="number" id="liveLatency" min="0" max="500" step="1" value="0" /> ms</label>
+                    <button class="btn tiny ghost" id="liveLatencyBtn" type="button" hidden title="Plays clicks and listens for them on the input to measure the delay. Needs the speakers near the microphone, or a cable from the output to the input. With headphones and no cable, record a take against the click and use Line up under it instead.">Measure</button>
+                    <label class="mini" id="liveLowLatWrap" hidden title="Ask the audio system for its smallest buffers, so what you play and hear is less delayed. Some computers may crackle; turn it off if so. Takes effect the next time you open Steminize."><input type="checkbox" id="liveLowLat" /> Low-latency audio</label>
+                    <span class="muted small" id="liveLatencyInfo" hidden></span>
+                  </div>
+                  <div class="live-grp live-rec">
+                    <select id="liveRecordTarget" title="Which track to record into" hidden></select>
+                    <label class="mini punch" id="livePunchWrap" hidden title="Record only across the marked loop section: playback starts a bar before it, recording runs from A to B, then stops."><input type="checkbox" id="livePunch" /> Punch in on loop</label>
+                    <button class="btn tiny toggle rec" id="liveRecordBtn" type="button" aria-pressed="false" title="Record your own take while monitoring, saved as a local audio file" hidden>● Record</button>
+                    <span class="muted small" id="liveRecordTime" hidden>0:00</span>
+                  </div>
                   <label class="mini takes" title="Oldest take is dropped once you go over this, both here and from the library">Keep last <input type="number" id="liveMaxTakes" min="1" max="20" step="1" value="5" /> takes</label>
                   <span class="muted small" id="liveStatus"></span>
                 </div>
