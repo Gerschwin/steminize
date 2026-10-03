@@ -118,6 +118,18 @@ works on the other.
 
 On Linux the desktop app allows audio capture for the Live input drawer without a system prompt (camera and other permissions stay denied). On macOS the app declares why it wants the microphone so the system can ask the first time, and on Windows the webview asks for itself (neither of these has been tested by the maintainer yet). If Live input says the request "is not allowed", check the system's microphone privacy settings.
 
+### Getting the lowest delay when playing live
+
+Steminize plays and records through the webview and the system's audio server, so it can't reach the tiny buffers an ASIO/JACK DAW can. These steps get it as low as it goes:
+
+1. **Hear yourself through the interface, not the app.** Switch on your interface's direct/zero-latency monitor and turn the app's **Level** down, so you aren't hearing a delayed copy. Recording is unaffected; this only removes the delay from what you hear.
+2. **Tick Low-latency audio** (Live input) and restart Steminize. It asks for the smallest buffers the webview will give.
+3. **Shrink the system buffer.** On Linux with PipeWire, `pw-metadata -n settings 0 clock.force-quantum 128` (try 64 if it stays clean; `0` puts it back to automatic) cuts the system's own buffering. On Windows, set the interface's buffer size in its control panel; on macOS, in Audio MIDI Setup or the interface's own app.
+4. **Cut other delay sources.** Use wired headphones (Bluetooth adds 100 ms or more), plug the interface straight into the computer rather than through a hub, and close other apps that use audio.
+5. **Compensate for what is left.** Press **Measure** (output looped to an input, or speakers near the mic), or record a take against the click and use **Line up** beneath it, then **Use as latency**. Takes then land on the beat even though a little delay remains in what you hear.
+
+Expect roughly 20–40 ms at best through the webview. If that is still too much to play against, use the interface's direct monitoring and record in Steminize with the latency compensation above.
+
 ### Links
 
 The desktop app opens links (the About dialog, the Models "browse" link, lyrics search, Support) in your default browser. It only opens `https` links to a short list of sites it links to itself.

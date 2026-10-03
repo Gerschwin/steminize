@@ -1698,7 +1698,7 @@ export class Deck {
     vol.oninput = () => this.player.setMonitorGain(Number(vol.value));
     const setPan = (v: number) => {
       pan.value = String(v);
-      panOut.textContent = v === 0 ? 'Centre' : `${v < 0 ? 'L' : 'R'}${Math.round(Math.abs(v) * 100)}`;
+      panOut.textContent = v === 0 ? 'CTR' : `${v < 0 ? 'L' : 'R'}${Math.round(Math.abs(v) * 100)}`;
       this.player.setMonitorPan(v);
     };
     pan.oninput = () => setPan(Number(pan.value));
