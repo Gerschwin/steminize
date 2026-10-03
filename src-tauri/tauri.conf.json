@@ -39,7 +39,8 @@
         "bundleMediaFramework": true
       }
     },
-    "shortDescription": "Split songs into stems on your own machine",
+    "shortDescription": "A practice studio: split songs into stems, loop and slow them down, and learn them with tab",
+    "longDescription": "Steminize is a practice studio for musicians. Split any song into stems (vocals, drums, bass, guitar, piano and more) on your own computer with Demucs, then practise along: mute or solo parts, loop a section, slow it down or change the key, see the chords and notes, and play your own instrument over the tracks. Learn guitar and bass parts from tab that follows the song, with a trainer that listens to you play and a speed trainer that only speeds up when you're getting it right. Nothing is uploaded.",
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"]
   }
 }

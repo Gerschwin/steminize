@@ -1,7 +1,7 @@
 {
   "name": "steminize",
   "version": "0.9.1",
-  "description": "Stem separation (Demucs) that runs entirely on your device",
+  "description": "A practice studio for musicians: stem separation, looping, tempo and key change, chords, and tab with a playing trainer. Runs entirely on your device",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
