@@ -11,7 +11,7 @@ import { encodeMp3 } from '../src/encode/mp3.ts';
 import { applyClip } from '../src/encode/pcm.ts';
 import { MixSource, panMatrix, renderMix } from '../src/player/mixcore.ts';
 import { FLAT, PRESETS, responseDb } from '../src/player/eq.ts';
-import { DEFAULT_PRACTICE, Transport } from '../src/player/transport.ts';
+import { DEFAULT_PRACTICE, Transport, gateStep } from '../src/player/transport.ts';
 import { Renderer } from '../src/player/mixcore.ts';
 import { analyse } from '../src/analysis/beats.ts';
 import { detectKey, keyName } from '../src/analysis/key.ts';
@@ -264,6 +264,14 @@ for (const [len, overlap, shifts] of [
     }
   });
   ok('speed trainer: 70% +10% per pass, stops at 100%', tempos.slice(0, 4).join() === '0.8,0.9,1,1', tempos.join(' '));
+
+  // gated on accuracy: the transport never steps on its own — the UI decides after each pass
+  t = make();
+  t.setLoop(true, SR, 2 * SR);
+  t.setPractice({ ...DEFAULT_PRACTICE, trainer: { on: true, from: 0.7, to: 1, step: 0.1, every: 1, gate: 0.9 } });
+  t.onPlay();
+  run(t, 7);
+  ok('gated speed trainer: holds its speed however many passes go by', t.passes >= 3 && Math.abs(t.r.tempo - 0.7) < 1e-9, String(t.r.tempo));
 
   t = make();
   t.setPractice({ ...DEFAULT_PRACTICE, click: true, clickVol: 0.5, beats, downbeat: 0, perBar: 4 });
@@ -857,6 +865,18 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('across a bar line: 5h|7 joins the 7 to the 5 before the bar line', across.notes[1].link === 'h' && across.notes[1].bar === 1 && across.notes[0].bar === 0);
   ok('across a bar line: slides too', parseScore(rows('-5/|7--|')).notes[1].link === '/' && parseScore(rows('-9\\|7--|')).notes[1].link === '\\');
   ok('across a bar line: a lone bar line before a note joins nothing', parseScore(rows('-5-|7--|')).notes[1].link === undefined);
+}
+
+// ---- speed trainer gated on the tab Trainer's accuracy
+{
+  ok('gate: a pass at or above the target steps up when one clean pass is enough', gateStep(0, 9, 10, 0.9, 1).step === true);
+  ok('gate: a pass below the target holds, and spoils the run', gateStep(2, 8, 10, 0.9, 3).step === false && gateStep(2, 8, 10, 0.9, 3).clean === 0);
+  const r1 = gateStep(0, 10, 10, 0.9, 3);
+  const r2 = gateStep(r1.clean, 10, 10, 0.9, 3);
+  const r3 = gateStep(r2.clean, 10, 10, 0.9, 3);
+  ok('gate: needs `every` clean passes in a row, then the count starts again', !r1.step && !r2.step && r3.step && r3.clean === 0);
+  ok('gate: a pass with nothing judged neither counts nor spoils the run', gateStep(2, 0, 0, 0.9, 3).clean === 2 && gateStep(2, 0, 0, 0.9, 3).step === false);
+  ok('gate: exactly on the target counts', gateStep(0, 9, 10, 0.9, 1).step && gateStep(0, 17, 20, 0.85, 1).step);
 }
 
 // ---- tab+ score: bars for the staff view

@@ -5,7 +5,7 @@ import { encoder } from '../encode/client.ts';
 import type { Analysis } from '../library.ts';
 import { periodForBpm, retrack } from '../analysis/beats.ts';
 import { keyName, type KeyCandidate, type KeyResult } from '../analysis/key.ts';
-import type { Trainer } from '../player/transport.ts';
+import { gateStep, type Trainer } from '../player/transport.ts';
 import { extensionFor, mimeFor } from '../encode/meta.ts';
 import { stemColour, MODELS } from '../models.ts';
 import { openSink, safeName, saveFile } from '../platform.ts';
@@ -102,7 +102,7 @@ const DEFAULT_PR: PracticeUi = {
   perBar: 4,
   barShift: 0,
   snap: 'bar',
-  trainer: { on: false, from: 0.7, to: 1, step: 0.05, every: 1 },
+  trainer: { on: false, from: 0.7, to: 1, step: 0.05, every: 1, gate: 0 },
 };
 
 /** Everything about how a song is set up in the player, saved per song. */
@@ -438,6 +438,10 @@ export class Deck {
   private trainerGroupStart: number | null = null;
   private trainerGroupHit = false;
   private trainerLastU = 0;
+  /** The gated speed trainer (Trainer.gate): consecutive passes played well enough so far at this
+   * speed, and a line about the last pass for the Practice pane. */
+  private trainerClean = 0;
+  private gateStatus = '';
   private scratchAreas!: { lyrics: HTMLTextAreaElement; tab: HTMLTextAreaElement; drums: HTMLTextAreaElement; notes: HTMLTextAreaElement };
   // ---- a live recording being drawn in as its own track while it's captured ----
   private recordLane: Lane | null = null;
@@ -1278,8 +1282,9 @@ export class Deck {
 
   private updateTrainerInfo(passes: number, countingIn: boolean) {
     const t = this.pr.trainer;
+    const gate = t.on && t.gate ? ` · ${!this.scratch.tabTrainer ? 'turn on the tab Trainer (and Live input) to judge passes' : this.gateStatus || `needs ${Math.round(t.gate * 100)}% to speed up`}` : '';
     $('trainerInfo').textContent = t.on
-      ? `${countingIn ? 'Count-in… · ' : ''}Pass ${passes + 1} at ${Math.round(this.tempo * 100)}%${this.tempo >= t.to ? ' (target reached)' : ''}`
+      ? `${countingIn ? 'Count-in… · ' : ''}Pass ${passes + 1} at ${Math.round(this.tempo * 100)}%${this.tempo >= t.to ? ' (target reached)' : ''}${gate}`
       : countingIn
         ? 'Count-in…'
         : '';
@@ -1298,6 +1303,8 @@ export class Deck {
     $<HTMLInputElement>('trTo').value = String(Math.round(p.trainer.to * 100));
     $<HTMLInputElement>('trStep').value = String(Math.round(p.trainer.step * 100));
     $<HTMLInputElement>('trEvery').value = String(p.trainer.every);
+    $<HTMLInputElement>('trGate').checked = !!p.trainer.gate;
+    $<HTMLInputElement>('trGateAcc').value = String(Math.round((p.trainer.gate || 0.9) * 100));
     this.updateTrainerInfo(0, false);
     this.updateBpmInfo();
     this.updateDrawerSummary();
@@ -1686,6 +1693,34 @@ export class Deck {
   /** Clears the playing trainer's running tally — a fresh count per pass, not accumulated across
    * loops or songs. Called when the trainer's switched on, a song loads, and (from initTrainer) on a
    * backward jump in the tab's own timeline (a loop restart or a scrub back). */
+  /** A loop pass of the tab has just finished (the timeline jumped back): if the speed trainer is gated
+   * on how well it was played, decide from this pass's tally whether to step up (see gateStep). Counts
+   * the note still being judged as finished, since the jump back is what ends it. */
+  private finishTrainerPass() {
+    const t = this.pr.trainer;
+    if (!t.on || !t.gate) return;
+    if (this.trainerGroupStart !== null) {
+      this.trainerTotal++;
+      if (this.trainerGroupHit) this.trainerHit++;
+    }
+    const res = gateStep(this.trainerClean, this.trainerHit, this.trainerTotal, t.gate, t.every);
+    this.trainerClean = res.clean;
+    const pct = this.trainerTotal ? Math.round((100 * this.trainerHit) / this.trainerTotal) : null;
+    if (pct === null) this.gateStatus = 'last pass: nothing heard';
+    else if (res.step) {
+      const next = Math.min(t.to, Math.round((this.tempo + t.step) * 100) / 100);
+      this.gateStatus = `last pass ${pct}% — good, speeding up`;
+      if (next !== this.tempo) this.setTempoPitch(next, this.pitch);
+    } else if (pct / 100 >= t.gate) this.gateStatus = `last pass ${pct}% — ${this.trainerClean} of ${t.every} clean`;
+    else this.gateStatus = `last pass ${pct}% — need ${Math.round(t.gate * 100)}%, holding speed`;
+    this.updateTrainerInfo(this.player.state.passes, this.player.state.countingIn);
+  }
+
+  private resetGate() {
+    this.trainerClean = 0;
+    this.gateStatus = '';
+  }
+
   private resetTrainerTally() {
     this.trainerTotal = 0;
     this.trainerHit = 0;
@@ -1738,7 +1773,10 @@ export class Deck {
       // Judged against the counting-on position, so a repeat jumping back to its start isn't mistaken
       // for a scrub back (which restarts the tally) — only a real backward jump is.
       const uu = this.unrolledAt(tSec);
-      if (uu !== null && uu < this.trainerLastU - 0.5) this.resetTrainerTally();
+      if (uu !== null && uu < this.trainerLastU - 0.5) {
+        this.finishTrainerPass();
+        this.resetTrainerTally();
+      }
       if (uu !== null) this.trainerLastU = uu;
       const group = u === null ? [] : noteGroupAt(this.stripNotes ?? [], u);
 
@@ -2552,6 +2590,7 @@ export class Deck {
     $('trainerBtn').onclick = () => {
       const t = this.pr.trainer;
       t.on = !t.on;
+      this.resetGate();
       if (t.on) {
         if (!this.loop.on) this.setLoop(true);
         this.tempo = t.from; // the player also resets to this
@@ -2568,6 +2607,17 @@ export class Deck {
     num('trTo', (v) => (this.pr.trainer.to = Math.min(1.5, Math.max(0.3, v / 100))));
     num('trStep', (v) => (this.pr.trainer.step = Math.min(0.25, v / 100)));
     num('trEvery', (v) => (this.pr.trainer.every = Math.round(v)));
+    // Gated speed-up: the checkbox turns it on at the number's accuracy; the number alone only matters while it's on.
+    const gateAcc = () => Math.min(1, Math.max(0.5, Number($<HTMLInputElement>('trGateAcc').value) / 100 || 0.9));
+    $<HTMLInputElement>('trGate').onchange = (e) => {
+      this.pr.trainer.gate = (e.target as HTMLInputElement).checked ? gateAcc() : 0;
+      this.resetGate();
+      this.practiceChanged();
+    };
+    $<HTMLInputElement>('trGateAcc').onchange = () => {
+      if (this.pr.trainer.gate) this.pr.trainer.gate = gateAcc();
+      this.practiceChanged();
+    };
     $('countInBtn').onclick = () => ((this.pr.countIn = !this.pr.countIn), this.practiceChanged());
     $('clickBtn').onclick = () => ((this.pr.click = !this.pr.click), this.practiceChanged());
     $<HTMLInputElement>('clickVol').oninput = (e) => ((this.pr.clickVol = Number((e.target as HTMLInputElement).value)), this.practiceChanged());

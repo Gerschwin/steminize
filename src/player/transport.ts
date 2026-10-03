@@ -12,6 +12,21 @@ export interface Trainer {
   to: number; // e.g. 1
   step: number; // e.g. 0.05
   every: number; // passes per step
+  /** Set (a fraction, e.g. 0.9) when the UI decides each step from how well the pass was played (see
+   * gateStep) rather than this just stepping every `every` passes — the transport then never steps on
+   * its own. 0 / unset = the plain speed trainer. */
+  gate?: number;
+}
+
+/** After a loop pass, whether a *gated* speed trainer steps up: only once `every` passes in a row have
+ * been played at `gate` accuracy or better. A pass in which nothing was judged (no notes heard, the tab
+ * trainer not running) neither counts towards that nor spoils the run — it just holds. Pure, so it's
+ * testable without a player. */
+export function gateStep(clean: number, hit: number, total: number, gate: number, every: number): { clean: number; step: boolean } {
+  if (total <= 0) return { clean, step: false };
+  if (hit / total < gate) return { clean: 0, step: false };
+  const next = clean + 1;
+  return next >= Math.max(1, every) ? { clean: 0, step: true } : { clean: next, step: false };
 }
 
 export interface Practice {
@@ -33,7 +48,7 @@ export const DEFAULT_PRACTICE: Practice = {
   downbeat: 0,
   click: false,
   clickVol: 0.5,
-  trainer: { on: false, from: 0.7, to: 1, step: 0.05, every: 1 },
+  trainer: { on: false, from: 0.7, to: 1, step: 0.05, every: 1, gate: 0 },
 };
 
 export class Transport {
@@ -122,7 +137,7 @@ export class Transport {
   private endPass() {
     this.passes++;
     const t = this.p.trainer;
-    if (t.on && this.passes % Math.max(1, t.every) === 0) {
+    if (t.on && !t.gate && this.passes % Math.max(1, t.every) === 0) {
       const next = Math.min(t.to, Math.round((this.r.tempo + t.step) * 100) / 100);
       if (next !== this.r.tempo) this.r.setTempoPitch(next, this.r.pitch);
     }

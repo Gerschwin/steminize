@@ -304,6 +304,10 @@
                     +<input type="number" id="trStep" min="1" max="25" step="1" value="5" aria-label="Step" />% every
                     <input type="number" id="trEvery" min="1" max="10" step="1" value="1" aria-label="Passes per step" /> pass(es)
                   </span>
+                  <label class="trainer-gate" title="Only speed up once the tab Trainer scores you this well on that many passes in a row (needs the tab's Trainer on, with Live input monitoring). Otherwise it holds the speed and you keep practising it.">
+                    <input type="checkbox" id="trGate" /> only when the tab Trainer scores ≥
+                    <input type="number" id="trGateAcc" min="50" max="100" step="5" value="90" aria-label="Accuracy needed" />%
+                  </label>
                   <span class="muted small" id="trainerInfo"></span>
                 </div>
                 <div class="tool practice">
