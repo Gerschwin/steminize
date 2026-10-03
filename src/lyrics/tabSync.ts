@@ -379,10 +379,13 @@ export interface TabNote {
   /** Picking / fingering marks written on a line above or below the strings, lined up with this note:
    * D down-pick, U up-pick, 1-4 left-hand finger, [1]-[4] right-hand finger. */
   marks?: { kind: 'pick' | 'lh' | 'rh'; text: string; above: boolean }[];
-  /** Under a palm-mute run (`PM----` on a line above or below the strings, over this note). */
-  pm?: { above: boolean };
+  /** Under a palm-mute run (`PM----` on a line above and/or below the strings, over this note): the
+   * run's number, one per `PM` written, so two runs side by side stay two runs, and a note can be under
+   * a run above and another below at once. */
+  pm?: { above?: number; below?: number };
   /** The note is joined to the previous note on the same string by what's written between them: `h`
-   * hammer-on, `p` pull-off, `/` slide up, `\` slide down. */
+   * hammer-on, `p` pull-off, `/` slide up, `\` slide down — the previous note can be across a bar line
+   * (`5h|7`), in which case this is the first note of its bar. */
   link?: 'h' | 'p' | '/' | '\\';
   /** Vibrato, written `~` (or `v`) straight after the note. */
   vibrato?: boolean;
@@ -423,7 +426,10 @@ function barSegments(b: TabBlock): [number, number][] {
 function techniques(line: string, c: number): Partial<Pick<TabNote, 'bend' | 'link' | 'vibrato' | 'tap' | 'harmonic'>> {
   const out: Partial<Pick<TabNote, 'bend' | 'link' | 'vibrato' | 'tap' | 'harmonic'>> = {};
   const before = line[c - 1];
-  if ((before === 'h' || before === 'p' || before === '/' || before === '\\') && isDigit(line[c - 2])) out.link = before;
+  // A join written straight across a bar line ("5h|7") is the same join — the bar line sits between.
+  const joiner = before === '|' ? line[c - 2] : before;
+  const fromDigit = isDigit(before === '|' ? line[c - 3] : line[c - 2]);
+  if ((joiner === 'h' || joiner === 'p' || joiner === '/' || joiner === '\\') && fromDigit) out.link = joiner;
   if (before === 't' || before === 'T') out.tap = true;
   let e = c;
   while (isDigit(line[e + 1])) e++;
@@ -486,6 +492,7 @@ function annotationTokens(line: string): { kind: 'pick' | 'lh' | 'rh' | 'pm' | '
 /** The tab as bars and a list of notes with pitch and timing, for the staff view and the playing trainer. */
 export function parseScore(text: string): { notes: TabNote[]; bars: TabBar[] } {
   const lines = text.split('\n');
+  let pmRuns = 0; // palm-mute runs numbered across the whole tab
   const blocks = tabBlocks(text);
   const notes: TabNote[] = [];
   const bars: TabBar[] = [];
@@ -568,7 +575,8 @@ export function parseScore(text: string): { notes: TabNote[]; bars: TabBar[] } {
           const over = tok.kind === 'pm' ? found.filter((n) => gap(n) === 0) : near <= 1 ? free.filter((n) => gap(n) === near) : [];
           if (tok.kind !== 'pm' && over.length) taken.add(over.reduce((a, c2) => (c2.start < a.start || (c2.start === a.start && c2.string < a.string) ? c2 : a)));
           if (tok.kind === 'pm') {
-            for (const n of over) n.pm = { above };
+            const id = ++pmRuns;
+            for (const n of over) n.pm = { ...n.pm, [above ? 'above' : 'below']: id };
           } else if (over.length) {
             const first = over.reduce((a, c2) => (c2.start < a.start || (c2.start === a.start && c2.string < a.string) ? c2 : a));
             (first.marks ??= []).push({ kind: tok.kind, text: tok.text, above });

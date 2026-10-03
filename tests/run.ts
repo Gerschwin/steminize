@@ -810,7 +810,7 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   const above = withAnn.notes.map((n) => n.marks?.map((m) => m.kind + m.text + (m.above ? '^' : 'v')).join('') ?? '');
   ok('annotation lines: D/U above and 1-4 below attach to the notes beneath them', above.join() === 'pickD^lh1v,pickU^lh3v,pickD^lh1v');
   const rh = parseScore(['e|-5---7--|', 'B|--------|', 'G|--------|', 'D|--------|', 'A|--------|', 'E|--------|', '  [1] [3]', '  PM---'].join('\n'));
-  ok('annotation lines: [1]-[4] are right-hand fingers, PM-- a palm-mute run over the notes it spans', rh.notes[0].marks?.[0]?.kind === 'rh' && rh.notes[0].marks?.[0]?.text === '1' && rh.notes[0].pm?.above === false && rh.notes[1].pm === undefined);
+  ok('annotation lines: [1]-[4] are right-hand fingers, PM-- a palm-mute run over the notes it spans', rh.notes[0].marks?.[0]?.kind === 'rh' && rh.notes[0].marks?.[0]?.text === '1' && rh.notes[0].pm?.below !== undefined && rh.notes[0].pm?.above === undefined && rh.notes[1].pm === undefined);
   const fretsOnly = parseScore('e|5-7|\nB|-1-|');
   ok('annotation lines: a barless row that is a real fret row in the middle still counts as a string', parseScore('e|5-7|\nB|---|\n1-2\nE|---|').notes.length >= 2 && fretsOnly.notes.length === 3);
 }
@@ -844,6 +844,19 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   const pre = nt('-7pb9--');
   ok('bend: a pre-bend is only right at the bent-to pitch', acceptedMidis(pre).join() === [pre.midi! + 2].join());
   ok('bend: a muted note has no pitch to accept', acceptedMidis(nt('-x---')).length === 0);
+}
+
+// ---- tab+ palm-mute runs above and below at once, and joins across a bar line
+{
+  const rows = (e: string) => ['e|' + e, ...['B', 'G', 'D', 'A', 'E'].map((l) => l + '|' + e.replace(/[^|]/g, '-'))].join('\n');
+  const both = parseScore(['  PM---', rows('-5-7-5-7-|'), '  PM---'].join('\n'));
+  ok('palm mute: a run above and a run below can cover the same notes', both.notes[0].pm?.above !== undefined && both.notes[0].pm?.below !== undefined && both.notes[0].pm?.above !== both.notes[0].pm?.below);
+  const two = parseScore(['  PM--  PM--', rows('-5-7-5-7-|')].join('\n'));
+  ok('palm mute: two runs on one line are two runs', two.notes[0].pm?.above !== two.notes[2].pm?.above && two.notes[0].pm?.above === two.notes[1].pm?.above);
+  const across = parseScore(rows('-5h|7-5-|-5-|'));
+  ok('across a bar line: 5h|7 joins the 7 to the 5 before the bar line', across.notes[1].link === 'h' && across.notes[1].bar === 1 && across.notes[0].bar === 0);
+  ok('across a bar line: slides too', parseScore(rows('-5/|7--|')).notes[1].link === '/' && parseScore(rows('-9\\|7--|')).notes[1].link === '\\');
+  ok('across a bar line: a lone bar line before a note joins nothing', parseScore(rows('-5-|7--|')).notes[1].link === undefined);
 }
 
 // ---- tab+ score: bars for the staff view

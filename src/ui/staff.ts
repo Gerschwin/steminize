@@ -289,7 +289,7 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
   const marksRows = (above: boolean) => Math.max(0, ...notes.map((n) => (n.marks ?? []).filter((m) => m.above === above).length));
   const aboveRows = marksRows(true);
   const belowMarkRows = marksRows(false);
-  const belowRows = belowMarkRows + (notes.some((n) => n.pm?.above === false) ? 1 : 0);
+  const belowRows = belowMarkRows + (notes.some((n) => n.pm?.below !== undefined) ? 1 : 0);
   const ABOVE = aboveRows ? 8 + 15 * (aboveRows - 1) : 0;
   const GAP = 6 + (belowRows ? 3 + 15 * belowRows : 0);
   // The unpitched placeholder note's own pitch/line doesn't mean anything — the notehead is invisible
@@ -359,20 +359,13 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
 
   // Where each palm-mute run begins, across the whole score — a run carried over a bar line is one
   // run, so its "P.M." label is only drawn where it actually starts, not again at the next bar.
-  const pmRunStarts = new Set<number>();
-  {
-    const starts = [...new Set(notes.map((n) => n.start))].sort((a, b) => a - b);
-    let prev = false;
-    for (const st of starts) {
-      const on = notes.some((n) => n.start === st && n.pm);
-      if (on && !prev) pmRunStarts.add(st);
-      prev = on;
-    }
-  }
+  const pmFirstStart = new Map<number, number>();
+  for (const n of notes) for (const id of [n.pm?.above, n.pm?.below]) if (id !== undefined && !(pmFirstStart.get(id)! <= n.start)) pmFirstStart.set(id, n.start);
 
   const map: { u: number; x: number }[] = [];
   const notesOut: TabScoreLayout['notes'] = [];
   let x = INTRO;
+  let prevRealTabs: { tNote: InstanceType<typeof VFTabNote>; group: TabNote[] }[] = []; // the bar before's tab notes, for joins across the bar line
   bars.forEach((bar, bi) => {
     const w = widthOf(bar) + (bi === 0 ? CLEF : 0);
     const tabY = 10 + ABOVE;
@@ -582,16 +575,19 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
         }
       });
       // palm-mute runs, per side: "P.M." then a dashed line to the last muted note, ticked at the end
+      // Each run is its own number (see TabNote.pm), so two runs side by side stay two, and a note can be
+      // under a run above and another below at once.
       for (const above of [true, false]) {
+        const idOf = (k: number) => realTabs[k].group.map((n) => (above ? n.pm?.above : n.pm?.below)).find((v) => v !== undefined);
         let i = 0;
         while (i < realTabs.length) {
-          const on = (j: number) => realTabs[j].group.some((n) => n.pm && n.pm.above === above);
-          if (!on(i)) {
+          const id = idOf(i);
+          if (id === undefined) {
             i++;
             continue;
           }
           let j = i;
-          while (j + 1 < realTabs.length && on(j + 1)) j++;
+          while (j + 1 < realTabs.length && idOf(j + 1) === id) j++;
           const a = rectOf(i, 0);
           const b = rectOf(j, 0);
           if (a && b) {
@@ -601,7 +597,7 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
             const lineY = labelY - 3.5;
             const x0 = a.x + a.w / 2 - 6;
             const x1 = b.x + b.w + 6;
-            const begins = pmRunStarts.has(realTabs[i].group[0].start);
+            const begins = pmFirstStart.get(id) === realTabs[i].group[0].start;
             if (begins) text('P.M.', x0 + 14, labelY, '10pt');
             const from = begins ? x0 + 32 : x0;
             if (x1 > from) {
@@ -612,15 +608,18 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
         }
       }
     };
-    // Hammer-ons, pull-offs and slides: each joins a note to the previous note on the same string in
-    // this bar. A join across a bar line isn't drawn (each bar is its own stave here).
+    // Hammer-ons, pull-offs and slides: each joins a note to the previous note on the same string. That
+    // is the previous one in this bar, or — for a bar's first note on that string, written across the
+    // bar line ("5h|7") — the last one in the bar before, whose stave is already drawn: a tie only
+    // needs the two notes' own positions, and everything shares one SVG, so it simply arcs across.
     realTabs.forEach((cur, i) => {
       cur.group.forEach((n, k) => {
         if (!n.link) return;
-        for (let j = i - 1; j >= 0; j--) {
-          const fromIdx = realTabs[j].group.findIndex((m) => m.string === n.string);
+        const candidates = [...realTabs.slice(0, i).reverse(), ...prevRealTabs.slice().reverse()];
+        for (const prev of candidates) {
+          const fromIdx = prev.group.findIndex((m) => m.string === n.string);
           if (fromIdx === -1) continue;
-          const notes = { firstNote: realTabs[j].tNote, lastNote: cur.tNote, firstIndexes: [fromIdx], lastIndexes: [k] };
+          const notes = { firstNote: prev.tNote, lastNote: cur.tNote, firstIndexes: [fromIdx], lastIndexes: [k] };
           const tie = n.link === 'h' ? TabTie.createHammeron(notes) : n.link === 'p' ? TabTie.createPulloff(notes) : n.link === '/' ? TabSlide.createSlideUp(notes) : TabSlide.createSlideDown(notes);
           try {
             tie.setContext(ctx).draw();
@@ -760,6 +759,7 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
       }
       notesOut.push({ u: g.u, len: g.len, x: bb.getX(), y: bb.getY(), w: bb.getW(), h: bb.getH(), bar: bi, col: g.col });
     }
+    prevRealTabs = realTabs;
     x += w;
   });
   const last = bars[bars.length - 1];
