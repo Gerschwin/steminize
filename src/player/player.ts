@@ -326,9 +326,20 @@ export class Player {
     const source = this.monitorSource;
     const input = this.monitorInput;
     if (!ctx || !source || !input) return;
-    source.disconnect(input);
-    this.monitorSplit?.disconnect();
-    this.monitorSplit = null;
+    try {
+      source.disconnect(input); // throws if they aren't connected yet (first call)
+    } catch {
+      /* nothing to undo */
+    }
+    if (this.monitorSplit) {
+      try {
+        source.disconnect(this.monitorSplit);
+      } catch {
+        /* already gone */
+      }
+      this.monitorSplit.disconnect();
+      this.monitorSplit = null;
+    }
     if (mode === 'stereo') {
       input.channelCount = 2;
       input.channelCountMode = 'max';
