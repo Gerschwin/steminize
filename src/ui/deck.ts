@@ -751,6 +751,9 @@ export class Deck {
       { passive: false },
     );
     let dragFromH: number | null = null;
+    resizeHandle.addEventListener('selectstart', (e) => e.preventDefault());
+    resizeHandle.addEventListener('dragstart', (e) => e.preventDefault());
+    resizeHandle.addEventListener('mousedown', noNativeDrag);
     resizeHandle.addEventListener('pointerdown', (e) => {
       resizeHandle.setPointerCapture(e.pointerId);
       dragFromH = wave.clientHeight - e.clientY;

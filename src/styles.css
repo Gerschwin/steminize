@@ -88,6 +88,10 @@
    container, so it's safe to set everywhere rather than remembering it per scrollable element. */
 * { overscroll-behavior: contain; }
 html, body { margin: 0; height: 100%; }
+/* The interface isn't text to select: dragging a resize handle, a slider or a waveform otherwise starts a selection that sweeps blue across whatever the pointer crosses, and WebKit can lift it as a ghost image. Text you type, paste or copy (fields, notes, diagnostics, licence text) stays selectable. */
+body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+input, textarea, select, [contenteditable], pre, #diagText, .selectable { -webkit-user-select: text; user-select: text; }
+button, a, label { -webkit-user-drag: none; }
 body.modal-open { overflow: hidden; }
 body {
   background: var(--bg);
