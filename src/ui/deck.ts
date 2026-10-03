@@ -995,7 +995,7 @@ export class Deck {
     const readout = h('span', { class: 'muted small take-nudge-ms' }, net === 0 ? 'in place' : `${net < 0 ? 'earlier' : 'later'} by ${Math.abs(net)} ms`);
     return h(
       'div',
-      { class: 'take-nudge', title: 'Played with headphones and no loopback cable? Record against the click, then slide the take until it sits on the beat (zoom in on its waveform to see), then press Use as latency.' },
+      { class: 'take-nudge', title: 'Played with headphones and no loopback cable? Record against the click, then zoom in on its waveform until the teal beat lines show, slide the take until your note starts sit on them, then press Use as latency.' },
       h('span', { class: 'muted small' }, 'Line up'),
       step('« 10', -10),
       step('‹ 1', -1),
@@ -3901,29 +3901,31 @@ export class Deck {
         l.layers = [waveLayer(p, l.canvas.width, l.canvas.height, c + '66', this.laneScale), waveLayer(p, l.canvas.width, l.canvas.height, c, this.laneScale)];
       }
       this.drawStrip(l.canvas, l.layers, pos, true, view);
+      this.drawBars(l.canvas, view, true);
     }
     this.tx.draw(pos);
   }
 
-  /** Faint bar lines on the overview once the tempo is known. */
-  private drawBars(c: HTMLCanvasElement) {
+  /** Bar lines (and, zoomed in, every beat) once the tempo is known: faint on the overview, clearer on the tracks, where they mark where the click sounds so a take can be lined up against it. */
+  private drawBars(c: HTMLCanvasElement, view = this.view, lane = false) {
     const beats = this.beatFrames();
     if (!beats.length) return;
     const g = c.getContext('2d')!;
     const w = c.width;
-    const span = this.view.end - this.view.start || 1;
-    const x = (f: number) => Math.round(((f - this.view.start) / span) * w);
+    const span = view.end - view.start || 1;
+    const x = (f: number) => Math.round(((f - view.start) / span) * w);
     const d = this.downbeat();
     const bars = beats.filter((_, i) => (i - d) % this.pr.perBar === 0);
-    g.fillStyle = getComputedStyle(document.body).color;
-    // Zoomed in far enough: show every beat faintly, bars stronger.
+    g.fillStyle = lane ? '#2dd4bf' : getComputedStyle(document.body).color;
+    const thick = Math.max(1, devicePixelRatio);
+    // Zoomed in far enough: show every beat, bars stronger.
     if (beats.length > 1 && ((beats[1] - beats[0]) / span) * w >= 8) {
-      g.globalAlpha = 0.08;
-      for (const b of beats) if (b >= this.view.start && b <= this.view.end) g.fillRect(x(b), 0, Math.max(1, devicePixelRatio), c.height);
+      g.globalAlpha = lane ? 0.55 : 0.08;
+      for (const b of beats) if (b >= view.start && b <= view.end) g.fillRect(x(b), 0, thick, c.height);
     }
     if (bars.length > 1 && ((bars[1] - bars[0]) / span) * w >= 4) {
-      g.globalAlpha = 0.2;
-      for (const b of bars) if (b >= this.view.start && b <= this.view.end) g.fillRect(x(b), 0, Math.max(1, devicePixelRatio), c.height);
+      g.globalAlpha = lane ? 0.8 : 0.2;
+      for (const b of bars) if (b >= view.start && b <= view.end) g.fillRect(x(b), 0, thick, c.height);
     }
     g.globalAlpha = 1;
   }

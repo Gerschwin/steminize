@@ -71,6 +71,8 @@ Possible UI change: pin the drop zone (+ Songs/Settings tabs, already sticky) at
 
 ## Done
 
+- 2026-10-04 — Track lanes now draw the song's beat lines (teal; bars stronger, every beat once zoomed in), reusing `drawBars`. The click isn't audio in any lane, so there was nothing to line a take up against when using Line up. Beats are the detected ones; no beat lines until tempo analysis has finished.
+
 - 2026-10-04 — Recording, the input meter and the tuner/trainer now tap the input before the monitor Level (and pan), so Level 0 (direct monitoring on the interface) no longer records silence. Takes are therefore unpanned and not scaled by Level (a quiet input has to be raised at the OS capture level or with the channel choice). Removed the "(audio system reports ~N ms)" note: the browser's figure is far below the real round trip and misleads.
 
 - 2026-10-04 — **Low-latency mode runs at the device sample rate.** With the checkbox on, the AudioContext is created without a fixed rate (falls back to 44.1 kHz if the device is below it) and the worklet converts its 44.1 kHz output with `StreamResampler` (`src/player/resample.ts`, cubic, block-size independent, unit-tested). Standard mode is untouched (44.1 kHz context, no resampler). Not heard on real hardware yet: check playback quality, loop points, count-in clicks and tempo/pitch changes in `tauri dev` with the box ticked. Also this session: Live input channel choice, take Line up, record-row grouping, CTR label, README "lowest delay" section.

@@ -126,7 +126,7 @@ Steminize plays and records through the webview and the system's audio server, s
 2. **Tick Low-latency audio** (Live input) and restart Steminize. It asks for the smallest buffers the webview will give and runs the audio at your sound card's own sample rate (usually 48 kHz) instead of converting.
 3. **Shrink the system buffer.** On Linux with PipeWire, `pw-metadata -n settings 0 clock.force-quantum 128` (try 64 if it stays clean; `0` puts it back to automatic) cuts the system's own buffering. On Windows, set the interface's buffer size in its control panel; on macOS, in Audio MIDI Setup or the interface's own app.
 4. **Cut other delay sources.** Use wired headphones (Bluetooth adds 100 ms or more), plug the interface straight into the computer rather than through a hub, and close other apps that use audio.
-5. **Compensate for what is left.** Press **Measure** (output looped to an input, or speakers near the mic), or record a take against the click and use **Line up** beneath it, then **Use as latency**. Takes then land on the beat even though a little delay remains in what you hear.
+5. **Compensate for what is left.** Press **Measure** (output looped to an input, or speakers near the mic), or record a take against the click and use **Line up** beneath it (zoom in until the teal beat lines, where the click sounds, show on the track, and slide the take until your notes start on them), then **Use as latency**. Takes then land on the beat even though a little delay remains in what you hear.
 
 Expect roughly 20–40 ms at best through the webview. If that is still too much to play against, use the interface's direct monitoring and record in Steminize with the latency compensation above.
 
