@@ -69,6 +69,8 @@ Possible UI change: pin the drop zone (+ Songs/Settings tabs, already sticky) at
 
 ## Done
 
+- 2026-10-03 — **Quiet interface input.** Live input now has an input-channel choice (Stereo / Input 1 / Input 2 / Inputs 1+2 summed; `steminize.liveChannel`) because an instrument in one channel of a stereo device is halved by the default downmix, a status line showing how many channels the device delivers, and the Level slider goes to 4 (was 1.5). Echo cancel/noise suppression/AGC were already off. Not verifiable without the hardware: if it is still quiet the OS capture level (pavucontrol / alsamixer) is the next thing to check.
+
 - 2026-10-03 — **Latency for headphone/USB-interface players.** (1) "Low-latency audio" checkbox in the Live input pane (`steminize.lowLatencyAudio`): the AudioContext uses `latencyHint: 'interactive'` instead of `'playback'`; read at context creation, so it applies from the next launch. (2) "Line up" under the active take: « 10 / ‹ 1 / 1 › / 10 » ms nudge buttons shift the take's audio (`shiftTake`, re-saved ~0.8 s after the last press via `onTakeReplaced`), and "Use as latency" folds the net shift into the stored latency for future takes. For people who can't Measure (needs speakers+mic or an output→input cable). Not done: auto-seeding the latency from `baseLatency`/`outputLatency`; the Linux webview can't pick ALSA/JACK/ASIO buffer sizes.
 - [x] Live input (record yourself over the track), Tuner, Setlist mode, Scratchpad practice notes per song — all built since v1.12.1, not yet released (unreleased)
 - [x] Transcription tools: notes view with keyboard, freeze, editable chord lane + chord chart, audio to MIDI with Basic Pitch (v1.10.0)

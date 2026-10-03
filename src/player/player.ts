@@ -32,6 +32,9 @@ const VOICES: Record<Voice, VoiceParams> = {
 };
 
 /** Main-thread handle on the AudioWorklet stem player. */
+/** Which input channels the live input uses: both as they come, one of them as mono, or both summed (not averaged) to mono. */
+export type InputChannel = 'stereo' | 'left' | 'right' | 'sum';
+
 export class Player {
   private ctx: AudioContext | null = null;
   private node: AudioWorkletNode | null = null;
@@ -55,6 +58,8 @@ export class Player {
   // ---- live input monitoring: a real instrument/mic played live alongside the tracks ----
   private monitorStream: MediaStream | null = null;
   private monitorSource: MediaStreamAudioSourceNode | null = null;
+  private monitorInput: GainNode | null = null; // between the source and the level control: where the channel choice is wired
+  private monitorSplit: ChannelSplitterNode | null = null;
   private monitorGain: GainNode | null = null;
   private monitorPanner: StereoPannerNode | null = null;
   private monitorAnalyser: AnalyserNode | null = null;
@@ -279,7 +284,7 @@ export class Player {
   }
 
   /** Starts playing a real instrument/mic live through the same output as the tracks, at `gain`/`pan`. */
-  async startMonitor(deviceId: string | undefined, gain: number, pan = 0) {
+  async startMonitor(deviceId: string | undefined, gain: number, pan = 0, channel: InputChannel = 'stereo') {
     if (!navigator.mediaDevices?.getUserMedia) throw new Error("This browser can't capture audio input.");
     this.stopMonitor();
     await this.unlock();
@@ -298,13 +303,49 @@ export class Player {
     // Big enough to hold several cycles of a low bass note (~30 Hz) for pitch detection,
     // not just a level meter.
     analyser.fftSize = 4096;
-    source.connect(g).connect(panner).connect(ctx.destination);
+    const input = ctx.createGain();
+    input.connect(g).connect(panner).connect(ctx.destination);
     g.connect(analyser);
     this.monitorStream = stream;
     this.monitorSource = source;
+    this.monitorInput = input;
     this.monitorGain = g;
     this.monitorPanner = panner;
     this.monitorAnalyser = analyser;
+    this.setMonitorChannel(channel);
+    return stream.getAudioTracks()[0]?.getSettings().channelCount ?? 0;
+  }
+
+  /**
+   * Which of the input's channels are used. An interface with an instrument in input 1 sends a silent
+   * second channel, and the default stereo-to-mono downmix averages the two, halving the level; picking
+   * the channel (or summing without averaging) avoids that.
+   */
+  setMonitorChannel(mode: InputChannel) {
+    const ctx = this.ctx;
+    const source = this.monitorSource;
+    const input = this.monitorInput;
+    if (!ctx || !source || !input) return;
+    source.disconnect(input);
+    this.monitorSplit?.disconnect();
+    this.monitorSplit = null;
+    if (mode === 'stereo') {
+      input.channelCount = 2;
+      input.channelCountMode = 'max';
+      source.connect(input);
+      return;
+    }
+    input.channelCount = 1;
+    input.channelCountMode = 'explicit';
+    const split = ctx.createChannelSplitter(2);
+    source.connect(split);
+    if (mode === 'sum') {
+      split.connect(input, 0);
+      split.connect(input, 1);
+    } else {
+      split.connect(input, mode === 'left' ? 0 : 1);
+    }
+    this.monitorSplit = split;
   }
 
   stopMonitor() {
@@ -316,12 +357,16 @@ export class Player {
     this.recordDest = null;
     this.recordedChunks = [];
     this.monitorSource?.disconnect();
+    this.monitorSplit?.disconnect();
+    this.monitorInput?.disconnect();
     this.monitorGain?.disconnect();
     this.monitorPanner?.disconnect();
     this.monitorAnalyser?.disconnect();
     for (const t of this.monitorStream?.getTracks() ?? []) t.stop();
     this.monitorStream = null;
     this.monitorSource = null;
+    this.monitorSplit = null;
+    this.monitorInput = null;
     this.monitorGain = null;
     this.monitorPanner = null;
     this.monitorAnalyser = null;

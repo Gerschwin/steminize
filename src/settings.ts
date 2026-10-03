@@ -97,3 +97,25 @@ export function saveLowLatencyAudio(on: boolean) {
     /* ignore */
   }
 }
+
+/** Which input channels the live input uses; see Player.setMonitorChannel. */
+const CHANNEL_KEY = 'steminize.liveChannel';
+export type LiveChannel = 'stereo' | 'left' | 'right' | 'sum';
+
+export function loadLiveChannel(): LiveChannel {
+  try {
+    const v = localStorage.getItem(CHANNEL_KEY);
+    if (v === 'stereo' || v === 'left' || v === 'right' || v === 'sum') return v;
+  } catch {
+    /* storage unavailable */
+  }
+  return 'stereo';
+}
+
+export function saveLiveChannel(v: LiveChannel) {
+  try {
+    localStorage.setItem(CHANNEL_KEY, v);
+  } catch {
+    /* ignore */
+  }
+}

@@ -352,8 +352,14 @@
                 <div class="tool live">
                   <button class="btn tiny toggle" id="liveBtn" type="button" aria-pressed="false" title="Play a real instrument or mic live alongside the tracks">Monitor</button>
                   <select id="liveDevice" title="Input device" hidden></select>
+                  <select id="liveChannel" title="Which input channel to use. An instrument in input 1 of an interface leaves the other channel silent, which halves the level in Stereo; pick Input 1 (or 2) to use just that one." hidden>
+                    <option value="stereo">Stereo</option>
+                    <option value="left">Input 1</option>
+                    <option value="right">Input 2</option>
+                    <option value="sum">Inputs 1+2 summed</option>
+                  </select>
                   <div class="live-meter" id="liveMeter" hidden><i id="liveMeterBar"></i></div>
-                  <label class="mini vol" id="liveVolWrap" hidden><span>Level</span><input type="range" id="liveVol" min="0" max="1.5" step="0.01" value="0.8" /></label>
+                  <label class="mini vol" id="liveVolWrap" hidden><span>Level</span><input type="range" id="liveVol" min="0" max="4" step="0.01" value="0.8" /></label>
                   <label class="mini pan" id="livePanWrap" hidden title="Pan (double-click to centre)"><span>Pan</span><input type="range" id="livePan" min="-1" max="1" step="0.05" value="0" /><output id="livePanOut">C</output></label>
                   <label class="mini latency" id="liveLatencyWrap" hidden title="How late a take lands behind the song (the delay of what you hear plus the delay of what is recorded). It is taken off the take when you stop, so it lines up. Press Measure to find it.">Latency <input type="number" id="liveLatency" min="0" max="500" step="1" value="0" /> ms</label>
                   <button class="btn tiny ghost" id="liveLatencyBtn" type="button" hidden title="Plays clicks and listens for them on the input to measure the delay. Needs the speakers near the microphone, or a cable from the output to the input. With headphones and no cable, record a take against the click and use Line up under it instead.">Measure</button>
