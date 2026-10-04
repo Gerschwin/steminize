@@ -250,7 +250,7 @@ Turn **Use native playback** off for this section.
 - [ ] Mixer: mute, solo, level, pan, EQ all change the sound; the master Volume works.
 - [ ] Count-in and Click play and stay in time with the music, also at slow tempo.
 - [ ] Speed trainer and gap between passes work.
-- [ ] The playhead and waveform stay in step with what you hear (note any visible lag at slow tempos).
+- [ ] The playhead and waveform stay in step with what you hear, including at slow tempos (it used to run about 60 ms ahead of the sound when slowed).
 - [ ] "Audio load" and "dropouts" show under the row and stay near 0 at 128 frames; try 64 and 256 and note when it crackles.
 - [ ] A song that is not saved in the library still plays (in the normal engine).
 - [ ] Switching the tick off and reopening the song returns to the normal engine.
@@ -313,5 +313,5 @@ Turn **Use native playback** off for this section.
 - Techniques, mark lines and bar colours aren't drawn on the Staff view.
 - Dotted lengths can't be set by key in Follow along (type them in the rhythm line).
 - Bar colours are red / green only; the exact count is in the tooltip.
-- Native audio: saved songs only; needs the input and output to share a sample rate; takes are mono at 44.1 kHz; the playhead can run slightly ahead of the sound at slow tempos; Windows / macOS and JACK / ASIO are not tested or not built yet.
+- Native audio: saved songs only; needs the input and output to share a sample rate; takes are mono at 44.1 kHz; Windows / macOS and JACK / ASIO are not tested or not built yet.
 - The native engine's time-stretch is a different algorithm from the normal engine's, so slowed audio sounds a little different.

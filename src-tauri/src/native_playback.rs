@@ -259,8 +259,8 @@ impl Engine {
         let n = l.len();
         // Tell the input side where the song is at this moment, and how fast it is moving.
         let (here, speed) = match (&self.t, self.playing) {
-            (Some(t), true) if !t.pausing() => (t.r.heard, 44100.0 * t.r.tempo),
-            (Some(t), _) => (t.r.heard, 0.0),
+            (Some(t), true) if !t.pausing() => (t.r.audible(), 44100.0 * t.r.tempo),
+            (Some(t), _) => (t.r.audible(), 0.0),
             _ => (0.0, 0.0),
         };
         self.input.note_output(here, speed);
@@ -292,7 +292,7 @@ impl Engine {
         self.input.mix_into(l, r, &mut self.mon_primed);
         let sh = &self.shared;
         if let Some(t) = &self.t {
-            sh.pos.store(t.r.heard.to_bits(), Ordering::Relaxed);
+            sh.pos.store(t.r.audible().to_bits(), Ordering::Relaxed);
             sh.tempo.store(t.r.tempo.to_bits(), Ordering::Relaxed);
             sh.passes.store(t.passes, Ordering::Relaxed);
             sh.counting_in.store(t.pausing(), Ordering::Relaxed);

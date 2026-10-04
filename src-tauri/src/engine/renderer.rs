@@ -13,25 +13,39 @@ pub struct Renderer {
     out: Vec<f32>,
     pub tempo: f64,
     pub pitch: f64,
-    /// Source position (frames) of the audio most recently output.
+    /// Source position (frames) most recently fed to the output. With the stretcher running the sound lags this by the
+    /// stretcher's latency; `audible()` is where the sound actually is.
     pub heard: f64,
+    /// Where the last seek landed: the sound can't be before it, however far back the stretcher's latency would put it.
+    seek_pos: f64,
     /// Fraction of an input frame owed between blocks, so the tempo stays exact over many blocks.
     carry: f64,
 }
 
 impl Renderer {
     pub fn new(src: MixSource) -> Self {
-        Renderer { src, st: Stretch::preset_default(2, 44100), tmp: Vec::new(), feed: Vec::new(), out: Vec::new(), tempo: 1.0, pitch: 0.0, heard: 0.0, carry: 0.0 }
+        Renderer { src, st: Stretch::preset_default(2, 44100), tmp: Vec::new(), feed: Vec::new(), out: Vec::new(), tempo: 1.0, pitch: 0.0, heard: 0.0, seek_pos: 0.0, carry: 0.0 }
     }
 
     pub fn bypass(&self) -> bool {
         self.tempo == 1.0 && self.pitch == 0.0
     }
 
+    /// Where in the song the sound being heard is. At normal speed that is `heard`. With the stretcher running, what it
+    /// outputs comes from audio it was fed a little earlier (its input latency), so the sound is behind `heard` by that much.
+    pub fn audible(&self) -> f64 {
+        if self.bypass() {
+            self.heard
+        } else {
+            (self.heard - self.st.input_latency() as f64).max(self.seek_pos).min(self.heard)
+        }
+    }
+
     pub fn seek(&mut self, pos: f64) {
         // Positions must be whole frames: they index the sample arrays.
         self.src.pos = (pos.round().max(0.0) as usize).min(self.src.end);
         self.heard = self.src.pos as f64;
+        self.seek_pos = self.heard;
         self.src.reset_pad();
         self.src.reset_eqs();
         self.st.reset();
@@ -136,6 +150,22 @@ mod tests {
         let out = render_all(&mut r, 44100, 256);
         assert_eq!(out.len(), 44100);
         assert!((r.heard - 22050.0).abs() < 2.0, "heard {}", r.heard);
+    }
+
+    #[test]
+    fn the_sound_is_behind_the_fed_position_only_while_stretching() {
+        let mut src = MixSource::new(vec![sine_stem(440.0, 200000)], vec![1.0], 200000);
+        src.pad_end = 32768;
+        let mut r = Renderer::new(src);
+        render_all(&mut r, 5000, 256);
+        assert_eq!(r.audible(), r.heard, "normal speed: nothing to correct");
+        r.seek(50000.0);
+        r.set_tempo_pitch(0.75, 0.0);
+        assert_eq!(r.audible(), 50000.0, "right after a seek the sound is at the seek position");
+        render_all(&mut r, 20000, 256);
+        let behind = r.heard - r.audible();
+        println!("stretcher latency: {behind} frames = {:.1} ms", behind / 44.1);
+        assert!(behind > 100.0 && behind < 8000.0, "sound should trail the fed position by the stretcher's latency: {behind}");
     }
 
     #[test]
