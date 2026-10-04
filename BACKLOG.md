@@ -82,6 +82,8 @@ Possible UI change: pin the drop zone (+ Songs/Settings tabs, already sticky) at
 
 ## Done
 
+- 2026-10-05 — **Bar-accuracy colours.** The playing trainer now tallies each judged note group into its bar (`TabNote.bar`, the same index the clickable bar numbers use). `BarTally` (src/lyrics/barScores.ts) turns consecutive groups in a bar into a "visit"; a finished visit replaces that bar's last result, so the colours show the latest attempt. The bar-number click rects on the engraved tab get a heat fill (red 0% to green 100%, `hsl(pct*1.2 70% 52%)`), the tooltip adds "Last time: 3 of 4 notes", scores are kept per song in `ScratchState.tabBarScores`, and "Clear bar colours" forgets them. Not on the Staff view. Red/green only, so the exact count is in the tooltip for colour-blind users; a pattern or number on the chip would be a next step.
+
 - 2026-10-04 — Track lanes now draw the song's beat lines (teal; bars stronger, every beat once zoomed in), reusing `drawBars`. The click isn't audio in any lane, so there was nothing to line a take up against when using Line up. Beats are the detected ones; no beat lines until tempo analysis has finished.
 
 - 2026-10-04 — Recording, the input meter and the tuner/trainer now tap the input before the monitor Level (and pan), so Level 0 (direct monitoring on the interface) no longer records silence. Takes are therefore unpanned and not scaled by Level (a quiet input has to be raised at the OS capture level or with the channel choice). Removed the "(audio system reports ~N ms)" note: the browser's figure is far below the real round trip and misleads.

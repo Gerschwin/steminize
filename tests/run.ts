@@ -29,6 +29,7 @@ import { moveItem, nextSong, parseSetlists, prevSong, pruneSongs, totalSeconds, 
 import { detectLatency } from '../src/player/latency.ts';
 import { placeTake, shiftTake } from '../src/player/placement.ts';
 import { StreamResampler } from '../src/player/resample.ts';
+import { BarTally, barColour, barPercent, barTip } from '../src/lyrics/barScores.ts';
 
 let failed = 0;
 const ok = (name: string, cond: boolean, detail = '') => {
@@ -987,6 +988,25 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('resample: reports when the source has ended', ended === false);
   rs.reset();
   ok('resample: reset clears the ended state', rs.render((l, r, n) => true, new Float32Array(64), new Float32Array(64), 64) === true);
+}
+
+// ---- tab+ per-bar accuracy colours
+{
+  const t = new BarTally();
+  ok('bars: the first group in a bar finishes nothing', t.group(0, true) === null);
+  ok('bars: more groups in the same bar finish nothing', t.group(0, false) === null && t.group(0, true) === null);
+  const done = t.group(1, true);
+  ok('bars: moving to the next bar finishes the previous bar with its counts', !!done && done.bar === 0 && done.hit === 2 && done.total === 3);
+  const rest = t.flush();
+  ok('bars: flush finishes the bar in progress', !!rest && rest.bar === 1 && rest.hit === 1 && rest.total === 1);
+  ok('bars: a second flush has nothing left', t.flush() === null);
+  const again = new BarTally();
+  again.group(2, true);
+  ok('bars: going back to an earlier bar (a loop) finishes the one just played', again.group(0, false)?.bar === 2);
+  ok('bars: percent rounds', barPercent(2, 3) === 67 && barPercent(0, 0) === 0);
+  ok('bars: all wrong is red, all right is green', barColour(0, 4) === 'hsl(0 70% 52%)' && barColour(4, 4) === 'hsl(120 70% 52%)');
+  ok('bars: half right is amber', barColour(2, 4) === 'hsl(60 70% 52%)');
+  ok('bars: the tooltip adds the last result', barTip(4, [3, 4]).endsWith('3 of 4 notes (75%)') && !barTip(4, undefined).includes('Last time'));
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

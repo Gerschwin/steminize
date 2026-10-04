@@ -10,6 +10,7 @@ import { extensionFor, mimeFor } from '../encode/meta.ts';
 import { stemColour, MODELS } from '../models.ts';
 import { openSink, safeName, saveFile } from '../platform.ts';
 import { MAX_REC_LATENCY_MS, loadLiveChannel, loadLowLatencyAudio, loadRecLatencyMs, saveLiveChannel, saveLowLatencyAudio, saveRecLatencyMs, type LiveChannel, type Settings } from '../settings.ts';
+import { BarTally, barColour, barTip, type BarScores, type BarVisit } from '../lyrics/barScores.ts';
 import { initNativeAudio } from './nativeAudio.ts';
 import { placeTake, shiftTake } from '../player/placement.ts';
 import { lineAt, parseLrc, type Lrc } from '../lyrics/lrc.ts';
@@ -148,6 +149,8 @@ export interface ScratchState {
   /** Ear training: the engraved tab is hidden while the song plays (the Trainer still judges), so you
    * play from memory; it comes back when playback stops. Needs tabFollow on. */
   tabEar?: boolean;
+  /** How each bar of the tab was played the last time it came round (from the playing trainer), shown as heat colours on the bar numbers. */
+  tabBarScores?: BarScores;
   drums?: string;
   notes?: string;
 }
@@ -452,6 +455,9 @@ export class Deck {
    * right after a correct hit doesn't retroactively read as a miss. */
   private trainerGroupStart: number | null = null;
   private trainerGroupHit = false;
+  /** Bar the note group being judged is in, and the running per-bar tally the heat colours come from. */
+  private trainerGroupBar = -1;
+  private barTally = new BarTally();
   private trainerLastU = 0;
   /** The gated speed trainer (Trainer.gate): consecutive passes played well enough so far at this
    * speed, and a line about the last pass for the Practice pane. */
@@ -1837,10 +1843,8 @@ export class Deck {
   private finishTrainerPass() {
     const t = this.pr.trainer;
     if (!t.on || !t.gate) return;
-    if (this.trainerGroupStart !== null) {
-      this.trainerTotal++;
-      if (this.trainerGroupHit) this.trainerHit++;
-    }
+    if (this.trainerGroupStart !== null) this.tallyGroup(this.trainerGroupHit);
+    this.commitBar(this.barTally.flush());
     const res = gateStep(this.trainerClean, this.trainerHit, this.trainerTotal, t.gate, t.every);
     this.trainerClean = res.clean;
     const pct = this.trainerTotal ? Math.round((100 * this.trainerHit) / this.trainerTotal) : null;
@@ -1859,7 +1863,42 @@ export class Deck {
     this.gateStatus = '';
   }
 
+  /** A judged note group has ended: it counts towards the pass's tally and towards its bar's colour. */
+  private tallyGroup(hit: boolean) {
+    this.trainerTotal++;
+    if (hit) this.trainerHit++;
+    if (this.trainerGroupBar >= 0) this.commitBar(this.barTally.group(this.trainerGroupBar, hit));
+  }
+
+  /** A bar has been played through (or playing moved on): its result replaces the last one and the colours update. */
+  private commitBar(v: BarVisit | null) {
+    if (!v || v.total <= 0) return;
+    (this.scratch.tabBarScores ??= {})[String(v.bar)] = [v.hit, v.total];
+    this.paintBarScores();
+    this.emit();
+  }
+
+  /** Colours each bar number on the engraved tab by how well that bar was last played (none until it has been). */
+  private paintBarScores() {
+    const scores = this.scratch.tabBarScores ?? {};
+    for (const rect of $('tabStripTrack').querySelectorAll<SVGRectElement>('rect.tab-barnum')) {
+      const bar = Number(rect.dataset.barnum);
+      const sc = scores[String(bar)];
+      if (sc && sc[1] > 0) {
+        rect.style.fill = barColour(sc[0], sc[1]);
+        rect.style.fillOpacity = '0.8';
+      } else {
+        rect.style.fill = '';
+        rect.style.fillOpacity = '';
+      }
+      const title = rect.querySelector('title');
+      if (title) title.textContent = barTip(bar, sc);
+    }
+    $('tabBarScoresClear').hidden = !(Object.keys(scores).length && !$('tabStrip').hidden);
+  }
+
   private resetTrainerTally() {
+    this.commitBar(this.barTally.flush());
     this.trainerTotal = 0;
     this.trainerHit = 0;
     this.trainerGroupStart = null;
@@ -1897,6 +1936,7 @@ export class Deck {
         return;
       }
       if (!this.player.state.playing) {
+        this.commitBar(this.barTally.flush());
         status.textContent = this.trainerTotal ? `${this.trainerHit}/${this.trainerTotal} · ${Math.round((100 * this.trainerHit) / this.trainerTotal)}%` : 'Press play to begin';
         paint(null);
         setTimeout(tick, 200);
@@ -1919,15 +1959,12 @@ export class Deck {
       const group = u === null ? [] : noteGroupAt(this.stripNotes ?? [], u);
 
       if (group.length && group[0].start !== this.trainerGroupStart) {
-        if (this.trainerGroupStart !== null) {
-          this.trainerTotal++;
-          if (this.trainerGroupHit) this.trainerHit++;
-        }
+        if (this.trainerGroupStart !== null) this.tallyGroup(this.trainerGroupHit);
         this.trainerGroupStart = group[0].start;
+        this.trainerGroupBar = group[0].bar;
         this.trainerGroupHit = false;
       } else if (!group.length && this.trainerGroupStart !== null) {
-        this.trainerTotal++;
-        if (this.trainerGroupHit) this.trainerHit++;
+        this.tallyGroup(this.trainerGroupHit);
         this.trainerGroupStart = null;
       }
 
@@ -2087,6 +2124,12 @@ export class Deck {
       this.updateTabView();
       this.emit();
     };
+    $('tabBarScoresClear').onclick = () => {
+      delete this.scratch.tabBarScores;
+      this.barTally.flush();
+      this.paintBarScores();
+      this.emit();
+    };
     $('tabTrainerBtn').onclick = () => {
       this.scratch.tabTrainer = !this.scratch.tabTrainer;
       // Needs the engraved view visible to highlight right/wrong on; turning it on also turns that
@@ -2211,7 +2254,8 @@ export class Deck {
     if (s?.tabStaff) this.scratch.tabStaff = true;
     if (s?.tabTrainer) this.scratch.tabTrainer = true;
     if (s?.tabEar) this.scratch.tabEar = true;
-    this.resetTrainerTally();
+    this.resetTrainerTally(); // (before the scores below are restored: it commits whatever bar the last song left half played)
+    if (s?.tabBarScores && Object.keys(s.tabBarScores).length) this.scratch.tabBarScores = s.tabBarScores;
     this.scratchAreas.lyrics.value = this.scratch.lyrics ?? '';
     this.setLyricsText(this.scratch.lyrics ?? '');
     // Tab/Drum tab start with the blank string/beat template actually typed in (not just a
@@ -2314,6 +2358,7 @@ export class Deck {
     $('tabTrainerBtn').hidden = !(onTab && canFollow);
     pressed($('tabTrainerBtn'), trainer);
     $('tabTrainerStatus').hidden = !(onTab && trainer);
+    this.paintBarScores();
     $('tabEarBtn').hidden = !(onTab && canFollow);
     pressed($('tabEarBtn'), canFollow && !!this.scratch.tabEar);
     this.updateEarHide();
@@ -2402,6 +2447,7 @@ export class Deck {
     this.stripText = text;
     this.stripNotes = notes;
     this.stripBars = bars;
+    this.paintBarScores();
     $('tabStripView').style.height = `${layout.height}px`;
     this.lastStripPx = NaN;
     this.dirty = true;
