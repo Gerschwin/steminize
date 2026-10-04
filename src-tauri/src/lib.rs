@@ -2,6 +2,7 @@
 // separation runs in the webview (WebGPU where available, otherwise CPU/WASM).
 // The two plugins provide native "Save as" / folder dialogs and file writing.
 // The ytdlp module adds the one thing a browser tab can't do itself: "From YouTube" import.
+mod engine;
 mod library;
 mod links;
 mod native_audio;
