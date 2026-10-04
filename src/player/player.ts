@@ -1,7 +1,7 @@
 import workletUrl from './worklet.ts?worker&url';
 import probeUrl from './inputProbe.ts?worker&url';
 import { detectLatency, type LatencyResult } from './latency.ts';
-import { loadLowLatencyAudio } from '../settings.ts';
+import { loadLowLatencyAudio, loadRecLatencyMs } from '../settings.ts';
 import { isTauri } from '../platform.ts';
 import type { PlayerMsg, PlayerReport } from './worklet.ts';
 import type { Practice } from './transport.ts';
@@ -58,6 +58,58 @@ export class Player {
     return this.nativeRunning;
   }
 
+  /** The devices chosen in the Native audio row; the live input and the loopback test use them. */
+  nativeCfg: { host: string; input: string; output: string; channel: number; buffer: number; fixed: boolean; rate: number } | null = null;
+  private monitorNative = false;
+  private nativeRecording = false;
+  private nativeLevel = 0;
+  private nativeSnap: { buf: Float32Array; sampleRate: number } | null = null;
+  private snapTimer = 0;
+  private snapBusy = false;
+  private nativeMonGain = 0.8;
+  private nativeMonPan = 0;
+
+  /** The live input is running in the native engine (so recording lines up with the song without measuring). */
+  get monitorIsNative() {
+    return this.monitorNative;
+  }
+
+  private async startNativeMonitor(gain: number, pan: number): Promise<number> {
+    const c = this.nativeCfg!;
+    this.stopMonitor();
+    await this.nativeInvoke('native_input_start', { input: c.input, channel: c.channel, buffer: c.buffer, fixed: c.fixed });
+    this.nativeMonGain = gain;
+    this.nativeMonPan = pan;
+    await this.nativeInvoke('native_input_set', { monitor: true, gain, pan });
+    this.monitorNative = true;
+    this.nativeLevel = 0;
+    this.nativeSnap = null;
+    this.snapTimer = window.setInterval(() => void this.pollSnapshot(), 40);
+    return 1;
+  }
+
+  private async pollSnapshot() {
+    if (this.snapBusy || !this.monitorNative) return;
+    this.snapBusy = true;
+    try {
+      const raw = await this.nativeInvoke<ArrayBuffer>('native_input_snapshot');
+      const view = new DataView(raw);
+      this.nativeSnap = { sampleRate: view.getUint32(0, true), buf: new Float32Array(raw.slice(4)) };
+    } catch {
+      /* stopped meanwhile */
+    } finally {
+      this.snapBusy = false;
+    }
+  }
+
+  private stopNativeMonitor() {
+    clearInterval(this.snapTimer);
+    this.monitorNative = false;
+    this.nativeRecording = false;
+    this.nativeSnap = null;
+    this.nativeCall('native_input_stop');
+  }
+
   private async nativeInvoke<T = void>(cmd: string, args?: Record<string, unknown>, options?: { headers: Record<string, string> }): Promise<T> {
     const { invoke } = await import('@tauri-apps/api/core');
     return invoke<T>(cmd, args as never, options as never);
@@ -73,7 +125,9 @@ export class Player {
     const summary = await this.nativeInvoke<string>('native_engine_start', o);
     const { listen } = await import('@tauri-apps/api/event');
     this.nativeUnlisten?.();
-    this.nativeUnlisten = await listen<PlayerState>('native-state', (e) => {
+    this.nativeUnlisten = await listen<PlayerState & { level?: number }>('native-state', (e) => {
+      // The input meter runs whether or not the song is native; each report carries the peak since the last one.
+      this.nativeLevel = Math.max(e.payload.level ?? 0, this.nativeLevel * 0.85);
       if (!this.nativeSong) return;
       this.state = e.payload;
       this.stateStamp = performance.now();
@@ -363,7 +417,7 @@ export class Player {
 
   // ---------- live input monitoring ----------
   get monitoring() {
-    return !!this.monitorStream;
+    return !!this.monitorStream || this.monitorNative;
   }
 
   /** Input devices, with labels — only populated once permission has been granted at least once. */
@@ -375,6 +429,8 @@ export class Player {
 
   /** Starts playing a real instrument/mic live through the same output as the tracks, at `gain`/`pan`. */
   async startMonitor(deviceId: string | undefined, gain: number, pan = 0, channel: InputChannel = 'stereo') {
+    // With a native song playing, the input runs in the native engine too, so a take lines up with it exactly.
+    if (this.nativeRunning && this.nativeSong && this.nativeCfg) return this.startNativeMonitor(gain, pan);
     if (!navigator.mediaDevices?.getUserMedia) throw new Error("This browser can't capture audio input.");
     this.stopMonitor();
     await this.unlock();
@@ -412,6 +468,7 @@ export class Player {
    * the channel (or summing without averaging) avoids that.
    */
   setMonitorChannel(mode: InputChannel) {
+    if (this.monitorNative) return; // the native input channel is chosen in the Native audio row
     const ctx = this.ctx;
     const source = this.monitorSource;
     const input = this.monitorInput;
@@ -450,6 +507,7 @@ export class Player {
   }
 
   stopMonitor() {
+    if (this.monitorNative) this.stopNativeMonitor();
     // Stopping monitoring tears down the graph a recording taps into; the caller (the UI) is
     // expected to stop and save a recording first, but drop it cleanly here either way rather
     // than leave a dangling recorder.
@@ -474,11 +532,20 @@ export class Player {
   }
 
   get recording() {
-    return this.recorder?.state === 'recording';
+    return this.nativeRecording || this.recorder?.state === 'recording';
   }
 
   /** Starts recording your own take while monitoring; call startMonitor() first. It records the input itself, before the monitor level and pan, so it works with the level at 0 (hearing yourself through the interface instead). */
   startRecording() {
+    if (this.monitorNative) {
+      if (this.nativeRecording) return;
+      this.nativeRecording = true;
+      this.nativeInvoke('native_record_start', { rtMs: loadRecLatencyMs(true) }).catch((e) => {
+        this.nativeRecording = false;
+        this.onNativeError(`native_record_start: ${e}`);
+      });
+      return;
+    }
     if (!this.ctx || !this.monitorInput) throw new Error('Start monitoring first.');
     if (this.recording) return;
     const dest = this.ctx.createMediaStreamDestination();
@@ -495,7 +562,17 @@ export class Player {
   }
 
   /** Stops recording and returns the take, or null if nothing was recording. */
-  stopRecording(): Promise<{ blob: Blob; mimeType: string } | null> {
+  stopRecording(): Promise<{ blob?: Blob; mimeType?: string; native?: { samples: Float32Array; startPos: number } } | null> {
+    if (this.nativeRecording) {
+      this.nativeRecording = false;
+      // Mono audio at 44.1 kHz, already placed: the song frame it starts at has the round trip taken off.
+      return this.nativeInvoke<ArrayBuffer>('native_record_stop')
+        .then((raw) => ({ native: { startPos: new DataView(raw).getFloat64(0, true), samples: new Float32Array(raw.slice(8)) } }))
+        .catch((e) => {
+          this.onNativeError(`native_record_stop: ${e}`);
+          return null;
+        });
+    }
     const rec = this.recorder;
     const dest = this.recordDest;
     if (!rec || rec.state === 'inactive') return Promise.resolve(null);
@@ -520,6 +597,10 @@ export class Player {
    * and the monitor is muted for the duration so the clicks aren't fed back into themselves.
    */
   async measureLatency(): Promise<LatencyResult | null> {
+    if (this.monitorNative && this.nativeCfg) {
+      const c = this.nativeCfg;
+      return this.nativeInvoke<LatencyResult>('native_loopback', { host: c.host, input: c.input, output: c.output, inChannel: c.channel, buffer: c.buffer, fixed: c.fixed, rate: c.rate });
+    }
     const ctx = this.ctx;
     const source = this.monitorSource;
     if (!ctx || !source) throw new Error('Start monitoring first.');
@@ -566,15 +647,24 @@ export class Player {
   }
 
   setMonitorGain(v: number) {
+    if (this.monitorNative) {
+      this.nativeMonGain = v;
+      return this.nativeCall('native_input_set', { monitor: true, gain: v, pan: this.nativeMonPan });
+    }
     if (this.monitorGain) this.monitorGain.gain.value = v;
   }
 
   setMonitorPan(v: number) {
+    if (this.monitorNative) {
+      this.nativeMonPan = v;
+      return this.nativeCall('native_input_set', { monitor: true, gain: this.nativeMonGain, pan: v });
+    }
     if (this.monitorPanner) this.monitorPanner.pan.value = v;
   }
 
   /** Current input level, 0–1 (peak over the last analysis window), for a simple meter. */
   monitorLevel(): number {
+    if (this.monitorNative) return Math.min(1, this.nativeLevel);
     if (!this.monitorAnalyser) return 0;
     const buf = new Float32Array(this.monitorAnalyser.fftSize);
     this.monitorAnalyser.getFloatTimeDomainData(buf);
@@ -585,6 +675,7 @@ export class Player {
 
   /** Raw samples for pitch detection (a tuner), or null while not monitoring. */
   monitorTimeDomain(): { buf: Float32Array; sampleRate: number } | null {
+    if (this.monitorNative) return this.nativeSnap;
     if (!this.monitorAnalyser || !this.ctx) return null;
     const buf = new Float32Array(this.monitorAnalyser.fftSize);
     this.monitorAnalyser.getFloatTimeDomainData(buf);

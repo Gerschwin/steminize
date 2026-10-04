@@ -818,4 +818,45 @@ mod tests {
         println!("take starts at song frame {start}, {} samples; best lag {} samples = {:.2} ms", take.len(), best.0, best.0 as f64 / 44.1);
         assert!(best.0.abs() < 132, "take is {:.1} ms off the song", best.0 as f64 / 44.1);
     }
+
+    /// Checks the newest saved take in a song folder against the song itself, to see how well a take recorded through the
+    /// app lines up (needs a loopback so the take contains the song). `NA_SONG_DIR=<library/song-id>`.
+    #[test]
+    #[ignore]
+    fn saved_take_lines_up() {
+        let dir = std::path::PathBuf::from(std::env::var("NA_SONG_DIR").expect("NA_SONG_DIR"));
+        let meta: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("meta.json")).unwrap()).unwrap();
+        let groups = meta["takeGroups"].as_array().expect("takeGroups");
+        let g = groups.last().unwrap();
+        let takes = g["takes"].as_array().unwrap();
+        let t = takes.last().unwrap();
+        let file = format!("{}-{}", g["id"].as_str().unwrap(), t["id"].as_str().unwrap());
+        let (take, _) = decode_flac(&std::fs::read(dir.join(format!("{file}.flac"))).unwrap(), t["scale"].as_f64().unwrap_or(1.0) as f32).unwrap();
+        let mut mix = vec![0f32; take.len()];
+        for s in meta["stems"].as_array().unwrap() {
+            let (l, _) = decode_flac(&std::fs::read(dir.join(format!("{}.flac", s["name"].as_str().unwrap()))).unwrap(), s["scale"].as_f64().unwrap_or(1.0) as f32).unwrap();
+            for (i, v) in l.iter().enumerate().take(mix.len()) {
+                mix[i] += v;
+            }
+        }
+        let first = take.iter().position(|v| v.abs() > 1e-4).unwrap_or(0);
+        let last = take.iter().rposition(|v| v.abs() > 1e-4).unwrap_or(0);
+        println!("{file}: {} frames, sound from {} ({:.2}s) to {} ({:.2}s)", take.len(), first, first as f64 / 44100.0, last, last as f64 / 44100.0);
+        let (from, to) = (first + 44100, last.saturating_sub(44100).max(first + 44100 + 44100));
+        let mut best = (0i64, f64::MIN);
+        for lag in -2200i64..=2200 {
+            let mut dot = 0.0f64;
+            for i in from..to.min(take.len()) {
+                let j = i as i64 + lag;
+                if j >= 0 && (j as usize) < mix.len() {
+                    dot += take[i] as f64 * mix[j as usize] as f64;
+                }
+            }
+            if dot > best.1 {
+                best = (lag, dot);
+            }
+        }
+        println!("take vs song: best lag {} samples = {:.2} ms", best.0, best.0 as f64 / 44.1);
+        assert!(best.0.abs() < 132, "take is {:.1} ms off the song", best.0 as f64 / 44.1);
+    }
 }

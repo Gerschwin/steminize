@@ -3,6 +3,7 @@
 // monitor the input by ear, or measure the round trip with the output patched to an input.
 import { isTauri } from '../platform.ts';
 import { toast } from './dom.ts';
+import { saveRecLatencyMs } from '../settings.ts';
 import type { Player } from '../player/player.ts';
 import { createDropdown } from './dropdown.ts';
 
@@ -93,6 +94,7 @@ export function initNativeAudio(player: Player) {
       return d ? `${kind === 'input' ? 'Input' : 'Output'}: ${d.name}${d.note ? ` → ${d.note}` : ''}, ${d.channels} ch, ${d.sample_rate} Hz` : '';
     };
     route.textContent = [line('input', inSel.value), line('output', outSel.value)].filter(Boolean).join('  ·  ');
+    syncCfg();
   };
   inSel.onChange = showRoute;
   outSel.onChange = showRoute;
@@ -149,7 +151,18 @@ export function initNativeAudio(player: Player) {
     }
   };
 
-  hostSel.onchange = fillDevices;
+  /** Tells the player which devices the native live input and the loopback test should use. */
+  const syncCfg = () => {
+    const a = args();
+    player.nativeCfg = { host: a.host, input: a.input, output: a.output, channel: a.inChannel, buffer: a.buffer, fixed: a.fixed, rate: a.rate };
+  };
+  for (const el of [hostSel, chanSel, bufSel, rateSel]) el.addEventListener('change', syncCfg);
+  inSel.el.addEventListener('click', () => setTimeout(syncCfg, 0));
+  outSel.el.addEventListener('click', () => setTimeout(syncCfg, 0));
+  hostSel.onchange = () => {
+    fillDevices();
+    syncCfg();
+  };
   $('naRefresh').onclick = () => void load();
 
   monBtn.onclick = async () => {
@@ -191,6 +204,12 @@ export function initNativeAudio(player: Player) {
     try {
       const r = await call<LoopbackResult>('native_loopback', args());
       lastRoundTrip = r.ms;
+      if (r.ms != null) {
+        // The native engine's recordings take this round trip off, so a measurement is the calibration.
+        saveRecLatencyMs(r.ms, true);
+        const box = document.getElementById('liveLatency') as HTMLInputElement | null;
+        if (box && player.monitorIsNative) box.value = String(Math.round(r.ms));
+      }
       status.textContent =
         r.ms == null
           ? `Couldn't hear the clicks (${r.hits}/${r.total}). Patch the output to the chosen input with a cable, or hold the mic to the speaker. ${r.detail}`

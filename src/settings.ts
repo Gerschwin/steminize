@@ -61,9 +61,15 @@ export function saveSettings(s: Settings) {
 const LATENCY_KEY = 'steminize.recLatencyMs';
 export const MAX_REC_LATENCY_MS = 500;
 
-export function loadRecLatencyMs(): number {
+/** The native engine has its own value (its round trip is a few ms, the webview's is hundreds). */
+const NATIVE_LATENCY_KEY = 'steminize.nativeRecLatencyMs';
+export const DEFAULT_NATIVE_LATENCY_MS = 10;
+
+export function loadRecLatencyMs(native = false): number {
   try {
-    const v = Number(localStorage.getItem(LATENCY_KEY));
+    const stored = localStorage.getItem(native ? NATIVE_LATENCY_KEY : LATENCY_KEY);
+    if (native && stored == null) return DEFAULT_NATIVE_LATENCY_MS;
+    const v = Number(stored);
     if (Number.isFinite(v)) return Math.max(0, Math.min(MAX_REC_LATENCY_MS, Math.round(v)));
   } catch {
     /* storage unavailable */
@@ -71,9 +77,9 @@ export function loadRecLatencyMs(): number {
   return 0;
 }
 
-export function saveRecLatencyMs(ms: number) {
+export function saveRecLatencyMs(ms: number, native = false) {
   try {
-    localStorage.setItem(LATENCY_KEY, String(Math.max(0, Math.min(MAX_REC_LATENCY_MS, Math.round(ms)))));
+    localStorage.setItem(native ? NATIVE_LATENCY_KEY : LATENCY_KEY, String(Math.max(0, Math.min(MAX_REC_LATENCY_MS, Math.round(ms)))));
   } catch {
     /* ignore */
   }

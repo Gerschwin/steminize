@@ -38,7 +38,13 @@ browser version, selectable in a "Native audio" setting.
    Original description: Extract a `Player` interface from `src/player/player.ts` (what `deck.ts` calls today), keep the web
    implementation, add a native one that forwards to the Tauri commands, and a "Native audio" setting that picks one.
    Waveform drawing, markers, tab follow-along and the trainer keep working because they read the same position state.
-5. **Native live input and recording.** The input stream feeds the monitor and a recorder in the same callback as the
+5. **Native live input and recording (done 2026-10-04).** `src-tauri/src/native_input.rs` + `native_playback.rs`. The input
+   stream joins the engine: monitor (level, pan, queue kept to about one block), level meter, a snapshot for the tuner and the
+   tab Trainer, and recording with the measured round trip taken off. Verified two ways through a PipeWire null sink as a
+   perfect loopback: a Rust test (take 0.34 ms from the song) and a take recorded through the real app UI, saved, and compared
+   with the song (1.1 ms). Native has its own latency value (default 10 ms; Measure / Loopback test sets it) and the old
+   Line up tool still works on native takes. Web fallback unchanged.
+   Original description: The input stream feeds the monitor and a recorder in the same callback as the
    playback, so the take's offset against the song is known exactly (no Measure, no Line up needed). Takes are written
    out as files and added as takes the way web takes are.
 6. **Hardening.** Device hot-unplug, sample-rate mismatches, xrun counters in the UI, a buffer size setting, then

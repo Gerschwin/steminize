@@ -199,6 +199,8 @@ interface Take {
   note?: string; // freeform, e.g. "rushed the bridge" — a reminder for telling takes apart later
   /** Net shift applied by Line up since the last "Use as latency" (ms, negative = earlier). Not saved. */
   nudgeMs?: number;
+  /** Recorded by the native engine (so "Use as latency" adjusts the native value, not the web one). Not saved. */
+  native?: boolean;
 }
 
 type LanePatch = Partial<Pick<Lane, 'vol' | 'pan' | 'mute' | 'solo' | 'eq'>>;
@@ -461,7 +463,7 @@ export class Deck {
   private recordStartPos = 0;
   private nudgeSaveTimers = new Map<Take, number>();
   /** Sets the latency box and the saved value; wired up by the Live input panel. */
-  private setRecLatency: (ms: number) => void = (ms) => saveRecLatencyMs(ms);
+  private setRecLatency: (ms: number, native?: boolean) => void = (ms, native) => saveRecLatencyMs(ms, !!native);
   /** Song frame a punch-in take must stop at (the end of the loop), or null for an ordinary take. */
   private recordPunchEnd: number | null = null;
   private recordDrawTimer = 0;
@@ -847,7 +849,9 @@ export class Deck {
   /** Stops the live waveform drawing and, given the finished recording (or null if there was
    * nothing to keep), decodes it, places it in the song at the frame position recording started
    * at, and adds it as a new take — selected, saved, and mixed in at the group's one slot. */
-  private async finishRecordLane(blob: Blob | null) {
+  private async finishRecordLane(rec: { blob?: Blob; native?: { samples: Float32Array; startPos: number } } | null) {
+    const blob = rec?.blob ?? null;
+    const native = rec?.native ?? null;
     clearInterval(this.recordDrawTimer);
     const lane = this.recordLane;
     this.recordLane = null;
@@ -856,7 +860,7 @@ export class Deck {
     if (!lane) return;
     lane.el.classList.remove('recording');
     const takes = lane.takes ?? [];
-    if (!blob) {
+    if (!blob && !native) {
       if (takes.length) this.selectTake(lane, takes[takes.length - 1]);
       else {
         lane.el.remove();
@@ -865,18 +869,26 @@ export class Deck {
       return;
     }
     try {
-      const ctx = new OfflineAudioContext(2, 1, SR);
-      const audio = await ctx.decodeAudioData(await blob.arrayBuffer());
-      const ch = (i: number) => audio.getChannelData(Math.min(i, audio.numberOfChannels - 1));
-      const raw: Stereo = [ch(0), ch(1)];
+      let raw: Stereo;
+      let at: ReturnType<typeof placeTake>;
+      if (native) {
+        // The native engine already placed it: the start frame has the round trip taken off.
+        raw = [native.samples, native.samples];
+        at = placeTake(raw[0].length, Math.round(native.startPos), 0, this.length, punchEnd);
+      } else {
+        const ctx = new OfflineAudioContext(2, 1, SR);
+        const audio = await ctx.decodeAudioData(await blob!.arrayBuffer());
+        const ch = (i: number) => audio.getChannelData(Math.min(i, audio.numberOfChannels - 1));
+        raw = [ch(0), ch(1)];
+        // The take lands behind the song by the round-trip audio delay; put it back where it was played.
+        at = placeTake(raw[0].length, this.recordStartPos, Math.round((loadRecLatencyMs() / 1000) * SR), this.length, punchEnd);
+      }
       const data: Stereo = [new Float32Array(this.length), new Float32Array(this.length)];
-      // The take lands behind the song by the round-trip audio delay; put it back where it was played.
-      const at = placeTake(raw[0].length, this.recordStartPos, Math.round((loadRecLatencyMs() / 1000) * SR), this.length, punchEnd);
       if (at.count > 0) {
         data[0].set(raw[0].subarray(at.srcStart, at.srcStart + at.count), at.dstStart);
         data[1].set(raw[1].subarray(at.srcStart, at.srcStart + at.count), at.dstStart);
       }
-      const take: Take = { id: `take-${takes.length + 1}`, data, peaks: peaksOf(data) };
+      const take: Take = { id: `take-${takes.length + 1}`, data, peaks: peaksOf(data), native: !!native };
       lane.takes = [...takes, take];
       if (takes.length === 0) {
         lane.colour = stemColour('take', this.lanes.indexOf(lane));
@@ -988,8 +1000,9 @@ export class Deck {
     };
     const use = h('button', { class: 'btn tiny', type: 'button', disabled: net === 0, title: 'Use this shift as your latency, so every take you record from now on lands where this one now sits' }, 'Use as latency');
     use.onclick = () => {
-      const next = Math.max(0, Math.min(MAX_REC_LATENCY_MS, loadRecLatencyMs() - net));
-      this.setRecLatency(next);
+      const native = !!t.native;
+      const next = Math.max(0, Math.min(MAX_REC_LATENCY_MS, loadRecLatencyMs(native) - net));
+      this.setRecLatency(next, native);
       t.nudgeMs = 0;
       this.renderTakeStrip(lane);
       toast(`Latency is now ${next} ms`);
@@ -1409,13 +1422,15 @@ export class Deck {
     const latencyBtn = $<HTMLButtonElement>('liveLatencyBtn');
     const sum = $('sumLive');
 
-    const applyLatency = (ms: number) => {
+    // The box shows the value for whichever engine the input is running in (the native engine's is a few ms, the webview's hundreds).
+    const applyLatency = (ms: number, native = this.player.monitorIsNative) => {
       const v = Math.max(0, Math.min(MAX_REC_LATENCY_MS, Math.round(ms) || 0));
-      latencyInput.value = String(v);
-      saveRecLatencyMs(v);
+      if (native === this.player.monitorIsNative) latencyInput.value = String(v);
+      saveRecLatencyMs(v, native);
     };
     this.setRecLatency = applyLatency;
-    latencyInput.value = String(loadRecLatencyMs());
+    const showLatency = () => (latencyInput.value = String(loadRecLatencyMs(this.player.monitorIsNative)));
+    showLatency();
     latencyInput.onchange = () => applyLatency(Number(latencyInput.value));
     latencyBtn.onclick = async () => {
       if (!this.player.monitoring || this.player.recording) return;
@@ -1558,7 +1573,7 @@ export class Deck {
       if (!this.player.recording) return;
       recordUi(false);
       const take = await this.player.stopRecording();
-      await this.finishRecordLane(take?.blob ?? null);
+      await this.finishRecordLane(take);
       resumeLoop();
       if (restoreTempo != null) {
         this.setTempoPitch(restoreTempo, this.pitch);
@@ -1660,6 +1675,7 @@ export class Deck {
       if (!this.player.monitoring) return;
       void finishRecording().then(() => {
         this.player.stopMonitor();
+        showLatency();
         setUi(false);
         status.textContent = '';
       });
@@ -1676,7 +1692,17 @@ export class Deck {
         const channels = await this.player.startMonitor(deviceSel.value || undefined, Number(vol.value), Number(pan.value), channelSel.value as LiveChannel);
         await refreshDevices();
         setUi(true);
-        status.textContent = channels ? `Input has ${channels} channel${channels === 1 ? '' : 's'}.` : '';
+        showLatency();
+        // In native mode the input device and channel come from the Native audio row, so these two don't apply.
+        if (this.player.monitorIsNative) {
+          deviceSel.hidden = true;
+          channelSel.hidden = true;
+        }
+        status.textContent = this.player.monitorIsNative
+          ? 'Native input: device and channel come from the Native audio row. Takes line up using the latency measured below.'
+          : channels
+            ? `Input has ${channels} channel${channels === 1 ? '' : 's'}.`
+            : '';
       } catch (e) {
         status.textContent = "Couldn't start.";
         toast(`Live input: ${(e as Error).message}`, true);
