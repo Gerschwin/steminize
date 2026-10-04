@@ -35,6 +35,8 @@ pub struct DeviceInfo {
     buffer_min: Option<u32>,
     buffer_max: Option<u32>,
     is_default: bool,
+    /// What the device really is / where it routes to, in plain words (empty when unknown).
+    note: String,
 }
 
 pub(crate) fn host_by_name(name: &str) -> Result<Host, String> {
@@ -52,6 +54,45 @@ fn buffer_range(b: &SupportedBufferSize) -> (Option<u32>, Option<u32>) {
     }
 }
 
+/// Plain-words description of an ALSA device name, so the list says where audio really goes (for instance that `default`
+/// is the PulseAudio protocol on a PipeWire system, not the `pipewire` device itself).
+fn describe_device(host: &str, name: &str) -> String {
+    if host != "ALSA" {
+        return String::new();
+    }
+    let runtime = std::env::var("XDG_RUNTIME_DIR").unwrap_or_default();
+    let pipewire_running = std::path::Path::new(&runtime).join("pipewire-0").exists();
+    let pulse_via = if pipewire_running { "PulseAudio protocol, served by PipeWire" } else { "PulseAudio" };
+    match name {
+        "pipewire" => "PipeWire directly".into(),
+        "pulse" => pulse_via.into(),
+        "jack" => "JACK (needs a JACK server running)".into(),
+        "default" => match user_default_pcm() {
+            Some(target) if target == "pulse" => format!("ALSA default, set in ~/.asoundrc to {pulse_via}"),
+            Some(target) if target == "pipewire" => "ALSA default, set in ~/.asoundrc to PipeWire directly".into(),
+            Some(target) => format!("ALSA default, set in ~/.asoundrc to {target}"),
+            None if std::path::Path::new("/usr/share/alsa/alsa.conf.d/99-pipewire-default.conf").exists() => "ALSA default, routed to PipeWire directly".into(),
+            None => "ALSA default (whatever the system configures)".into(),
+        },
+        n if n.starts_with("hw:") => "straight to the card, exclusive (fails if PipeWire holds it)".into(),
+        n if n.starts_with("plughw:") => "straight to the card with format conversion, exclusive".into(),
+        n if n.starts_with("sysdefault:") => "the card through ALSA's default settings".into(),
+        n if n.starts_with("dmix:") => "ALSA software mixing (output only)".into(),
+        n if n.starts_with("dsnoop:") => "ALSA software sharing (input only)".into(),
+        _ => String::new(),
+    }
+}
+
+/// The PCM that `pcm.!default` points at in the user's ~/.asoundrc, if they have set one.
+fn user_default_pcm() -> Option<String> {
+    let text = std::fs::read_to_string(std::path::Path::new(&std::env::var("HOME").ok()?).join(".asoundrc")).ok()?;
+    let start = text.find("pcm.!default")?;
+    let rest = &text[start..];
+    let slave = rest.find("pcm \"")? + 5;
+    let end = rest[slave..].find('"')?;
+    Some(rest[slave..slave + end].to_string())
+}
+
 #[tauri::command]
 pub fn native_audio_devices() -> Result<Vec<DeviceInfo>, String> {
     let mut out = Vec::new();
@@ -64,6 +105,7 @@ pub fn native_audio_devices() -> Result<Vec<DeviceInfo>, String> {
                 let Ok(name) = d.name() else { continue };
                 let Ok(cfg) = d.default_input_config() else { continue };
                 let (lo, hi) = buffer_range(cfg.buffer_size());
+                let note = describe_device(id.name(), &name);
                 out.push(DeviceInfo {
                     host: id.name().to_string(),
                     kind: "input",
@@ -73,6 +115,7 @@ pub fn native_audio_devices() -> Result<Vec<DeviceInfo>, String> {
                     sample_rate: cfg.sample_rate().0,
                     buffer_min: lo,
                     buffer_max: hi,
+                    note,
                 });
             }
         }
@@ -81,6 +124,7 @@ pub fn native_audio_devices() -> Result<Vec<DeviceInfo>, String> {
                 let Ok(name) = d.name() else { continue };
                 let Ok(cfg) = d.default_output_config() else { continue };
                 let (lo, hi) = buffer_range(cfg.buffer_size());
+                let note = describe_device(id.name(), &name);
                 out.push(DeviceInfo {
                     host: id.name().to_string(),
                     kind: "output",
@@ -90,6 +134,7 @@ pub fn native_audio_devices() -> Result<Vec<DeviceInfo>, String> {
                     sample_rate: cfg.sample_rate().0,
                     buffer_min: lo,
                     buffer_max: hi,
+                    note,
                 });
             }
         }
@@ -578,6 +623,14 @@ mod tests {
         r.skip(1);
         assert_eq!(r.pop(), Some(4.0));
         assert_eq!(r.pop(), None);
+    }
+
+    #[test]
+    fn device_notes_say_where_audio_goes() {
+        assert_eq!(describe_device("ALSA", "pipewire"), "PipeWire directly");
+        assert!(describe_device("ALSA", "hw:CARD=CODEC,DEV=0").contains("exclusive"));
+        assert_eq!(describe_device("JACK", "anything"), "");
+        println!("default on this machine: {}", describe_device("ALSA", "default"));
     }
 
     /// Lists whatever audio devices this machine has; passes on a machine with none.

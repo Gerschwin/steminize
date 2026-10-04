@@ -14,6 +14,7 @@ interface DeviceInfo {
   buffer_min: number | null;
   buffer_max: number | null;
   is_default: boolean;
+  note: string;
 }
 
 interface MonitorStats {
@@ -84,14 +85,15 @@ export function initNativeAudio(player: Player) {
         .map((d) => {
           const o = document.createElement('option');
           o.value = d.name;
-          o.textContent = `${d.name}${d.is_default ? ' (default)' : ''} — ${d.channels} ch, ${d.sample_rate} Hz`;
+          o.textContent = `${d.name}${d.is_default ? ' (default)' : ''}${d.note ? ` → ${d.note}` : ''} — ${d.channels} ch, ${d.sample_rate} Hz`;
           return o;
         });
     inSel.replaceChildren(...opts('input'));
     outSel.replaceChildren(...opts('output'));
     // Start on something sensible: the host's default device, else the PipeWire / PulseAudio / "default" ones, not the first in the list.
     for (const [sel, kind] of [[inSel, 'input'], [outSel, 'output']] as const) {
-      const pick = devices.find((d) => d.host === host && d.kind === kind && d.is_default) ?? ['pipewire', 'pulse', 'default'].map((n) => devices.find((d) => d.host === host && d.kind === kind && d.name === n)).find(Boolean);
+      // The direct PipeWire device when there is one (lowest delay we have measured), else the host's default.
+      const pick = ['pipewire'].map((n) => devices.find((d) => d.host === host && d.kind === kind && d.name === n)).find(Boolean) ?? devices.find((d) => d.host === host && d.kind === kind && d.is_default) ?? ['pulse', 'default'].map((n) => devices.find((d) => d.host === host && d.kind === kind && d.name === n)).find(Boolean);
       if (pick) sel.value = pick.name;
     }
   };
