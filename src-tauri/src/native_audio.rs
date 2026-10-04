@@ -37,6 +37,8 @@ pub struct DeviceInfo {
     is_default: bool,
     /// What the device really is / where it routes to, in plain words (empty when unknown).
     note: String,
+    /// The best choice on this machine: the direct PipeWire device when PipeWire is running, else PulseAudio, else the host's default.
+    recommended: bool,
 }
 
 pub(crate) fn host_by_name(name: &str) -> Result<Host, String> {
@@ -83,6 +85,31 @@ fn describe_device(host: &str, name: &str) -> String {
     }
 }
 
+/// ALSA lists every PCM it knows, including plugins that are not sound devices at all: sample-rate converters (`lavrate`,
+/// `samplerate`, `speexrate`), channel mixers (`upmix`, `vdownmix`, `speex`) and encoders. They are of no use as a
+/// place to send or take audio, and they bury the real choices, so they are left out of the list.
+fn is_real_endpoint(host: &str, name: &str) -> bool {
+    if host != "ALSA" {
+        return true;
+    }
+    const PLUGINS: [&str; 10] = ["lavrate", "samplerate", "speexrate", "speex", "upmix", "vdownmix", "a52", "null", "oss", "usbstream"];
+    const PLUGIN_PREFIXES: [&str; 6] = ["surround", "iec958", "dmix:", "dsnoop:", "usbstream:", "front:"];
+    !(PLUGINS.contains(&name) || PLUGIN_PREFIXES.iter().any(|p| name.starts_with(p)))
+}
+
+/// Which ALSA device is the best bet here, from the sound server that is actually running (not just installed).
+fn recommended_alsa_device() -> Option<&'static str> {
+    let runtime = std::env::var("XDG_RUNTIME_DIR").ok()?;
+    let dir = std::path::Path::new(&runtime);
+    if dir.join("pipewire-0").exists() {
+        Some("pipewire")
+    } else if dir.join("pulse/native").exists() {
+        Some("pulse")
+    } else {
+        None
+    }
+}
+
 /// The PCM that `pcm.!default` points at in the user's ~/.asoundrc, if they have set one.
 fn user_default_pcm() -> Option<String> {
     let text = std::fs::read_to_string(std::path::Path::new(&std::env::var("HOME").ok()?).join(".asoundrc")).ok()?;
@@ -103,9 +130,13 @@ pub fn native_audio_devices() -> Result<Vec<DeviceInfo>, String> {
         if let Ok(devs) = host.input_devices() {
             for d in devs {
                 let Ok(name) = d.name() else { continue };
+                if !is_real_endpoint(id.name(), &name) {
+                    continue;
+                }
                 let Ok(cfg) = d.default_input_config() else { continue };
                 let (lo, hi) = buffer_range(cfg.buffer_size());
                 let note = describe_device(id.name(), &name);
+                let recommended = if id.name() == "ALSA" { recommended_alsa_device().map_or(default_in.as_deref() == Some(name.as_str()), |r| r == name) } else { default_in.as_deref() == Some(name.as_str()) };
                 out.push(DeviceInfo {
                     host: id.name().to_string(),
                     kind: "input",
@@ -116,15 +147,20 @@ pub fn native_audio_devices() -> Result<Vec<DeviceInfo>, String> {
                     buffer_min: lo,
                     buffer_max: hi,
                     note,
+                    recommended,
                 });
             }
         }
         if let Ok(devs) = host.output_devices() {
             for d in devs {
                 let Ok(name) = d.name() else { continue };
+                if !is_real_endpoint(id.name(), &name) {
+                    continue;
+                }
                 let Ok(cfg) = d.default_output_config() else { continue };
                 let (lo, hi) = buffer_range(cfg.buffer_size());
                 let note = describe_device(id.name(), &name);
+                let recommended = if id.name() == "ALSA" { recommended_alsa_device().map_or(default_out.as_deref() == Some(name.as_str()), |r| r == name) } else { default_out.as_deref() == Some(name.as_str()) };
                 out.push(DeviceInfo {
                     host: id.name().to_string(),
                     kind: "output",
@@ -135,6 +171,7 @@ pub fn native_audio_devices() -> Result<Vec<DeviceInfo>, String> {
                     buffer_min: lo,
                     buffer_max: hi,
                     note,
+                    recommended,
                 });
             }
         }
@@ -623,6 +660,17 @@ mod tests {
         r.skip(1);
         assert_eq!(r.pop(), Some(4.0));
         assert_eq!(r.pop(), None);
+    }
+
+    #[test]
+    fn plugin_pcms_are_not_listed_as_devices() {
+        for n in ["lavrate", "samplerate", "speexrate", "upmix", "vdownmix", "surround51:CARD=PCH,DEV=0", "dmix:CARD=PCH,DEV=0", "front:CARD=PCH,DEV=0"] {
+            assert!(!is_real_endpoint("ALSA", n), "{n} should be hidden");
+        }
+        for n in ["pipewire", "pulse", "default", "jack", "hw:CARD=CODEC,DEV=0", "plughw:CARD=CODEC,DEV=0", "sysdefault:CARD=CODEC", "hdmi:CARD=PCH,DEV=0"] {
+            assert!(is_real_endpoint("ALSA", n), "{n} should be listed");
+        }
+        assert!(is_real_endpoint("JACK", "lavrate"));
     }
 
     #[test]

@@ -4,6 +4,7 @@
 import { isTauri } from '../platform.ts';
 import { toast } from './dom.ts';
 import type { Player } from '../player/player.ts';
+import { createDropdown } from './dropdown.ts';
 
 interface DeviceInfo {
   host: string;
@@ -15,6 +16,7 @@ interface DeviceInfo {
   buffer_max: number | null;
   is_default: boolean;
   note: string;
+  recommended: boolean;
 }
 
 interface MonitorStats {
@@ -55,8 +57,15 @@ export function initNativeAudio(player: Player) {
   box.hidden = false;
   const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
   const hostSel = $<HTMLSelectElement>('naHost');
-  const inSel = $<HTMLSelectElement>('naInput');
-  const outSel = $<HTMLSelectElement>('naOutput');
+  const inSel = createDropdown();
+  const outSel = createDropdown();
+  $('naInputMount').replaceWith(inSel.el);
+  $('naOutputMount').replaceWith(outSel.el);
+  inSel.el.classList.add('na-dd');
+  outSel.el.classList.add('na-dd');
+  inSel.el.title = 'Input device';
+  outSel.el.title = 'Output device';
+  const route = $('naRoute');
   const chanSel = $<HTMLSelectElement>('naChannel');
   const bufSel = $<HTMLSelectElement>('naBuffer');
   const rateSel = $<HTMLSelectElement>('naRate');
@@ -77,25 +86,27 @@ export function initNativeAudio(player: Player) {
     return invoke<T>(cmd, args);
   };
 
+  /** One line under the row saying what the chosen devices really are and where they go. */
+  const showRoute = () => {
+    const line = (kind: 'input' | 'output', name: string) => {
+      const d = devices.find((x) => x.host === hostSel.value && x.kind === kind && x.name === name);
+      return d ? `${kind === 'input' ? 'Input' : 'Output'}: ${d.name}${d.note ? ` → ${d.note}` : ''}, ${d.channels} ch, ${d.sample_rate} Hz` : '';
+    };
+    route.textContent = [line('input', inSel.value), line('output', outSel.value)].filter(Boolean).join('  ·  ');
+  };
+  inSel.onChange = showRoute;
+  outSel.onChange = showRoute;
+
   const fillDevices = () => {
     const host = hostSel.value;
-    const opts = (kind: 'input' | 'output') =>
-      devices
-        .filter((d) => d.host === host && d.kind === kind)
-        .map((d) => {
-          const o = document.createElement('option');
-          o.value = d.name;
-          o.textContent = `${d.name}${d.is_default ? ' (default)' : ''}${d.note ? ` → ${d.note}` : ''} — ${d.channels} ch, ${d.sample_rate} Hz`;
-          return o;
-        });
-    inSel.replaceChildren(...opts('input'));
-    outSel.replaceChildren(...opts('output'));
-    // Start on something sensible: the host's default device, else the PipeWire / PulseAudio / "default" ones, not the first in the list.
-    for (const [sel, kind] of [[inSel, 'input'], [outSel, 'output']] as const) {
-      // The direct PipeWire device when there is one (lowest delay we have measured), else the host's default.
-      const pick = ['pipewire'].map((n) => devices.find((d) => d.host === host && d.kind === kind && d.name === n)).find(Boolean) ?? devices.find((d) => d.host === host && d.kind === kind && d.is_default) ?? ['pulse', 'default'].map((n) => devices.find((d) => d.host === host && d.kind === kind && d.name === n)).find(Boolean);
-      if (pick) sel.value = pick.name;
+    for (const [dd, kind] of [[inSel, 'input'], [outSel, 'output']] as const) {
+      const list = devices.filter((d) => d.host === host && d.kind === kind);
+      dd.setOptions(list.map((d) => ({ value: d.name, label: `${d.name}${d.recommended ? ' (recommended)' : ''}` })));
+      // Start on the recommended device (the direct PipeWire one when PipeWire is running), not the first in the list.
+      const pick = list.find((d) => d.recommended) ?? list.find((d) => d.is_default);
+      if (pick) dd.value = pick.name;
     }
+    showRoute();
   };
 
   const load = async () => {
@@ -232,7 +243,10 @@ export function initNativeAudio(player: Player) {
       hostSel.value = saved.host;
       fillDevices();
     }
-    if ([...outSel.options].some((o) => o.value === saved.output)) outSel.value = saved.output;
+    if (devices.some((d) => d.host === hostSel.value && d.kind === 'output' && d.name === saved.output)) {
+      outSel.value = saved.output;
+      showRoute();
+    }
     bufSel.value = String(saved.buffer);
     rateSel.value = String(saved.rate);
     if (saved.on) playbackBox.checked = await startPlayback();
