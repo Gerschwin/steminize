@@ -63,7 +63,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![ytdlp::ytdlp_search, ytdlp::ytdlp_download, ytdlp::ytdlp_read, ytdlp::ytdlp_cleanup, links::open_link,
             library::lib_list, library::lib_write_meta, library::lib_write_file, library::lib_read_file,
             library::lib_list_files, library::lib_remove_file, library::lib_delete,
-            native_audio::native_audio_devices, native_audio::native_monitor_start, native_audio::native_monitor_stop, native_audio::native_loopback])
+            native_audio::native_audio_devices, native_audio::native_monitor_start, native_audio::native_monitor_stop, native_audio::native_monitor_stats, native_audio::native_loopback])
         .run(tauri::generate_context!())
         .expect("error while running Steminize");
 }

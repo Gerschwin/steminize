@@ -13,7 +13,7 @@
 //
 // Nothing here touches the song player; it is a measuring tool.
 
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -238,13 +238,20 @@ struct Wiring {
     out_fmt: SampleFormat,
 }
 
-fn wire(host: &str, input: &str, output: &str, buffer: u32, fixed: bool) -> Result<Wiring, String> {
+fn wire(host: &str, input: &str, output: &str, buffer: u32, fixed: bool, want_rate: u32) -> Result<Wiring, String> {
     let host = host_by_name(host)?;
     let in_dev = find_device(&host, input, true)?;
     let out_dev = find_device(&host, output, false)?;
     let in_def = in_dev.default_input_config().map_err(|e| e.to_string())?;
     let out_def = out_dev.default_output_config().map_err(|e| e.to_string())?;
-    let rate = in_def.sample_rate();
+    let rate = if want_rate > 0 { SampleRate(want_rate) } else { in_def.sample_rate() };
+    let in_ok = in_dev
+        .supported_input_configs()
+        .map_err(|e| e.to_string())?
+        .any(|c| c.min_sample_rate() <= rate && rate <= c.max_sample_rate() && c.channels() == in_def.channels());
+    if !in_ok {
+        return Err(format!("The input device can't run at {} Hz", rate.0));
+    }
     let supported = out_dev
         .supported_output_configs()
         .map_err(|e| e.to_string())?
@@ -300,6 +307,33 @@ fn describe(o: &Opened, buffer: u32, fixed: bool) -> String {
 
 // ---------- monitor: input straight to output ----------
 
+static STATS_RATE: AtomicU32 = AtomicU32::new(44100);
+static STATS_QUEUE_SUM: AtomicU64 = AtomicU64::new(0);
+static STATS_CALLS: AtomicU64 = AtomicU64::new(0);
+static STATS_UNDERRUNS: AtomicU32 = AtomicU32::new(0);
+static STATS_TRIMS: AtomicU32 = AtomicU32::new(0);
+/// Size of the latest input block: the two streams rarely use the same block size, so the output needs this much in hand.
+static IN_CHUNK: AtomicUsize = AtomicUsize::new(0);
+
+#[derive(Serialize)]
+pub struct MonitorStats {
+    /// Average ms of audio waiting between the input and output callbacks (this is delay the loopback test doesn't include).
+    queue_ms: f64,
+    underruns: u32,
+    trims: u32,
+}
+
+#[tauri::command]
+pub fn native_monitor_stats() -> MonitorStats {
+    let calls = STATS_CALLS.load(Ordering::Relaxed).max(1);
+    let frames = STATS_QUEUE_SUM.load(Ordering::Relaxed) as f64 / calls as f64;
+    MonitorStats {
+        queue_ms: (frames * 10000.0 / STATS_RATE.load(Ordering::Relaxed).max(1) as f64).round() / 10.0,
+        underruns: STATS_UNDERRUNS.load(Ordering::Relaxed),
+        trims: STATS_TRIMS.load(Ordering::Relaxed),
+    }
+}
+
 struct MonitorHandle {
     stop: Sender<()>,
     thread: std::thread::JoinHandle<()>,
@@ -315,32 +349,62 @@ fn stop_monitor() {
 }
 
 #[tauri::command]
-pub fn native_monitor_start(host: String, input: String, output: String, in_channel: u16, buffer: u32, fixed: bool, gain: f32) -> Result<String, String> {
+pub fn native_monitor_start(host: String, input: String, output: String, in_channel: u16, buffer: u32, fixed: bool, rate: u32, gain: f32) -> Result<String, String> {
     stop_monitor();
     let (ready_tx, ready_rx) = channel::<Result<String, String>>();
     let (stop_tx, stop_rx) = channel::<()>();
     let thread = std::thread::spawn(move || {
         let result = (|| {
-            let w = wire(&host, &input, &output, buffer, fixed)?;
+            let w = wire(&host, &input, &output, buffer, fixed, rate)?;
+            STATS_RATE.store(w.in_cfg.sample_rate.0, Ordering::Relaxed);
+            for a in [&STATS_QUEUE_SUM, &STATS_CALLS] {
+                a.store(0, Ordering::Relaxed);
+            }
+            STATS_UNDERRUNS.store(0, Ordering::Relaxed);
+            STATS_TRIMS.store(0, Ordering::Relaxed);
             let ring = Arc::new(Ring::new(1 << 15));
             let (r_in, r_out) = (ring.clone(), ring);
-            // Keep at most a few blocks queued so a clock drift between the two streams can't build up delay.
-            let cap = (buffer.max(64) as usize) * 3;
             let o = open(
                 &w,
                 in_channel as usize,
                 move |s| {
+                    IN_CHUNK.store(s.len(), Ordering::Relaxed);
                     for v in s {
                         r_in.push(*v * gain);
                     }
                 },
-                move |out| {
-                    let have = r_out.len();
-                    if have > cap + out.len() {
-                        r_out.skip(have - cap);
-                    }
-                    for v in out.iter_mut() {
-                        *v = r_out.pop().unwrap_or(0.0);
+                {
+                    // The input and output callbacks run on their own schedules, with blocks of different sizes, so some
+                    // audio is kept in hand between them: enough that a block of output never runs short. Hold back until
+                    // an output block plus one input block has arrived (and again after any underrun); if the streams drift
+                    // apart and far more piles up, throw the oldest away.
+                    let mut primed = false;
+                    move |out: &mut [f32]| {
+                        let n = out.len();
+                        let chunk = IN_CHUNK.load(Ordering::Relaxed);
+                        let mut have = r_out.len();
+                        STATS_QUEUE_SUM.fetch_add(have as u64, Ordering::Relaxed);
+                        STATS_CALLS.fetch_add(1, Ordering::Relaxed);
+                        if !primed {
+                            if have < n + chunk {
+                                out.fill(0.0);
+                                return;
+                            }
+                            primed = true;
+                        }
+                        let keep = n + chunk;
+                        if have > keep + 2 * n.max(chunk) {
+                            r_out.skip(have - keep);
+                            have = keep;
+                            STATS_TRIMS.fetch_add(1, Ordering::Relaxed);
+                        }
+                        for v in out.iter_mut() {
+                            *v = r_out.pop().unwrap_or(0.0);
+                        }
+                        if have < n {
+                            primed = false;
+                            STATS_UNDERRUNS.fetch_add(1, Ordering::Relaxed);
+                        }
                     }
                 },
             )?;
@@ -395,13 +459,13 @@ struct Captured {
 }
 
 #[tauri::command]
-pub async fn native_loopback(host: String, input: String, output: String, in_channel: u16, buffer: u32, fixed: bool) -> Result<LoopbackResult, String> {
-    tauri::async_runtime::spawn_blocking(move || run_loopback(&host, &input, &output, in_channel as usize, buffer, fixed)).await.map_err(|e| e.to_string())?
+pub async fn native_loopback(host: String, input: String, output: String, in_channel: u16, buffer: u32, fixed: bool, rate: u32) -> Result<LoopbackResult, String> {
+    tauri::async_runtime::spawn_blocking(move || run_loopback(&host, &input, &output, in_channel as usize, buffer, fixed, rate)).await.map_err(|e| e.to_string())?
 }
 
-fn run_loopback(host: &str, input: &str, output: &str, in_channel: usize, buffer: u32, fixed: bool) -> Result<LoopbackResult, String> {
+fn run_loopback(host: &str, input: &str, output: &str, in_channel: usize, buffer: u32, fixed: bool, rate_hz: u32) -> Result<LoopbackResult, String> {
     stop_monitor();
-    let w = wire(host, input, output, buffer, fixed)?;
+    let w = wire(host, input, output, buffer, fixed, rate_hz)?;
     let rate = w.in_cfg.sample_rate.0 as f64;
     let t0 = Instant::now();
 
@@ -531,7 +595,19 @@ mod tests {
     fn native_loopback_runs() {
         let dev = std::env::var("NA_DEV").unwrap_or_else(|_| "pipewire".into());
         let buf: u32 = std::env::var("NA_BUF").ok().and_then(|b| b.parse().ok()).unwrap_or(128);
-        let r = run_loopback("ALSA", &dev, &dev, 0, buf, true).expect("loopback");
+        let r = run_loopback("ALSA", &dev, &dev, 0, buf, true, 0).expect("loopback");
         println!("ms={:?} hits={}/{} {}", r.ms, r.hits, r.total, r.detail);
+    }
+
+    /// Starts the monitor for two seconds and prints its queue stats. Silent if the output is a null sink: `PULSE_SINK=natest`.
+    #[test]
+    #[ignore]
+    fn native_monitor_runs() {
+        let buf: u32 = std::env::var("NA_BUF").ok().and_then(|b| b.parse().ok()).unwrap_or(128);
+        let summary = native_monitor_start("ALSA".into(), "pulse".into(), "pulse".into(), 0, buf, true, 0, 1.0).expect("start");
+        std::thread::sleep(Duration::from_millis(2000));
+        let st = native_monitor_stats();
+        native_monitor_stop();
+        println!("{summary} | queue {} ms, underruns {}, trims {}", st.queue_ms, st.underruns, st.trims);
     }
 }

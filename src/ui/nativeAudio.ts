@@ -15,6 +15,12 @@ interface DeviceInfo {
   is_default: boolean;
 }
 
+interface MonitorStats {
+  queue_ms: number;
+  underruns: number;
+  trims: number;
+}
+
 interface LoopbackResult {
   ms: number | null;
   hits: number;
@@ -34,12 +40,16 @@ export function initNativeAudio() {
   const outSel = $<HTMLSelectElement>('naOutput');
   const chanSel = $<HTMLSelectElement>('naChannel');
   const bufSel = $<HTMLSelectElement>('naBuffer');
+  const rateSel = $<HTMLSelectElement>('naRate');
   const monBtn = $<HTMLButtonElement>('naMonitor');
   const loopBtn = $<HTMLButtonElement>('naLoopback');
   const status = $('naStatus');
   let devices: DeviceInfo[] = [];
   let invoke: Invoke | null = null;
   let monitoring = false;
+  let lastRoundTrip: number | null = null;
+  let statsTimer = 0;
+  let monitorSummary = '';
 
   const call = async <T,>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
     invoke ??= (await import('@tauri-apps/api/core')).invoke as Invoke;
@@ -87,7 +97,19 @@ export function initNativeAudio() {
     inChannel: Number(chanSel.value),
     buffer: Number(bufSel.value) || 0,
     fixed: Number(bufSel.value) > 0,
+    rate: Number(rateSel.value),
   });
+
+  /** While monitoring: the buffering the loopback test measured plus the queue between the input and output callbacks. */
+  const showStats = async () => {
+    try {
+      const st = await call<MonitorStats>('native_monitor_stats');
+      const est = lastRoundTrip == null ? '' : ` Estimated delay you hear: ${(lastRoundTrip + st.queue_ms).toFixed(1)} ms (${lastRoundTrip} round trip + ${st.queue_ms} queue).`;
+      status.textContent = `Monitoring natively: ${monitorSummary}. Queue ${st.queue_ms} ms, ${st.underruns} dropouts.${est}`;
+    } catch {
+      /* stopped meanwhile */
+    }
+  };
 
   hostSel.onchange = fillDevices;
   $('naRefresh').onclick = () => void load();
@@ -99,13 +121,17 @@ export function initNativeAudio() {
         await call('native_monitor_stop');
         monitoring = false;
         monBtn.textContent = 'Native monitor';
+        clearInterval(statsTimer);
         status.textContent = 'Stopped.';
       } else {
         status.textContent = 'Starting…';
         const summary = await call<string>('native_monitor_start', { ...args(), gain: 1 });
         monitoring = true;
+        monitorSummary = summary;
         monBtn.textContent = 'Stop native monitor';
         status.textContent = `Monitoring natively: ${summary}`;
+        clearInterval(statsTimer);
+        statsTimer = window.setInterval(() => void showStats(), 1000);
       }
     } catch (e) {
       status.textContent = `Couldn't ${monitoring ? 'stop' : 'start'}: ${e}`;
@@ -119,12 +145,14 @@ export function initNativeAudio() {
     if (monitoring) {
       await call('native_monitor_stop');
       monitoring = false;
+      clearInterval(statsTimer);
       monBtn.textContent = 'Native monitor';
     }
     loopBtn.disabled = monBtn.disabled = true;
     status.textContent = 'Measuring… clicks will play out of the chosen output for about 5 seconds.';
     try {
       const r = await call<LoopbackResult>('native_loopback', args());
+      lastRoundTrip = r.ms;
       status.textContent =
         r.ms == null
           ? `Couldn't hear the clicks (${r.hits}/${r.total}). Patch the output to the chosen input with a cable, or hold the mic to the speaker. ${r.detail}`
