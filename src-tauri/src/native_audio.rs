@@ -524,4 +524,14 @@ mod tests {
             println!("{} {} {:?} {}ch {}Hz buf {:?}-{:?}{}", d.host, d.kind, d.name, d.channels, d.sample_rate, d.buffer_min, d.buffer_max, if d.is_default { " (default)" } else { "" });
         }
     }
+
+    /// Opens real streams and plays clicks (audible), so it only runs when asked: `cargo test native_loopback_runs -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn native_loopback_runs() {
+        let dev = std::env::var("NA_DEV").unwrap_or_else(|_| "pipewire".into());
+        let buf: u32 = std::env::var("NA_BUF").ok().and_then(|b| b.parse().ok()).unwrap_or(128);
+        let r = run_loopback("ALSA", &dev, &dev, 0, buf, true).expect("loopback");
+        println!("ms={:?} hits={}/{} {}", r.ms, r.hits, r.total, r.detail);
+    }
 }
