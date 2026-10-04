@@ -233,6 +233,7 @@ impl Transport {
 
 /// After a loop pass, whether a *gated* speed trainer steps up: only once `every` passes in a row have been played at
 /// `gate` accuracy or better. A pass in which nothing was judged neither counts towards that nor spoils the run.
+#[allow(dead_code)] // the UI (TypeScript) decides gating; kept and tested as the reference port
 pub fn gate_step(clean: u32, hit: u32, total: u32, gate: f64, every: u32) -> (u32, bool) {
     if total == 0 {
         return (clean, false);

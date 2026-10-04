@@ -37,7 +37,7 @@ pub struct DeviceInfo {
     is_default: bool,
 }
 
-fn host_by_name(name: &str) -> Result<Host, String> {
+pub(crate) fn host_by_name(name: &str) -> Result<Host, String> {
     let id = cpal::available_hosts()
         .into_iter()
         .find(|h| h.name() == name)
@@ -97,7 +97,7 @@ pub fn native_audio_devices() -> Result<Vec<DeviceInfo>, String> {
     Ok(out)
 }
 
-fn find_device(host: &Host, name: &str, input: bool) -> Result<Device, String> {
+pub(crate) fn find_device(host: &Host, name: &str, input: bool) -> Result<Device, String> {
     if name.is_empty() {
         return if input { host.default_input_device() } else { host.default_output_device() }.ok_or_else(|| "No default device".to_string());
     }

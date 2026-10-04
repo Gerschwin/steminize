@@ -3,6 +3,8 @@
 //! The TypeScript versions stay the reference and the web fallback.
 
 pub mod eq;
+pub mod flac;
 pub mod mix;
 pub mod renderer;
+pub mod resample;
 pub mod transport;
