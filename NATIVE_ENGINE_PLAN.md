@@ -47,7 +47,11 @@ browser version, selectable in a "Native audio" setting.
    Original description: The input stream feeds the monitor and a recorder in the same callback as the
    playback, so the take's offset against the song is known exactly (no Measure, no Line up needed). Takes are written
    out as files and added as takes the way web takes are.
-6. **Hardening.** Device hot-unplug, sample-rate mismatches, xrun counters in the UI, a buffer size setting, then
+6. **Hardening (first pass done 2026-10-04).** A lost device is reported to the app, which shuts the native engine down and carries on in
+   the web engine from the same position (a take in progress is lost). The audio callback's load and late-block (dropout) count
+   show under the Native audio row. Device errors are turned into advice. `native-check.yml` builds and tests on all three
+   platforms. Still to do: real Windows / macOS testing, JACK / ASIO, device hot-plug while idle.
+   Original description: Device hot-unplug, sample-rate mismatches, xrun counters in the UI, a buffer size setting, then
    Windows and macOS builds in CI, then optional JACK / ASIO.
 
 ## Known costs and risks
