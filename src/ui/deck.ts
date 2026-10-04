@@ -549,6 +549,10 @@ export class Deck {
     this.initOverview();
     this.initKeys();
     this.initLiveInput();
+    this.player.onNativeLost = (message) => {
+      toast(`Native audio stopped: ${message} Switched back to the browser audio engine.`, true, 9000);
+      this.fallbackToWeb();
+    };
     initNativeAudio(this.player);
     this.initTuner();
     this.initTrainer();
@@ -1241,6 +1245,25 @@ export class Deck {
   private downbeat() {
     const a = this.r?.analysis;
     return a ? (((a.downbeat + this.pr.barShift) % this.pr.perBar) + this.pr.perBar) % this.pr.perBar : 0;
+  }
+
+  /** The native engine's sound device was lost: carry on in the webview engine, from the same place, with the same tracks and settings. */
+  private fallbackToWeb() {
+    // A take that was being recorded can't be saved: the engine holding it is gone.
+    if (this.recordLane) {
+      void this.finishRecordLane(null);
+      toast('The take in progress was lost with the audio device.', true);
+    }
+    this.stopLiveInputUi();
+    if (!this.r) return;
+    const pos = this.player.state.pos;
+    this.player.load(this.r.stems.map((s) => s.data), this.gains()); // no library id: the web engine
+    for (const l of this.lanes.slice(this.r.stems.length)) this.player.addTrack(l.data);
+    this.player.setGains(this.gains(), this.pans(), this.eqs());
+    this.setTempoPitch(this.tempo, this.pitch, false);
+    this.player.setLoop(this.loop.on, this.loop.a, this.loop.b);
+    this.sendPractice();
+    this.player.seek(pos);
   }
 
   private sendPractice() {

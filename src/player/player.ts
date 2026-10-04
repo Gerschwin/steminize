@@ -53,6 +53,25 @@ export class Player {
   private nativeUnlisten: (() => void) | null = null;
   /** A native call failed (shown to the user by whoever sets this). */
   onNativeError: (message: string) => void = () => {};
+  /** The native engine's sound device went away, so it has been shut down; the deck carries on in the webview engine. */
+  onNativeLost: (message: string) => void = () => {};
+  /** How busy the native audio callback is (1 = a whole block's time) and how many glitches there have been. */
+  nativeStats = { load: 0, dropouts: 0 };
+
+  private async nativeLost(message: string) {
+    if (!this.nativeRunning) return;
+    this.clearMonitorState();
+    await this.stopNative().catch(() => {});
+    this.onNativeLost(message);
+  }
+
+  /** Forgets native input state without calling the engine (it is already gone). */
+  private clearMonitorState() {
+    clearInterval(this.snapTimer);
+    this.monitorNative = false;
+    this.nativeRecording = false;
+    this.nativeSnap = null;
+  }
 
   get nativeActive() {
     return this.nativeRunning;
@@ -125,7 +144,12 @@ export class Player {
     const summary = await this.nativeInvoke<string>('native_engine_start', o);
     const { listen } = await import('@tauri-apps/api/event');
     this.nativeUnlisten?.();
-    this.nativeUnlisten = await listen<PlayerState & { level?: number }>('native-state', (e) => {
+    const unlistenError = await listen<{ fatal: boolean; message: string }>('native-error', (e) => {
+      if (e.payload.fatal) void this.nativeLost(e.payload.message);
+      else this.onNativeError(`Audio problem: ${e.payload.message}`);
+    });
+    const unlistenState = await listen<PlayerState & { level?: number; load?: number; dropouts?: number }>('native-state', (e) => {
+      this.nativeStats = { load: e.payload.load ?? 0, dropouts: e.payload.dropouts ?? 0 };
       // The input meter runs whether or not the song is native; each report carries the peak since the last one.
       this.nativeLevel = Math.max(e.payload.level ?? 0, this.nativeLevel * 0.85);
       if (!this.nativeSong) return;
@@ -133,7 +157,12 @@ export class Player {
       this.stateStamp = performance.now();
       this.onState(e.payload);
     });
+    this.nativeUnlisten = () => {
+      unlistenState();
+      unlistenError();
+    };
     this.nativeRunning = true;
+    this.nativeStats = { load: 0, dropouts: 0 };
     return summary;
   }
 

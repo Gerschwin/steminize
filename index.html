@@ -407,6 +407,7 @@
                   <button class="btn tiny ghost" id="naLoopback" type="button" title="Plays clicks out of the chosen output and listens for them on the chosen input: patch the output to the input with a cable (gain low) and read the round trip">Loopback test</button>
                   <span class="muted small" id="naStatus"></span>
                   <span class="muted small na-route" id="naRoute"></span>
+                  <span class="muted small na-stats" id="naStats" hidden title="Load is how much of each audio block's time the engine uses (near 100% means it may glitch). A dropout is a block that arrived late. If either climbs, try a larger buffer."></span>
                 </div>
               </div>
               <div class="dpane" data-pane="tuner" hidden>

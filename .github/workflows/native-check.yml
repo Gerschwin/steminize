@@ -1,0 +1,31 @@
+# Compiles and tests the native audio engine on all three platforms whenever the native-audio branch is pushed, so Windows and
+# macOS problems (the audio library, the time-stretch build) show up without cutting a release. Builds nothing to download.
+name: Native audio checks
+on:
+  push:
+    branches: ['native-audio']
+  workflow_dispatch:
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: src-tauri }
+      - if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          # libasound2-dev: the audio library (ALSA). libclang-dev: the time-stretch library's build generates bindings.
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev libclang-dev
+      - run: npm ci
+      - run: npx tsc --noEmit -p .
+      - run: npm run build
+      - name: Rust tests (engine, mixer, EQ, transport, input, resampler)
+        run: cargo test --manifest-path src-tauri/Cargo.toml

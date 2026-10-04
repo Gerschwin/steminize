@@ -67,6 +67,8 @@ export function initNativeAudio(player: Player) {
   inSel.el.title = 'Input device';
   outSel.el.title = 'Output device';
   const route = $('naRoute');
+  const stats = $('naStats');
+  let audioStatsTimer = 0;
   const chanSel = $<HTMLSelectElement>('naChannel');
   const bufSel = $<HTMLSelectElement>('naBuffer');
   const rateSel = $<HTMLSelectElement>('naRate');
@@ -228,6 +230,9 @@ export function initNativeAudio(player: Player) {
     try {
       const summary = await player.startNative({ host: a.host, output: a.output, buffer: a.buffer, fixed: a.fixed, rate: a.rate });
       status.textContent = `Native playback on: ${summary}. Reopen the song to play it natively.`;
+      clearInterval(audioStatsTimer);
+      audioStatsTimer = window.setInterval(showAudioStats, 1000);
+      stats.hidden = false;
       try {
         localStorage.setItem(KEY, JSON.stringify({ on: true, host: a.host, output: a.output, buffer: a.buffer, rate: a.rate } satisfies Saved));
       } catch {
@@ -240,11 +245,30 @@ export function initNativeAudio(player: Player) {
     }
   };
 
+  // The device went away: the deck has already switched back to the webview engine; reflect that here.
+  const lostBefore = player.onNativeLost;
+  player.onNativeLost = (message) => {
+    playbackBox.checked = false;
+    clearInterval(audioStatsTimer);
+    stats.hidden = true;
+    status.textContent = `Native playback stopped: ${message}`;
+    lostBefore(message);
+  };
+
+  /** While native playback runs: how busy the audio callback is and whether it has glitched. */
+  const showAudioStats = () => {
+    const { load, dropouts } = player.nativeStats;
+    stats.textContent = `Audio load ${Math.round(load * 100)}%, ${dropouts} dropout${dropouts === 1 ? '' : 's'}`;
+    stats.classList.toggle('bad', dropouts > 0 || load > 0.8);
+  };
+
   playbackBox.onchange = async () => {
     if (playbackBox.checked) {
       playbackBox.checked = await startPlayback();
     } else {
       await player.stopNative().catch(() => {});
+      clearInterval(audioStatsTimer);
+      stats.hidden = true;
       try {
         const s = loadSaved();
         if (s) localStorage.setItem(KEY, JSON.stringify({ ...s, on: false }));

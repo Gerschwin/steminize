@@ -493,6 +493,8 @@ canvas, img, svg { -webkit-user-drag: none; user-drag: none; }
 /* The open list may be wider than the button so long device names are readable. */
 .tool.native-audio .na-dd .dd-list { right: auto; width: max-content; min-width: 100%; max-width: 360px; }
 .tool.native-audio .na-route { flex-basis: 100%; }
+.tool.native-audio .na-stats { flex-basis: 100%; }
+.tool.native-audio .na-stats.bad { color: var(--bad); }
 .tool.live .live-rec { flex-wrap: nowrap; }
 .tool.live .live-grp:not(:has(> :not([hidden]))) { display: none; }
 .live-meter { width: 70px; height: 8px; border-radius: 4px; background: var(--panel); overflow: hidden; }

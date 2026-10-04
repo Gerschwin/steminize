@@ -10,7 +10,7 @@
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, StreamTrait};
 use cpal::{BufferSize, Device, FromSample, SampleFormat, SampleRate, SizedSample, Stream, StreamConfig, SupportedBufferSize};
@@ -95,6 +95,16 @@ pub struct StateReport {
     counting_in: bool,
     /// Peak of the live input since the last report (0 to 1), for the meter.
     level: f32,
+    /// How busy the audio callback was (1 = it used the whole block's time), and how many glitches there have been.
+    load: f32,
+    dropouts: u32,
+}
+
+/// Sent once when a stream fails.
+#[derive(Clone, Serialize)]
+pub struct StreamFailure {
+    fatal: bool,
+    message: String,
 }
 
 // ---------- the engine, living in the audio callback ----------
@@ -122,6 +132,10 @@ struct Shared {
     counting_in: AtomicBool,
     ended: AtomicBool, // set when a song plays to its end, cleared by the reporter once it has said so
     passes: AtomicU32,
+    /// Busiest block since the last report, as a fraction of the time the block lasts (f32 bits); over 1 means it ran late.
+    load: AtomicU32,
+    /// Blocks that arrived much later than they should have (the audio glitched), since the engine started.
+    dropouts: AtomicU32,
 }
 
 struct Engine {
@@ -140,6 +154,9 @@ struct Engine {
     /// The live input (monitor, recording) and where the song was when, for placing takes.
     input: Arc<InputShared>,
     mon_primed: bool,
+    /// Output rate, and when the previous block was asked for, to spot blocks that came late.
+    hz: u32,
+    last_block: Option<Instant>,
 }
 
 impl Engine {
@@ -219,6 +236,23 @@ impl Engine {
 
     /// Fills one block of output.
     fn fill(&mut self, l: &mut [f32], r: &mut [f32]) {
+        let started = Instant::now();
+        let block_secs = l.len() as f64 / self.hz as f64;
+        // Blocks are asked for at a steady pace; one that comes far later than that means the audio glitched.
+        if let Some(prev) = self.last_block {
+            if started.duration_since(prev).as_secs_f64() > block_secs * 2.5 + 0.002 {
+                self.shared.dropouts.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+        self.last_block = Some(started);
+        self.fill_block(l, r);
+        let load = (started.elapsed().as_secs_f64() / block_secs) as f32;
+        if load > f32::from_bits(self.shared.load.load(Ordering::Relaxed)) {
+            self.shared.load.store(load.to_bits(), Ordering::Relaxed);
+        }
+    }
+
+    fn fill_block(&mut self, l: &mut [f32], r: &mut [f32]) {
         while let Ok(c) = self.rx.try_recv() {
             self.apply(c);
         }
@@ -295,7 +329,7 @@ where
                 }
             }
         },
-        |e| eprintln!("native playback stream error: {e}"),
+        crate::native_audio::err_fn,
         None,
     )
     .map_err(|e| e.to_string())
@@ -333,14 +367,26 @@ fn send(c: Cmd) -> Result<(), String> {
 
 #[tauri::command]
 pub fn native_engine_start(app: AppHandle, host: String, output: String, buffer: u32, fixed: bool, rate: u32) -> Result<String, String> {
-    start_engine(Box::new(move |report| {
-        let _ = app.emit("native-state", report);
-    }), host, output, buffer, fixed, rate)
+    let failed = app.clone();
+    start_engine(
+        Box::new(move |report| {
+            let _ = app.emit("native-state", report);
+        }),
+        Box::new(move |failure| {
+            let _ = failed.emit("native-error", failure);
+        }),
+        host,
+        output,
+        buffer,
+        fixed,
+        rate,
+    )
 }
 
 /// Opens the output stream and starts reporting position through `report` (the Tauri event in the app, a collector in tests).
-fn start_engine(report: Box<dyn Fn(StateReport) + Send>, host: String, output: String, buffer: u32, fixed: bool, rate: u32) -> Result<String, String> {
+fn start_engine(report: Box<dyn Fn(StateReport) + Send>, on_failure: Box<dyn Fn(StreamFailure) + Send>, host: String, output: String, buffer: u32, fixed: bool, rate: u32) -> Result<String, String> {
     stop_engine();
+    let _ = crate::native_audio::take_stream_error(); // anything left over from an earlier stream is not about this one
     let (ready_tx, ready_rx) = channel::<Result<(String, u32, Arc<InputShared>), String>>();
     let (ctl_tx, ctl_rx) = channel::<Ctl>();
     let host_name = host.clone();
@@ -379,6 +425,8 @@ fn start_engine(report: Box<dyn Fn(StateReport) + Send>, host: String, output: S
                 volume: 1.0,
                 input: input.clone(),
                 mon_primed: false,
+                hz,
+                last_block: None,
             };
             let stream = match def.sample_format() {
                 SampleFormat::F32 => build_stereo_out::<f32>(&dev, &cfg, engine),
@@ -421,9 +469,14 @@ fn start_engine(report: Box<dyn Fn(StateReport) + Send>, host: String, output: S
                             }
                         }
                     }
+                    if let Some(p) = crate::native_audio::take_stream_error() {
+                        on_failure(StreamFailure { fatal: p.fatal, message: p.message });
+                    }
                     let sh = &reporter_shared;
                     report(StateReport {
                         level: input.take_level(),
+                        load: f32::from_bits(sh.load.swap(0, Ordering::Relaxed)),
+                        dropouts: sh.dropouts.load(Ordering::Relaxed),
                         pos: f64::from_bits(sh.pos.load(Ordering::Relaxed)),
                         playing: sh.playing.load(Ordering::Relaxed),
                         ended: sh.ended.swap(false, Ordering::Relaxed),
@@ -436,7 +489,7 @@ fn start_engine(report: Box<dyn Fn(StateReport) + Send>, host: String, output: S
                 drop(stream);
             }
             Err(e) => {
-                let _ = ready_tx.send(Err(e));
+                let _ = ready_tx.send(Err(crate::native_audio::friendly_error(&e)));
             }
         }
     });
@@ -605,7 +658,7 @@ fn input_start_blocking(input: String, channel: u16, buffer: u32, fixed: bool) -
         let h = g.as_ref().ok_or("The native engine isn't running")?;
         h.ctl.send(Ctl::OpenInput { input, channel: channel as usize, buffer, fixed, reply }).map_err(|e| e.to_string())?;
     }
-    answer.recv_timeout(Duration::from_secs(5)).map_err(|_| "Timed out opening the input".to_string())?
+    answer.recv_timeout(Duration::from_secs(5)).map_err(|_| "Timed out opening the input".to_string())?.map_err(|e| crate::native_audio::friendly_error(&e))
 }
 
 fn channel_pair() -> (Sender<Result<String, String>>, Receiver<Result<String, String>>) {
@@ -720,7 +773,7 @@ mod tests {
         let stems = song_files(&meta).unwrap();
         let reports = Arc::new(Mutex::new(Vec::<StateReport>::new()));
         let r2 = reports.clone();
-        let summary = start_engine(Box::new(move |r| r2.lock().unwrap().push(r)), "ALSA".into(), "pulse".into(), 256, true, 0).expect("start");
+        let summary = start_engine(Box::new(move |r| r2.lock().unwrap().push(r)), Box::new(|_| {}), "ALSA".into(), "pulse".into(), 256, true, 0).expect("start");
         let gains = vec![1.0; stems.len()];
         let t = std::time::Instant::now();
         let len = load_song(&dir, gains).expect("load");
@@ -776,7 +829,7 @@ mod tests {
         let rt_ms = lb.expect("loopback should hear itself");
         println!("measured round trip {rt_ms} ms");
 
-        start_engine(Box::new(|_| {}), "ALSA".into(), "pulse".into(), 128, true, 0).expect("start");
+        start_engine(Box::new(|_| {}), Box::new(|_| {}), "ALSA".into(), "pulse".into(), 128, true, 0).expect("start");
         println!("input: {}", input_start_blocking("pulse".into(), 0, 128, true).expect("input"));
         let len = load_song(&dir, vec![1.0, 1.0, 1.0]).expect("load");
         send(Cmd::Seek(44100.0 * 2.0)).unwrap();
@@ -858,5 +911,35 @@ mod tests {
         }
         println!("take vs song: best lag {} samples = {:.2} ms", best.0, best.0 as f64 / 44.1);
         assert!(best.0.abs() < 132, "take is {:.1} ms off the song", best.0 as f64 / 44.1);
+    }
+
+    /// A stream that reports its device gone is passed on to the webview as a fatal failure, and the engine keeps reporting
+    /// load and dropout counts. Silent with a null sink: `PULSE_SINK=natest`.
+    #[test]
+    #[ignore]
+    fn a_lost_device_is_reported() {
+        let failures = Arc::new(Mutex::new(Vec::<(bool, String)>::new()));
+        let f2 = failures.clone();
+        let reports = Arc::new(Mutex::new(Vec::<StateReport>::new()));
+        let r2 = reports.clone();
+        start_engine(
+            Box::new(move |r| r2.lock().unwrap().push(r)),
+            Box::new(move |f| f2.lock().unwrap().push((f.fatal, f.message))),
+            "ALSA".into(),
+            "pulse".into(),
+            256,
+            true,
+            0,
+        )
+        .expect("start");
+        std::thread::sleep(Duration::from_millis(300));
+        crate::native_audio::err_fn(cpal::StreamError::DeviceNotAvailable);
+        std::thread::sleep(Duration::from_millis(300));
+        let last = reports.lock().unwrap().last().cloned().unwrap();
+        stop_engine();
+        let f = failures.lock().unwrap().clone();
+        println!("failures: {f:?}; last report load {:.3} dropouts {}", last.load, last.dropouts);
+        assert_eq!(f.len(), 1);
+        assert!(f[0].0, "the loss is fatal");
     }
 }

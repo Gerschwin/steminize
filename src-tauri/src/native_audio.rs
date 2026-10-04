@@ -237,8 +237,47 @@ pub(crate) fn fixed_or_default(range: &SupportedBufferSize, wanted: u32, fixed: 
     }
 }
 
-fn err_fn(e: cpal::StreamError) {
+/// What the audio stream said went wrong, left for the engine's reporter to pass on: the stream callbacks can't talk to the
+/// webview themselves.
+pub(crate) static STREAM_ERROR: Mutex<Option<StreamProblem>> = Mutex::new(None);
+
+#[derive(Clone, Debug)]
+pub(crate) struct StreamProblem {
+    /// The device went away (unplugged, taken by another program): the stream is dead and cannot carry on.
+    pub fatal: bool,
+    pub message: String,
+}
+
+pub(crate) fn take_stream_error() -> Option<StreamProblem> {
+    STREAM_ERROR.lock().ok()?.take()
+}
+
+pub(crate) fn err_fn(e: cpal::StreamError) {
     eprintln!("native audio stream error: {e}");
+    let fatal = matches!(e, cpal::StreamError::DeviceNotAvailable);
+    if let Ok(mut slot) = STREAM_ERROR.lock() {
+        // A fatal problem is not replaced by a later minor one.
+        if !slot.as_ref().map_or(false, |p| p.fatal) {
+            *slot = Some(StreamProblem { fatal, message: friendly_error(&e.to_string()) });
+        }
+    }
+}
+
+/// Turns what cpal / ALSA says into something a person can act on, keeping the original at the end for reports.
+pub(crate) fn friendly_error(raw: &str) -> String {
+    let lower = raw.to_lowercase();
+    let advice = if lower.contains("busy") || lower.contains("in use") {
+        "That audio device is in use by another program. Choose the pipewire (or pulse) device, or close the other program."
+    } else if lower.contains("no longer available") || lower.contains("not found") || lower.contains("no such device") {
+        "That audio device isn't available. It may have been unplugged, or something else took it."
+    } else if lower.contains("not supported") || lower.contains("einval") || lower.contains("invalid argument") {
+        "The device doesn't accept this combination of sample rate, channels or buffer size. Try Auto rate, or a different buffer size."
+    } else if lower.contains("permission") {
+        "Steminize isn't allowed to use that audio device (a permission problem)."
+    } else {
+        return raw.to_string();
+    };
+    format!("{advice} ({raw})")
 }
 
 /// Builds an input stream that hands `sink` the chosen channel as mono f32, whatever the device's sample format.
@@ -678,6 +717,25 @@ mod tests {
             assert!(is_real_endpoint("ALSA", n), "{n} should be listed");
         }
         assert!(is_real_endpoint("JACK", "lavrate"));
+    }
+
+    #[test]
+    fn errors_are_turned_into_advice() {
+        assert!(friendly_error("Device or resource busy").starts_with("That audio device is in use"));
+        assert!(friendly_error("The requested device is no longer available. For example, it has been unplugged.").contains("unplugged"));
+        assert!(friendly_error("The requested stream configuration is not supported by the device.").contains("Auto rate"));
+        assert!(friendly_error("Device or resource busy").ends_with("(Device or resource busy)"));
+        assert_eq!(friendly_error("something unusual"), "something unusual");
+    }
+
+    #[test]
+    fn a_fatal_stream_problem_is_not_replaced_by_a_minor_one() {
+        let _ = take_stream_error();
+        err_fn(cpal::StreamError::DeviceNotAvailable);
+        err_fn(cpal::StreamError::BackendSpecific { err: cpal::BackendSpecificError { description: "xrun".into() } });
+        let p = take_stream_error().expect("a problem was recorded");
+        assert!(p.fatal);
+        assert!(take_stream_error().is_none(), "taking it clears it");
     }
 
     #[test]

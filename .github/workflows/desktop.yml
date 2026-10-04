@@ -30,7 +30,8 @@ jobs:
           sudo apt-get update
           # The GStreamer packages are so the AppImage can bundle the audio decoders (FLAC, WAV, MP3, AAC):
           # without them it can't open a song at all (WebKit decodes audio through GStreamer).
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
+          # libasound2-dev and libclang-dev are for the native audio engine (the audio library and the time-stretch build).
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev libclang-dev \
             gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav
       - run: npm ci
       - uses: tauri-apps/tauri-action@v0
