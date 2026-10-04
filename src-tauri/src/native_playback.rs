@@ -18,6 +18,8 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
 use crate::engine::eq::EqParams;
+use crate::native_audio::{build_in, by_format, fixed_or_default};
+use crate::native_input::{InputShared, RecState, MAX_TAKE_SECS};
 use crate::engine::flac::decode_flac;
 use crate::engine::mix::{MixSource, Stereo};
 use crate::engine::renderer::Renderer;
@@ -91,6 +93,8 @@ pub struct StateReport {
     passes: u32,
     tempo: f64,
     counting_in: bool,
+    /// Peak of the live input since the last report (0 to 1), for the meter.
+    level: f32,
 }
 
 // ---------- the engine, living in the audio callback ----------
@@ -133,6 +137,9 @@ struct Engine {
     tempo: (f64, f64),
     practice: Practice,
     volume: f32,
+    /// The live input (monitor, recording) and where the song was when, for placing takes.
+    input: Arc<InputShared>,
+    mon_primed: bool,
 }
 
 impl Engine {
@@ -216,6 +223,13 @@ impl Engine {
             self.apply(c);
         }
         let n = l.len();
+        // Tell the input side where the song is at this moment, and how fast it is moving.
+        let (here, speed) = match (&self.t, self.playing) {
+            (Some(t), true) if !t.pausing() => (t.r.heard, 44100.0 * t.r.tempo),
+            (Some(t), _) => (t.r.heard, 0.0),
+            _ => (0.0, 0.0),
+        };
+        self.input.note_output(here, speed);
         match (&mut self.t, self.playing) {
             (Some(t), true) => {
                 let ok = match &mut self.rs {
@@ -241,6 +255,7 @@ impl Engine {
                 *v *= self.volume;
             }
         }
+        self.input.mix_into(l, r, &mut self.mon_primed);
         let sh = &self.shared;
         if let Some(t) = &self.t {
             sh.pos.store(t.r.heard.to_bits(), Ordering::Relaxed);
@@ -286,8 +301,16 @@ where
     .map_err(|e| e.to_string())
 }
 
+/// Things only the thread that owns the streams can do.
+enum Ctl {
+    OpenInput { input: String, channel: usize, buffer: u32, fixed: bool, reply: Sender<Result<String, String>> },
+    CloseInput,
+}
+
 struct Handle {
     tx: Sender<Cmd>,
+    ctl: Sender<Ctl>,
+    input: Arc<InputShared>,
     stop: Sender<()>,
     thread: std::thread::JoinHandle<()>,
     sample_rate: u32,
@@ -318,13 +341,15 @@ pub fn native_engine_start(app: AppHandle, host: String, output: String, buffer:
 /// Opens the output stream and starts reporting position through `report` (the Tauri event in the app, a collector in tests).
 fn start_engine(report: Box<dyn Fn(StateReport) + Send>, host: String, output: String, buffer: u32, fixed: bool, rate: u32) -> Result<String, String> {
     stop_engine();
-    let (ready_tx, ready_rx) = channel::<Result<(String, u32), String>>();
+    let (ready_tx, ready_rx) = channel::<Result<(String, u32, Arc<InputShared>), String>>();
+    let (ctl_tx, ctl_rx) = channel::<Ctl>();
+    let host_name = host.clone();
     let (stop_tx, stop_rx) = channel::<()>();
     let (tx, rx) = channel::<Cmd>();
     let shared = Arc::new(Shared::default());
     let reporter_shared = shared.clone();
     let thread = std::thread::spawn(move || {
-        let setup = || -> Result<(Stream, String, u32), String> {
+        let setup = || -> Result<(Stream, String, u32, Arc<InputShared>), String> {
             let host = crate::native_audio::host_by_name(&host)?;
             let dev = crate::native_audio::find_device(&host, &output, false)?;
             let def = dev.default_output_config().map_err(|e| e.to_string())?;
@@ -338,6 +363,7 @@ fn start_engine(report: Box<dyn Fn(StateReport) + Send>, host: String, output: S
                 }
             };
             let cfg = StreamConfig { channels: def.channels(), sample_rate: SampleRate(hz), buffer_size };
+            let input = Arc::new(InputShared::new(hz));
             let (garbage_tx, garbage_rx) = channel::<Box<dyn std::any::Any + Send>>();
             std::thread::spawn(move || while garbage_rx.recv().is_ok() {});
             let engine = Engine {
@@ -351,6 +377,8 @@ fn start_engine(report: Box<dyn Fn(StateReport) + Send>, host: String, output: S
                 tempo: (1.0, 0.0),
                 practice: Practice::default(),
                 volume: 1.0,
+                input: input.clone(),
+                mon_primed: false,
             };
             let stream = match def.sample_format() {
                 SampleFormat::F32 => build_stereo_out::<f32>(&dev, &cfg, engine),
@@ -360,19 +388,42 @@ fn start_engine(report: Box<dyn Fn(StateReport) + Send>, host: String, output: S
                 f => Err(format!("Unsupported sample format {f:?}")),
             }?;
             stream.play().map_err(|e| e.to_string())?;
-            Ok((stream, format!("{hz} Hz, {} output channels", cfg.channels), hz))
+            Ok((stream, format!("{hz} Hz, {} output channels", cfg.channels), hz, input))
         };
         match setup() {
-            Ok((stream, summary, hz)) => {
-                let _ = ready_tx.send(Ok((summary, hz)));
+            Ok((stream, summary, hz, input)) => {
+                let _ = ready_tx.send(Ok((summary, hz, input.clone())));
+                let mut input_stream: Option<Stream> = None;
                 // Report position about 30 times a second until told to stop.
                 loop {
                     match stop_rx.recv_timeout(Duration::from_millis(33)) {
                         Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
                         _ => break,
                     }
+                    while let Ok(c) = ctl_rx.try_recv() {
+                        match c {
+                            Ctl::OpenInput { input: name, channel, buffer, fixed, reply } => {
+                                input_stream = None;
+                                input.active.store(false, Ordering::Relaxed);
+                                let opened = open_input(&host_name, &name, channel, buffer, fixed, hz, &input);
+                                let _ = reply.send(match opened {
+                                    Ok((stream, summary)) => {
+                                        input_stream = Some(stream);
+                                        input.active.store(true, Ordering::Relaxed);
+                                        Ok(summary)
+                                    }
+                                    Err(e) => Err(e),
+                                });
+                            }
+                            Ctl::CloseInput => {
+                                input_stream = None;
+                                input.active.store(false, Ordering::Relaxed);
+                            }
+                        }
+                    }
                     let sh = &reporter_shared;
                     report(StateReport {
+                        level: input.take_level(),
                         pos: f64::from_bits(sh.pos.load(Ordering::Relaxed)),
                         playing: sh.playing.load(Ordering::Relaxed),
                         ended: sh.ended.swap(false, Ordering::Relaxed),
@@ -381,6 +432,7 @@ fn start_engine(report: Box<dyn Fn(StateReport) + Send>, host: String, output: S
                         counting_in: sh.counting_in.load(Ordering::Relaxed),
                     });
                 }
+                drop(input_stream);
                 drop(stream);
             }
             Err(e) => {
@@ -389,8 +441,8 @@ fn start_engine(report: Box<dyn Fn(StateReport) + Send>, host: String, output: S
         }
     });
     match ready_rx.recv().map_err(|e| e.to_string())? {
-        Ok((summary, hz)) => {
-            *ENGINE.lock().unwrap() = Some(Handle { tx, stop: stop_tx, thread, sample_rate: hz });
+        Ok((summary, hz, input)) => {
+            *ENGINE.lock().unwrap() = Some(Handle { tx, ctl: ctl_tx, input, stop: stop_tx, thread, sample_rate: hz });
             Ok(summary)
         }
         Err(e) => {
@@ -517,6 +569,138 @@ pub fn native_engine_rate() -> Option<u32> {
     ENGINE.lock().unwrap().as_ref().map(|h| h.sample_rate)
 }
 
+/// Opens the live input at the engine's rate, on the same audio system as the output.
+fn open_input(host: &str, name: &str, channel: usize, buffer: u32, fixed: bool, hz: u32, shared: &Arc<InputShared>) -> Result<(Stream, String), String> {
+    let host = crate::native_audio::host_by_name(host)?;
+    let dev = crate::native_audio::find_device(&host, name, true)?;
+    let def = dev.default_input_config().map_err(|e| e.to_string())?;
+    let supported = dev
+        .supported_input_configs()
+        .map_err(|e| e.to_string())?
+        .any(|c| c.min_sample_rate().0 <= hz && hz <= c.max_sample_rate().0 && c.channels() == def.channels());
+    if !supported {
+        return Err(format!("The input can't run at the output's {hz} Hz; pick devices that share a rate"));
+    }
+    let cfg = StreamConfig { channels: def.channels(), sample_rate: SampleRate(hz), buffer_size: fixed_or_default(def.buffer_size(), buffer, fixed) };
+    let sh = shared.clone();
+    let stream = by_format!(def.sample_format(), build_in, &dev, &cfg, channel, move |s: &[f32]| sh.on_input(s))?;
+    stream.play().map_err(|e| e.to_string())?;
+    Ok((stream, format!("{} input channels at {hz} Hz", def.channels())))
+}
+
+fn input_shared() -> Result<Arc<InputShared>, String> {
+    ENGINE.lock().unwrap().as_ref().map(|h| h.input.clone()).ok_or_else(|| "The native engine isn't running".to_string())
+}
+
+/// Opens the live input (an input device on the same audio system as the output). Returns a short description.
+#[tauri::command]
+pub async fn native_input_start(input: String, channel: u16, buffer: u32, fixed: bool) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || input_start_blocking(input, channel, buffer, fixed)).await.map_err(|e| e.to_string())?
+}
+
+fn input_start_blocking(input: String, channel: u16, buffer: u32, fixed: bool) -> Result<String, String> {
+    let (reply, answer) = channel_pair();
+    {
+        let g = ENGINE.lock().unwrap();
+        let h = g.as_ref().ok_or("The native engine isn't running")?;
+        h.ctl.send(Ctl::OpenInput { input, channel: channel as usize, buffer, fixed, reply }).map_err(|e| e.to_string())?;
+    }
+    answer.recv_timeout(Duration::from_secs(5)).map_err(|_| "Timed out opening the input".to_string())?
+}
+
+fn channel_pair() -> (Sender<Result<String, String>>, Receiver<Result<String, String>>) {
+    channel()
+}
+
+#[tauri::command]
+pub fn native_input_stop() -> Result<(), String> {
+    let g = ENGINE.lock().unwrap();
+    if let Some(h) = g.as_ref() {
+        *h.input.rec.lock().unwrap() = None;
+        h.input.set_monitor(false, 0.0, 0.0);
+        h.ctl.send(Ctl::CloseInput).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Monitor on / off and its level and pan.
+#[tauri::command]
+pub fn native_input_set(monitor: bool, gain: f32, pan: f32) -> Result<(), String> {
+    input_shared()?.set_monitor(monitor, gain, pan);
+    Ok(())
+}
+
+/// The last few thousand input samples for the tuner and the Trainer: the sample rate (u32, little-endian) then f32 samples.
+#[tauri::command]
+pub fn native_input_snapshot() -> Result<tauri::ipc::Response, String> {
+    let sh = input_shared()?;
+    let samples = sh.snapshot();
+    let mut out = Vec::with_capacity(4 + samples.len() * 4);
+    out.extend_from_slice(&sh.rate.to_le_bytes());
+    for v in samples {
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+    Ok(tauri::ipc::Response::new(out))
+}
+
+/// Starts recording a take. `rt_ms` is the round-trip delay to take off so the take lands in time with the song.
+#[tauri::command]
+pub fn native_record_start(rt_ms: f64) -> Result<(), String> {
+    let sh = input_shared()?;
+    if !sh.active.load(Ordering::Relaxed) {
+        return Err("Start monitoring first.".into());
+    }
+    let capacity = sh.rate as usize * MAX_TAKE_SECS;
+    *sh.rec.lock().unwrap() = Some(RecState { samples: Vec::with_capacity(capacity), rt_secs: rt_ms.max(0.0) / 1000.0, start_pos: None });
+    Ok(())
+}
+
+/// Stops recording and returns the take as raw bytes: an f64 (little-endian) with the song frame the take starts at, with the
+/// round trip already taken off, then the mono audio as f32 at 44.1 kHz.
+#[tauri::command]
+pub fn native_record_stop() -> Result<tauri::ipc::Response, String> {
+    record_stop_bytes().map(tauri::ipc::Response::new)
+}
+
+fn record_stop_bytes() -> Result<Vec<u8>, String> {
+    let sh = input_shared()?;
+    let rec = sh.rec.lock().unwrap().take().ok_or("Not recording")?;
+    let mut samples = rec.samples;
+    if sh.rate != 44100 {
+        let mut rs = StreamResampler::new(sh.rate, 44100);
+        let want = (samples.len() as f64 * 44100.0 / sh.rate as f64) as usize;
+        let mut at = 0usize;
+        let (mut out, mut scratch) = (vec![0f32; want], vec![0f32; want.min(1 << 16).max(1)]);
+        let mut o = 0;
+        while o < want {
+            let k = (want - o).min(scratch.len());
+            let src = &samples;
+            rs.render(
+                |a, b, n| {
+                    for i in 0..n {
+                        let v = src.get(at + i).copied().unwrap_or(0.0);
+                        a[i] = v;
+                        b[i] = v;
+                    }
+                    at += n;
+                    true
+                },
+                &mut out[o..o + k],
+                &mut scratch[..k],
+                k,
+            );
+            o += k;
+        }
+        samples = out;
+    }
+    let mut bytes = Vec::with_capacity(8 + samples.len() * 4);
+    bytes.extend_from_slice(&rec.start_pos.unwrap_or(0.0).to_le_bytes());
+    for v in samples {
+        bytes.extend_from_slice(&v.to_le_bytes());
+    }
+    Ok(bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -575,5 +759,63 @@ mod tests {
         assert!(after < during * 0.05, "still sounding after pause");
         assert!(last.pos > 44100.0 * 5.0 + 44100.0, "position didn't advance: {}", last.pos);
         assert!(!last.playing);
+    }
+
+    /// A take recorded while the song plays lines up with the song. The null sink plays the song out and is also the input
+    /// (a perfect loopback), so the take is the song itself, delayed by the round trip; after the engine takes the measured
+    /// round trip off, comparing the take with the song's own audio should show almost no lag.
+    ///   pactl load-module module-null-sink sink_name=natest
+    ///   NA_SONG_DIR=~/.local/share/app.steminize.desktop/library/<id> PULSE_SINK=natest PULSE_SOURCE=natest.monitor \
+    ///     cargo test native_take_lines_up -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn native_take_lines_up() {
+        let dir = std::path::PathBuf::from(std::env::var("NA_SONG_DIR").expect("NA_SONG_DIR"));
+        // The round trip of this exact setup, measured the way the app does.
+        let lb = crate::native_audio::run_loopback_for_test("pulse", "pulse", 128);
+        let rt_ms = lb.expect("loopback should hear itself");
+        println!("measured round trip {rt_ms} ms");
+
+        start_engine(Box::new(|_| {}), "ALSA".into(), "pulse".into(), 128, true, 0).expect("start");
+        println!("input: {}", input_start_blocking("pulse".into(), 0, 128, true).expect("input"));
+        let len = load_song(&dir, vec![1.0, 1.0, 1.0]).expect("load");
+        send(Cmd::Seek(44100.0 * 2.0)).unwrap();
+        send(Cmd::Play).unwrap();
+        std::thread::sleep(Duration::from_millis(600));
+        *input_shared().unwrap().rec.lock().unwrap() = Some(RecState { samples: Vec::with_capacity(44100 * 10), rt_secs: rt_ms / 1000.0, start_pos: None });
+        std::thread::sleep(Duration::from_millis(5000));
+        let bytes = record_stop_bytes().expect("take");
+        send(Cmd::Pause).unwrap();
+        stop_engine();
+
+        let start = f64::from_le_bytes(bytes[..8].try_into().unwrap());
+        let take: Vec<f32> = bytes[8..].chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
+        // The song's own left channel, mixed the way the engine mixed it.
+        let meta: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("meta.json")).unwrap()).unwrap();
+        let mut mix = vec![0f32; len];
+        for (name, scale) in song_files(&meta).unwrap() {
+            let (l, _) = decode_flac(&std::fs::read(dir.join(format!("{name}.flac"))).unwrap(), scale).unwrap();
+            for (i, v) in l.iter().enumerate() {
+                mix[i] += v;
+            }
+        }
+        // The take is mono from the left channel; find how far it is from the song around where it was placed.
+        let start = start.round() as i64;
+        let (from, to) = (44100usize, take.len().min(44100 * 4));
+        let mut best = (0i64, f64::MIN);
+        for lag in -2200i64..=2200 {
+            let mut dot = 0.0f64;
+            for i in from..to {
+                let j = start + i as i64 + lag;
+                if j >= 0 && (j as usize) < mix.len() {
+                    dot += take[i] as f64 * mix[j as usize] as f64;
+                }
+            }
+            if dot > best.1 {
+                best = (lag, dot);
+            }
+        }
+        println!("take starts at song frame {start}, {} samples; best lag {} samples = {:.2} ms", take.len(), best.0, best.0 as f64 / 44.1);
+        assert!(best.0.abs() < 132, "take is {:.1} ms off the song", best.0 as f64 / 44.1);
     }
 }

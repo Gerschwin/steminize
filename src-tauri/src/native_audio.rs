@@ -190,7 +190,7 @@ pub(crate) fn find_device(host: &Host, name: &str, input: bool) -> Result<Device
 // ---------- streams ----------
 
 /// Single-producer single-consumer ring of f32 samples, lock-free so the two audio callbacks never wait on each other.
-struct Ring {
+pub(crate) struct Ring {
     buf: Vec<AtomicU32>,
     mask: usize,
     head: AtomicUsize, // next write
@@ -198,13 +198,13 @@ struct Ring {
 }
 
 impl Ring {
-    fn new(pow2: usize) -> Self {
+    pub(crate) fn new(pow2: usize) -> Self {
         Ring { buf: (0..pow2).map(|_| AtomicU32::new(0)).collect(), mask: pow2 - 1, head: AtomicUsize::new(0), tail: AtomicUsize::new(0) }
     }
-    fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.head.load(Ordering::Acquire).wrapping_sub(self.tail.load(Ordering::Acquire))
     }
-    fn push(&self, v: f32) {
+    pub(crate) fn push(&self, v: f32) {
         let h = self.head.load(Ordering::Relaxed);
         if h.wrapping_sub(self.tail.load(Ordering::Acquire)) > self.mask {
             return; // full: drop the newest rather than block
@@ -212,7 +212,7 @@ impl Ring {
         self.buf[h & self.mask].store(v.to_bits(), Ordering::Relaxed);
         self.head.store(h.wrapping_add(1), Ordering::Release);
     }
-    fn pop(&self) -> Option<f32> {
+    pub(crate) fn pop(&self) -> Option<f32> {
         let t = self.tail.load(Ordering::Relaxed);
         if t == self.head.load(Ordering::Acquire) {
             return None;
@@ -221,13 +221,13 @@ impl Ring {
         self.tail.store(t.wrapping_add(1), Ordering::Release);
         Some(v)
     }
-    fn skip(&self, n: usize) {
+    pub(crate) fn skip(&self, n: usize) {
         let t = self.tail.load(Ordering::Relaxed);
         self.tail.store(t.wrapping_add(n), Ordering::Release);
     }
 }
 
-fn fixed_or_default(range: &SupportedBufferSize, wanted: u32, fixed: bool) -> BufferSize {
+pub(crate) fn fixed_or_default(range: &SupportedBufferSize, wanted: u32, fixed: bool) -> BufferSize {
     if !fixed {
         return BufferSize::Default;
     }
@@ -242,7 +242,7 @@ fn err_fn(e: cpal::StreamError) {
 }
 
 /// Builds an input stream that hands `sink` the chosen channel as mono f32, whatever the device's sample format.
-fn build_in<T>(dev: &Device, cfg: &StreamConfig, in_channel: usize, mut sink: impl FnMut(&[f32]) + Send + 'static) -> Result<Stream, String>
+pub(crate) fn build_in<T>(dev: &Device, cfg: &StreamConfig, in_channel: usize, mut sink: impl FnMut(&[f32]) + Send + 'static) -> Result<Stream, String>
 where
     T: SizedSample + Send + 'static,
     f32: FromSample<T>,
@@ -302,6 +302,7 @@ macro_rules! by_format {
         }
     };
 }
+pub(crate) use by_format;
 
 struct Opened {
     in_stream: Stream,
@@ -643,6 +644,12 @@ fn run_loopback(host: &str, input: &str, output: &str, in_channel: usize, buffer
         _ => None,
     };
     Ok(LoopbackResult { ms, hits: consistent, total, detail: summary })
+}
+
+/// Round trip in ms through two devices of the same name, for tests in other modules.
+#[cfg(test)]
+pub(crate) fn run_loopback_for_test(input: &str, output: &str, buffer: u32) -> Option<f64> {
+    run_loopback("ALSA", input, output, 0, buffer, true, 0).ok()?.ms
 }
 
 #[cfg(test)]

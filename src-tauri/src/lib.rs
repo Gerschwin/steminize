@@ -6,6 +6,7 @@ mod engine;
 mod library;
 mod links;
 mod native_audio;
+mod native_input;
 mod native_playback;
 mod ytdlp;
 
@@ -69,7 +70,9 @@ pub fn run() {
             native_playback::native_engine_start, native_playback::native_engine_stop, native_playback::native_engine_load, native_playback::native_engine_play,
             native_playback::native_engine_pause, native_playback::native_engine_seek, native_playback::native_engine_loop, native_playback::native_engine_tempo,
             native_playback::native_engine_gains, native_playback::native_engine_practice, native_playback::native_engine_rate,
-            native_playback::native_engine_track, native_playback::native_engine_volume])
+            native_playback::native_engine_track, native_playback::native_engine_volume,
+            native_playback::native_input_start, native_playback::native_input_stop, native_playback::native_input_set, native_playback::native_input_snapshot,
+            native_playback::native_record_start, native_playback::native_record_stop])
         .run(tauri::generate_context!())
         .expect("error while running Steminize");
 }
