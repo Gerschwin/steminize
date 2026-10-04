@@ -1,0 +1,140 @@
+// Experimental "Native audio" test panel (desktop app only): talks to the Rust side (src-tauri/src/native_audio.rs),
+// which opens the sound card directly instead of going through the webview. It is a measuring tool for now:
+// monitor the input by ear, or measure the round trip with the output patched to an input.
+import { isTauri } from '../platform.ts';
+import { toast } from './dom.ts';
+
+interface DeviceInfo {
+  host: string;
+  kind: 'input' | 'output';
+  name: string;
+  channels: number;
+  sample_rate: number;
+  buffer_min: number | null;
+  buffer_max: number | null;
+  is_default: boolean;
+}
+
+interface LoopbackResult {
+  ms: number | null;
+  hits: number;
+  total: number;
+  detail: string;
+}
+
+type Invoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
+
+export function initNativeAudio() {
+  const box = document.getElementById('nativeAudioBox');
+  if (!isTauri || !box) return;
+  box.hidden = false;
+  const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+  const hostSel = $<HTMLSelectElement>('naHost');
+  const inSel = $<HTMLSelectElement>('naInput');
+  const outSel = $<HTMLSelectElement>('naOutput');
+  const chanSel = $<HTMLSelectElement>('naChannel');
+  const bufSel = $<HTMLSelectElement>('naBuffer');
+  const monBtn = $<HTMLButtonElement>('naMonitor');
+  const loopBtn = $<HTMLButtonElement>('naLoopback');
+  const status = $('naStatus');
+  let devices: DeviceInfo[] = [];
+  let invoke: Invoke | null = null;
+  let monitoring = false;
+
+  const call = async <T,>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
+    invoke ??= (await import('@tauri-apps/api/core')).invoke as Invoke;
+    return invoke<T>(cmd, args);
+  };
+
+  const fillDevices = () => {
+    const host = hostSel.value;
+    const opts = (kind: 'input' | 'output') =>
+      devices
+        .filter((d) => d.host === host && d.kind === kind)
+        .map((d) => {
+          const o = document.createElement('option');
+          o.value = d.name;
+          o.textContent = `${d.name}${d.is_default ? ' (default)' : ''} — ${d.channels} ch, ${d.sample_rate} Hz`;
+          return o;
+        });
+    inSel.replaceChildren(...opts('input'));
+    outSel.replaceChildren(...opts('output'));
+  };
+
+  const load = async () => {
+    try {
+      devices = await call<DeviceInfo[]>('native_audio_devices');
+      const hosts = [...new Set(devices.map((d) => d.host))];
+      hostSel.replaceChildren(
+        ...hosts.map((h) => {
+          const o = document.createElement('option');
+          o.value = h;
+          o.textContent = h;
+          return o;
+        }),
+      );
+      fillDevices();
+      status.textContent = devices.length ? `${devices.length} devices found.` : 'No native audio devices found.';
+    } catch (e) {
+      status.textContent = `Couldn't list devices: ${(e as Error).message ?? e}`;
+    }
+  };
+
+  const args = () => ({
+    host: hostSel.value,
+    input: inSel.value,
+    output: outSel.value,
+    inChannel: Number(chanSel.value),
+    buffer: Number(bufSel.value) || 0,
+    fixed: Number(bufSel.value) > 0,
+  });
+
+  hostSel.onchange = fillDevices;
+  $('naRefresh').onclick = () => void load();
+
+  monBtn.onclick = async () => {
+    monBtn.disabled = true;
+    try {
+      if (monitoring) {
+        await call('native_monitor_stop');
+        monitoring = false;
+        monBtn.textContent = 'Native monitor';
+        status.textContent = 'Stopped.';
+      } else {
+        status.textContent = 'Starting…';
+        const summary = await call<string>('native_monitor_start', { ...args(), gain: 1 });
+        monitoring = true;
+        monBtn.textContent = 'Stop native monitor';
+        status.textContent = `Monitoring natively: ${summary}`;
+      }
+    } catch (e) {
+      status.textContent = `Couldn't ${monitoring ? 'stop' : 'start'}: ${e}`;
+      toast(`Native audio: ${e}`, true);
+    } finally {
+      monBtn.disabled = false;
+    }
+  };
+
+  loopBtn.onclick = async () => {
+    if (monitoring) {
+      await call('native_monitor_stop');
+      monitoring = false;
+      monBtn.textContent = 'Native monitor';
+    }
+    loopBtn.disabled = monBtn.disabled = true;
+    status.textContent = 'Measuring… clicks will play out of the chosen output for about 5 seconds.';
+    try {
+      const r = await call<LoopbackResult>('native_loopback', args());
+      status.textContent =
+        r.ms == null
+          ? `Couldn't hear the clicks (${r.hits}/${r.total}). Patch the output to the chosen input with a cable, or hold the mic to the speaker. ${r.detail}`
+          : `Round trip ${r.ms} ms (${r.hits} of ${r.total} clicks). ${r.detail}`;
+    } catch (e) {
+      status.textContent = `Couldn't measure: ${e}`;
+    } finally {
+      loopBtn.disabled = monBtn.disabled = false;
+    }
+  };
+
+  void load();
+}

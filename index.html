@@ -375,6 +375,31 @@
                   <label class="mini takes" title="Oldest take is dropped once you go over this, both here and from the library">Keep last <input type="number" id="liveMaxTakes" min="1" max="20" step="1" value="5" /> takes</label>
                   <span class="muted small" id="liveStatus"></span>
                 </div>
+                <div class="tool live native-audio" id="nativeAudioBox" hidden>
+                  <strong class="small" title="Experimental: opens the sound card directly instead of through the webview, to see how low the delay can go. Use headphones when monitoring (feedback), and stop the Monitor above first.">Native audio (experimental)</strong>
+                  <select id="naHost" title="Audio system"></select>
+                  <select id="naInput" title="Input device"></select>
+                  <select id="naOutput" title="Output device"></select>
+                  <select id="naChannel" title="Input channel">
+                    <option value="0">Input 1</option>
+                    <option value="1">Input 2</option>
+                    <option value="2">Input 3</option>
+                    <option value="3">Input 4</option>
+                  </select>
+                  <select id="naBuffer" title="Buffer size in frames: smaller is lower delay but may crackle">
+                    <option value="0">Default buffer</option>
+                    <option value="32">32 frames</option>
+                    <option value="64">64 frames</option>
+                    <option value="128" selected>128 frames</option>
+                    <option value="256">256 frames</option>
+                    <option value="512">512 frames</option>
+                    <option value="1024">1024 frames</option>
+                  </select>
+                  <button class="btn tiny ghost" id="naRefresh" type="button" title="List the devices again">Refresh</button>
+                  <button class="btn tiny toggle" id="naMonitor" type="button">Native monitor</button>
+                  <button class="btn tiny ghost" id="naLoopback" type="button" title="Plays clicks out of the chosen output and listens for them on the chosen input: patch the output to the input with a cable (gain low) and read the round trip">Loopback test</button>
+                  <span class="muted small" id="naStatus"></span>
+                </div>
               </div>
               <div class="dpane" data-pane="tuner" hidden>
                 <div class="tool tuner">

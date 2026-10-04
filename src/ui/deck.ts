@@ -10,6 +10,7 @@ import { extensionFor, mimeFor } from '../encode/meta.ts';
 import { stemColour, MODELS } from '../models.ts';
 import { openSink, safeName, saveFile } from '../platform.ts';
 import { MAX_REC_LATENCY_MS, loadLiveChannel, loadLowLatencyAudio, loadRecLatencyMs, saveLiveChannel, saveLowLatencyAudio, saveRecLatencyMs, type LiveChannel, type Settings } from '../settings.ts';
+import { initNativeAudio } from './nativeAudio.ts';
 import { placeTake, shiftTake } from '../player/placement.ts';
 import { lineAt, parseLrc, type Lrc } from '../lyrics/lrc.ts';
 import {
@@ -546,6 +547,7 @@ export class Deck {
     this.initOverview();
     this.initKeys();
     this.initLiveInput();
+    initNativeAudio();
     this.initTuner();
     this.initTrainer();
     this.initScratchpad();
