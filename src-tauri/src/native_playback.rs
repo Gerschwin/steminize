@@ -81,12 +81,6 @@ impl From<PracticeDto> for Practice {
     }
 }
 
-#[derive(Deserialize)]
-pub struct StemRef {
-    name: String,
-    scale: f32,
-}
-
 /// What the webview is told about playback; the same fields as the web player's report.
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -110,6 +104,9 @@ enum Cmd {
     Tempo { tempo: f64, pitch: f64 },
     Gains { gains: Vec<f32>, pans: Vec<f64>, eqs: Vec<Option<EqParams>> },
     Practice(Box<Practice>),
+    Volume(f32),
+    AddTrack(Stereo),
+    ReplaceTrack(usize, Stereo),
 }
 
 /// Written by the audio callback, read by the reporter thread; atomics so neither ever waits for the other.
@@ -130,11 +127,12 @@ struct Engine {
     rx: Receiver<Cmd>,
     shared: Arc<Shared>,
     /// Old songs are freed on another thread: dropping hundreds of MB in the audio callback would glitch it.
-    garbage: Sender<Box<Transport>>,
+    garbage: Sender<Box<dyn std::any::Any + Send>>,
     // What the transport should have when a new song arrives, as in the web worklet.
     looping: (bool, usize, usize),
     tempo: (f64, f64),
     practice: Practice,
+    volume: f32,
 }
 
 impl Engine {
@@ -145,7 +143,7 @@ impl Engine {
                 t.set_loop(self.looping.0, self.looping.1, self.looping.2);
                 t.set_practice(self.practice.clone());
                 if let Some(old) = self.t.replace(t) {
-                    let _ = self.garbage.send(old);
+                    let _ = self.garbage.send(Box::new(old));
                 }
                 self.playing = false;
                 if let Some(rs) = &mut self.rs {
@@ -186,6 +184,20 @@ impl Engine {
                     self.playing = true;
                 }
             }
+            Cmd::Volume(v) => self.volume = v,
+            Cmd::AddTrack(stem) => {
+                if let Some(t) = &mut self.t {
+                    t.r.src.stems.push(stem);
+                }
+            }
+            Cmd::ReplaceTrack(i, stem) => {
+                if let Some(t) = &mut self.t {
+                    if let Some(slot) = t.r.src.stems.get_mut(i) {
+                        let old = std::mem::replace(slot, stem);
+                        let _ = self.garbage.send(Box::new(old));
+                    }
+                }
+            }
             Cmd::Pause => self.playing = false,
             Cmd::Seek(pos) => {
                 if let Some(rs) = &mut self.rs {
@@ -222,6 +234,11 @@ impl Engine {
             _ => {
                 l.fill(0.0);
                 r.fill(0.0);
+            }
+        }
+        if self.volume != 1.0 {
+            for v in l.iter_mut().chain(r.iter_mut()) {
+                *v *= self.volume;
             }
         }
         let sh = &self.shared;
@@ -321,7 +338,7 @@ fn start_engine(report: Box<dyn Fn(StateReport) + Send>, host: String, output: S
                 }
             };
             let cfg = StreamConfig { channels: def.channels(), sample_rate: SampleRate(hz), buffer_size };
-            let (garbage_tx, garbage_rx) = channel::<Box<Transport>>();
+            let (garbage_tx, garbage_rx) = channel::<Box<dyn std::any::Any + Send>>();
             std::thread::spawn(move || while garbage_rx.recv().is_ok() {});
             let engine = Engine {
                 t: None,
@@ -333,6 +350,7 @@ fn start_engine(report: Box<dyn Fn(StateReport) + Send>, host: String, output: S
                 looping: (false, 0, 0),
                 tempo: (1.0, 0.0),
                 practice: Practice::default(),
+                volume: 1.0,
             };
             let stream = match def.sample_format() {
                 SampleFormat::F32 => build_stereo_out::<f32>(&dev, &cfg, engine),
@@ -390,22 +408,42 @@ pub fn native_engine_stop() {
 /// Loads a saved song's stems from the library by id (FLAC files, undoing each file's stored scale) and returns its length
 /// in frames. Takes a while for a long song, so it runs off the main thread.
 #[tauri::command]
-pub async fn native_engine_load(app: AppHandle, id: String, stems: Vec<StemRef>, gains: Vec<f32>) -> Result<usize, String> {
+pub async fn native_engine_load(app: AppHandle, id: String, gains: Vec<f32>) -> Result<usize, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let dir = crate::library::lib_root(&app)?.join(crate::library::safe_component(&id, "song id")?);
-        load_song(&dir, &stems, gains)
+        load_song(&dir, gains)
     })
     .await
     .map_err(|e| e.to_string())?
 }
 
-/// Reads the stems from `dir`, builds the transport and hands it to the running engine; returns the song's length in frames.
-fn load_song(dir: &std::path::Path, stems: &[StemRef], gains: Vec<f32>) -> Result<usize, String> {
-    let mut loaded: Vec<Stereo> = Vec::with_capacity(stems.len());
-    for s in stems {
-        let name = crate::library::safe_component(&s.name, "stem name")?;
+/// The files of a saved song in track order: its stems, then the active (or latest) take of each recorded source, which
+/// is the order the deck lays its tracks out in (see `restoreTakes` in deck.ts).
+fn song_files(meta: &serde_json::Value) -> Result<Vec<(String, f32)>, String> {
+    let mut files = Vec::new();
+    for s in meta["stems"].as_array().ok_or("The song has no stems")? {
+        files.push((s["name"].as_str().ok_or("stem without a name")?.to_string(), s["scale"].as_f64().unwrap_or(1.0) as f32));
+    }
+    for g in meta["takeGroups"].as_array().into_iter().flatten() {
+        let gid = g["id"].as_str().ok_or("take group without an id")?;
+        let takes = g["takes"].as_array().map(|t| t.as_slice()).unwrap_or(&[]);
+        let active = g["activeTake"].as_str();
+        let take = takes.iter().find(|t| t["id"].as_str() == active).or_else(|| takes.last());
+        if let Some(t) = take {
+            files.push((format!("{gid}-{}", t["id"].as_str().ok_or("take without an id")?), t["scale"].as_f64().unwrap_or(1.0) as f32));
+        }
+    }
+    Ok(files)
+}
+
+/// Reads a saved song's files, builds the transport and hands it to the running engine; returns the song's length in frames.
+fn load_song(dir: &std::path::Path, gains: Vec<f32>) -> Result<usize, String> {
+    let meta: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("meta.json")).map_err(|e| format!("meta.json: {e}"))?).map_err(|e| e.to_string())?;
+    let mut loaded: Vec<Stereo> = Vec::new();
+    for (name, scale) in song_files(&meta)? {
+        let name = crate::library::safe_component(&name, "track name")?;
         let bytes = std::fs::read(dir.join(format!("{name}.flac"))).map_err(|e| format!("{name}: {e}"))?;
-        loaded.push(decode_flac(&bytes, s.scale).map_err(|e| format!("{name}: {e}"))?);
+        loaded.push(decode_flac(&bytes, scale).map_err(|e| format!("{name}: {e}"))?);
     }
     let len = loaded.iter().map(|s| s.0.len()).max().unwrap_or(0);
     for s in &mut loaded {
@@ -416,6 +454,27 @@ fn load_song(dir: &std::path::Path, stems: &[StemRef], gains: Vec<f32>) -> Resul
     src.pad_end = 32768;
     send(Cmd::Load(Box::new(Transport::new(Renderer::new(src)))))?;
     Ok(len)
+}
+
+/// A track's audio sent as raw bytes: little-endian f32, all of the left channel then all of the right. Headers: `mode`
+/// is "add" or "replace", and `index` is the track slot to replace. Used for takes recorded or switched while a song plays.
+#[tauri::command]
+pub fn native_engine_track(request: tauri::ipc::Request) -> Result<(), String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else { return Err("expected raw audio bytes".into()) };
+    let h = |name: &str| request.headers().get(name).and_then(|v| v.to_str().ok()).map(str::to_string);
+    let floats: Vec<f32> = bytes.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
+    let half = floats.len() / 2;
+    let stem: Stereo = (floats[..half].to_vec(), floats[half..half * 2].to_vec());
+    match h("mode").as_deref() {
+        Some("add") => send(Cmd::AddTrack(stem)),
+        Some("replace") => send(Cmd::ReplaceTrack(h("index").and_then(|i| i.parse().ok()).ok_or("missing track index")?, stem)),
+        _ => Err("mode must be add or replace".into()),
+    }
+}
+
+#[tauri::command]
+pub fn native_engine_volume(v: f32) -> Result<(), String> {
+    send(Cmd::Volume(v))
 }
 
 #[tauri::command]
@@ -474,13 +533,13 @@ mod tests {
     fn native_playback_plays() {
         let dir = std::path::PathBuf::from(std::env::var("NA_SONG_DIR").expect("NA_SONG_DIR"));
         let meta: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("meta.json")).unwrap()).unwrap();
-        let stems: Vec<StemRef> = meta["stems"].as_array().unwrap().iter().map(|s| StemRef { name: s["name"].as_str().unwrap().to_string(), scale: s["scale"].as_f64().unwrap() as f32 }).collect();
+        let stems = song_files(&meta).unwrap();
         let reports = Arc::new(Mutex::new(Vec::<StateReport>::new()));
         let r2 = reports.clone();
         let summary = start_engine(Box::new(move |r| r2.lock().unwrap().push(r)), "ALSA".into(), "pulse".into(), 256, true, 0).expect("start");
         let gains = vec![1.0; stems.len()];
         let t = std::time::Instant::now();
-        let len = load_song(&dir, &stems, gains).expect("load");
+        let len = load_song(&dir, gains).expect("load");
         println!("{summary}; loaded {} stems, {len} frames ({:.1}s) in {:.2}s", stems.len(), len as f64 / 44100.0, t.elapsed().as_secs_f64());
 
         let mut rec = Command::new("parec").args(["--device=natest.monitor", "--format=float32le", "--rate=44100", "--channels=2", "--latency-msec=20"]).stdout(Stdio::piped()).spawn().expect("parec");

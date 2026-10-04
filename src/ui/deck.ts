@@ -547,7 +547,7 @@ export class Deck {
     this.initOverview();
     this.initKeys();
     this.initLiveInput();
-    initNativeAudio();
+    initNativeAudio(this.player);
     this.initTuner();
     this.initTrainer();
     this.initScratchpad();
@@ -1125,7 +1125,7 @@ export class Deck {
     this.lastPracticed = undefined;
     this.lastPracticeTick = null;
     this.lanes = r.stems.map((s, i) => this.buildLane(s, i));
-    this.player.load(r.stems.map((s) => s.data), this.gains());
+    this.player.load(r.stems.map((s) => s.data), this.gains(), r.libId);
     this.restoreTakes(r);
     if (state) this.applyState(state); // restores practiceSeconds/lastPracticed too, if saved
     this.refreshTunerSources();

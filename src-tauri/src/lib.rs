@@ -68,7 +68,8 @@ pub fn run() {
             native_audio::native_audio_devices, native_audio::native_monitor_start, native_audio::native_monitor_stop, native_audio::native_monitor_stats, native_audio::native_loopback,
             native_playback::native_engine_start, native_playback::native_engine_stop, native_playback::native_engine_load, native_playback::native_engine_play,
             native_playback::native_engine_pause, native_playback::native_engine_seek, native_playback::native_engine_loop, native_playback::native_engine_tempo,
-            native_playback::native_engine_gains, native_playback::native_engine_practice, native_playback::native_engine_rate])
+            native_playback::native_engine_gains, native_playback::native_engine_practice, native_playback::native_engine_rate,
+            native_playback::native_engine_track, native_playback::native_engine_volume])
         .run(tauri::generate_context!())
         .expect("error while running Steminize");
 }

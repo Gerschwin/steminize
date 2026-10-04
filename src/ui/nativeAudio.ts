@@ -3,6 +3,7 @@
 // monitor the input by ear, or measure the round trip with the output patched to an input.
 import { isTauri } from '../platform.ts';
 import { toast } from './dom.ts';
+import type { Player } from '../player/player.ts';
 
 interface DeviceInfo {
   host: string;
@@ -30,7 +31,24 @@ interface LoopbackResult {
 
 type Invoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
-export function initNativeAudio() {
+const KEY = 'steminize.nativePlayback';
+interface Saved {
+  on: boolean;
+  host: string;
+  output: string;
+  buffer: number;
+  rate: number;
+}
+
+const loadSaved = (): Saved | null => {
+  try {
+    return JSON.parse(localStorage.getItem(KEY) ?? 'null');
+  } catch {
+    return null;
+  }
+};
+
+export function initNativeAudio(player: Player) {
   const box = document.getElementById('nativeAudioBox');
   if (!isTauri || !box) return;
   box.hidden = false;
@@ -44,6 +62,8 @@ export function initNativeAudio() {
   const monBtn = $<HTMLButtonElement>('naMonitor');
   const loopBtn = $<HTMLButtonElement>('naLoopback');
   const status = $('naStatus');
+  const playbackBox = $<HTMLInputElement>('naPlayback');
+  player.onNativeError = (m) => toast(m, true);
   let devices: DeviceInfo[] = [];
   let invoke: Invoke | null = null;
   let monitoring = false;
@@ -69,6 +89,11 @@ export function initNativeAudio() {
         });
     inSel.replaceChildren(...opts('input'));
     outSel.replaceChildren(...opts('output'));
+    // Start on something sensible: the host's default device, else the PipeWire / PulseAudio / "default" ones, not the first in the list.
+    for (const [sel, kind] of [[inSel, 'input'], [outSel, 'output']] as const) {
+      const pick = devices.find((d) => d.host === host && d.kind === kind && d.is_default) ?? ['pipewire', 'pulse', 'default'].map((n) => devices.find((d) => d.host === host && d.kind === kind && d.name === n)).find(Boolean);
+      if (pick) sel.value = pick.name;
+    }
   };
 
   const load = async () => {
@@ -164,5 +189,50 @@ export function initNativeAudio() {
     }
   };
 
-  void load();
+  const saved = loadSaved();
+
+  const startPlayback = async (): Promise<boolean> => {
+    const a = args();
+    try {
+      const summary = await player.startNative({ host: a.host, output: a.output, buffer: a.buffer, fixed: a.fixed, rate: a.rate });
+      status.textContent = `Native playback on: ${summary}. Reopen the song to play it natively.`;
+      try {
+        localStorage.setItem(KEY, JSON.stringify({ on: true, host: a.host, output: a.output, buffer: a.buffer, rate: a.rate } satisfies Saved));
+      } catch {
+        /* ignore */
+      }
+      return true;
+    } catch (e) {
+      status.textContent = `Couldn't start native playback: ${e}`;
+      return false;
+    }
+  };
+
+  playbackBox.onchange = async () => {
+    if (playbackBox.checked) {
+      playbackBox.checked = await startPlayback();
+    } else {
+      await player.stopNative().catch(() => {});
+      try {
+        const s = loadSaved();
+        if (s) localStorage.setItem(KEY, JSON.stringify({ ...s, on: false }));
+      } catch {
+        /* ignore */
+      }
+      status.textContent = 'Native playback off.';
+    }
+  };
+
+  // Reopen the last choice: pick the saved devices and, if native playback was on, switch it on again.
+  void load().then(async () => {
+    if (!saved) return;
+    if ([...hostSel.options].some((o) => o.value === saved.host)) {
+      hostSel.value = saved.host;
+      fillDevices();
+    }
+    if ([...outSel.options].some((o) => o.value === saved.output)) outSel.value = saved.output;
+    bufSel.value = String(saved.buffer);
+    rateSel.value = String(saved.rate);
+    if (saved.on) playbackBox.checked = await startPlayback();
+  });
 }

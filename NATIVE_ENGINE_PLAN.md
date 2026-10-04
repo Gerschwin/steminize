@@ -25,10 +25,17 @@ browser version, selectable in a "Native audio" setting.
 2. **Engine core in Rust (done 2026-10-04).** `engine/{eq,mix,renderer,transport}.rs`: gains, pan, EQ, loop passes,
    gap, count-in, click, speed trainer, tempo / pitch via the stretcher. 23 tests including a sample-for-sample match with
    the TypeScript mixer.
-3. **Native playback.** Decode stems from the library files (symphonia: FLAC / WAV / MP3), run the transport inside the
+3. **Native playback (done 2026-10-04).** `src-tauri/src/native_playback.rs`. Verified end to end on a real library song
+   (Rust test through a PipeWire null sink: sound while playing, silence on pause, position exact) and in the running
+   desktop app under a virtual display (play, seek, tempo 90%, position reports driving the playhead).
+   Original description: Decode stems from the library files (symphonia: FLAC / WAV / MP3), run the transport inside the
    cpal output callback with lock-free commands in (play, pause, seek, loop, tempo, pitch, gains, practice) and position
    reports out (about 30 per second, over a Tauri event). Output only, no input yet.
-4. **UI adapter.** Extract a `Player` interface from `src/player/player.ts` (what `deck.ts` calls today), keep the web
+4. **UI adapter (first version done 2026-10-04).** `Player` routes to the native commands when "Use native playback" is
+   ticked in the Native audio panel and the song is saved in the library; unsaved songs and everything else (monitor,
+   recording, tuner tones, scrub grains) still use the web audio. Takes added or switched while a song plays are sent as raw
+   bytes. Not done: switching a song that is already open, an explicit device-lost recovery.
+   Original description: Extract a `Player` interface from `src/player/player.ts` (what `deck.ts` calls today), keep the web
    implementation, add a native one that forwards to the Tauri commands, and a "Native audio" setting that picks one.
    Waveform drawing, markers, tab follow-along and the trainer keep working because they read the same position state.
 5. **Native live input and recording.** The input stream feeds the monitor and a recorder in the same callback as the

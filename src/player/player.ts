@@ -2,6 +2,7 @@ import workletUrl from './worklet.ts?worker&url';
 import probeUrl from './inputProbe.ts?worker&url';
 import { detectLatency, type LatencyResult } from './latency.ts';
 import { loadLowLatencyAudio } from '../settings.ts';
+import { isTauri } from '../platform.ts';
 import type { PlayerMsg, PlayerReport } from './worklet.ts';
 import type { Practice } from './transport.ts';
 import type { Stereo } from './mixcore.ts';
@@ -44,6 +45,61 @@ export class Player {
   state: PlayerState = { pos: 0, playing: false, ended: false, passes: 0, tempo: 1, countingIn: false };
   onState: (s: PlayerState) => void = () => {};
   private stateStamp = 0;
+
+  // ---- native engine (desktop app): playback runs in Rust, in the sound card's own callback (see src-tauri/src/engine) ----
+  private nativeRunning = false;
+  /** The current song is loaded in the native engine, so playback calls go there instead of the web worklet. */
+  private nativeSong = false;
+  private nativeUnlisten: (() => void) | null = null;
+  /** A native call failed (shown to the user by whoever sets this). */
+  onNativeError: (message: string) => void = () => {};
+
+  get nativeActive() {
+    return this.nativeRunning;
+  }
+
+  private async nativeInvoke<T = void>(cmd: string, args?: Record<string, unknown>, options?: { headers: Record<string, string> }): Promise<T> {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<T>(cmd, args as never, options as never);
+  }
+
+  private nativeCall(cmd: string, args?: Record<string, unknown>) {
+    this.nativeInvoke(cmd, args).catch((e) => this.onNativeError(`${cmd}: ${e}`));
+  }
+
+  /** Opens the sound card for native playback. Songs loaded after this play natively (saved ones only). */
+  async startNative(o: { host: string; output: string; buffer: number; fixed: boolean; rate: number }): Promise<string> {
+    if (!isTauri) throw new Error('Native audio is only available in the desktop app.');
+    const summary = await this.nativeInvoke<string>('native_engine_start', o);
+    const { listen } = await import('@tauri-apps/api/event');
+    this.nativeUnlisten?.();
+    this.nativeUnlisten = await listen<PlayerState>('native-state', (e) => {
+      if (!this.nativeSong) return;
+      this.state = e.payload;
+      this.stateStamp = performance.now();
+      this.onState(e.payload);
+    });
+    this.nativeRunning = true;
+    return summary;
+  }
+
+  async stopNative() {
+    this.nativeSong = false;
+    this.nativeRunning = false;
+    this.nativeUnlisten?.();
+    this.nativeUnlisten = null;
+    await this.nativeInvoke('native_engine_stop');
+  }
+
+  private nativeTrack(mode: 'add' | 'replace', stem: Stereo, index?: number) {
+    const n = stem[0].length;
+    const both = new Float32Array(n * 2);
+    both.set(stem[0], 0);
+    both.set(stem[1], n);
+    const headers: Record<string, string> = { mode };
+    if (index != null) headers.index = String(index);
+    this.nativeInvoke('native_engine_track', both.buffer as never, { headers }).catch((e) => this.onNativeError(`native_engine_track: ${e}`));
+  }
 
   /** The playhead estimated for right now. Reports arrive about every 23 ms, out of step with screen
    * frames, so a display that moves smoothly (the tab scroll strip) carries on at the playing speed
@@ -107,28 +163,51 @@ export class Player {
     if (this.ctx!.state !== 'running') await this.ctx!.resume();
   }
 
-  load(stems: Stereo[], gains: number[]) {
+  /** `libId`, when the song is saved in the library, lets the native engine (if running) load it straight from its files. */
+  load(stems: Stereo[], gains: number[], libId?: string) {
+    if (this.nativeSong) this.nativeCall('native_engine_pause'); // leaving a native song
+    this.nativeSong = false;
+    if (this.nativeRunning && libId) {
+      this.nativeSong = true;
+      this.state = { ...this.state, pos: 0, playing: false, passes: 0 };
+      this.nativeInvoke('native_engine_load', { id: libId, gains }).catch((e) => {
+        // Couldn't load it natively (files missing, say): play it in the webview instead.
+        this.onNativeError(`Native playback couldn't load this song, using the web player: ${e}`);
+        this.nativeSong = false;
+        this.webLoad(stems, gains);
+      });
+      return;
+    }
+    this.webLoad(stems, gains);
+  }
+
+  private webLoad(stems: Stereo[], gains: number[]) {
     this.queued = this.queued.filter((m) => m.type !== 'load');
     this.send({ type: 'load', stems, gains });
     this.state = { ...this.state, pos: 0, playing: false, passes: 0 };
     void this.init();
   }
   setGains(gains: number[], pans?: number[], eqs?: (EqParams | undefined)[]) {
+    if (this.nativeSong) return this.nativeCall('native_engine_gains', { gains, pans: pans ?? null, eqs: eqs ? eqs.map((e) => e ?? null) : null });
     this.send({ type: 'gains', gains, pans, eqs });
   }
   /** Adds a track to the playing song in place, without resetting playback (unlike load()). Follow up with setGains() to size the gain/pan/EQ arrays to match. */
   addTrack(stem: Stereo) {
+    if (this.nativeSong) return this.nativeTrack('add', stem);
     this.send({ type: 'addTrack', stem });
   }
   /** Swaps the audio at an existing track slot (e.g. switching which take is active) without resetting playback or touching gain/pan/EQ. */
   replaceTrack(index: number, stem: Stereo) {
+    if (this.nativeSong) return this.nativeTrack('replace', stem, index);
     this.send({ type: 'replaceTrack', index, stem });
   }
   async play() {
+    if (this.nativeSong) return this.nativeCall('native_engine_play');
     await this.unlock();
     this.send({ type: 'play' });
   }
   pause() {
+    if (this.nativeSong) return this.nativeCall('native_engine_pause');
     this.send({ type: 'pause' });
   }
   /** Called when a seek is refused because a take is being recorded (the UI shows why). */
@@ -143,19 +222,24 @@ export class Player {
     const p = Math.max(0, Math.round(pos));
     this.state = { ...this.state, pos: p }; // update now; the player confirms shortly
     this.stateStamp = performance.now();
+    if (this.nativeSong) return this.nativeCall('native_engine_seek', { pos: p });
     this.send({ type: 'seek', pos: p });
   }
   setLoop(on: boolean, start: number, end: number) {
+    if (this.nativeSong) return this.nativeCall('native_engine_loop', { on, start: Math.round(start), end: Math.round(end) });
     this.send({ type: 'loop', on, start: Math.round(start), end: Math.round(end) });
   }
   setTempoPitch(tempo: number, pitch: number) {
+    if (this.nativeSong) return this.nativeCall('native_engine_tempo', { tempo, pitch });
     this.send({ type: 'tempo', tempo, pitch });
   }
   setPractice(practice: Practice) {
+    if (this.nativeSong) return this.nativeCall('native_engine_practice', { practice });
     this.send({ type: 'practice', practice });
   }
   setVolume(v: number) {
     if (this.master) this.master.gain.value = v;
+    if (this.nativeRunning) this.nativeCall('native_engine_volume', { v });
   }
 
   // ---- extra sounds for the note tools (freeze, keyboard) ----
