@@ -49,7 +49,7 @@ E|-0---0---0---0---|
 
 - [ ] The installer for your platform installs and the app opens (note the OS and version).
 - [ ] Linux AppImage: opens, and a saved song opens and plays (it used to sit on "Opening…").
-- [ ] The version number in the header matches the release (0.9.2).
+- [ ] The version number in the header matches the release (0.9.3).
 - [ ] **ⓘ About** shows the version, what uses the network, credits and licences, and a Support link that opens in your browser.
 - [ ] **Check for updates** (desktop) says whether a newer version exists; for 0.x it should only mention newer 0.x pre-releases.
 - [ ] **Copy diagnostic info** copies a plain-text summary (try pasting it); it holds no song names or personal details.

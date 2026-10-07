@@ -1,6 +1,6 @@
 {
   "name": "steminize",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "description": "A practice studio for musicians: stem separation, looping, tempo and key change, chords, and tab with a playing trainer. Runs entirely on your device",
   "scripts": {
     "dev": "vite",
