@@ -62,6 +62,16 @@ async fn ensure_ytdlp(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(path)
 }
 
+/// A yt-dlp command that doesn't open a console window. On Windows a console program started by a windowed app gets its
+/// own black window (flashing up for every search and download) unless it is asked not to.
+fn ytdlp_command(bin: &std::path::Path) -> Command {
+    #[cfg_attr(not(windows), allow(unused_mut))]
+    let mut cmd = Command::new(bin);
+    #[cfg(windows)]
+    cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    cmd
+}
+
 fn unique_suffix() -> String {
     let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
     format!("{}-{nanos}", std::process::id())
@@ -87,7 +97,7 @@ pub async fn ytdlp_search(app: AppHandle, query: String) -> Result<Vec<YtResult>
     let bin = ensure_ytdlp(&app).await?;
     let search_arg = format!("ytsearch8:{query}");
     let args: [&str; 4] = ["--no-warnings", "--flat-playlist", "--dump-json", &search_arg];
-    let output = Command::new(&bin)
+    let output = ytdlp_command(&bin)
         .args(args)
         .output()
         .await
@@ -151,7 +161,7 @@ pub async fn ytdlp_download(app: AppHandle, id: String) -> Result<String, String
         &url,
     ];
 
-    let mut child = Command::new(&bin)
+    let mut child = ytdlp_command(&bin)
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

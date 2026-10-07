@@ -5,6 +5,7 @@
 import type * as OrtT from 'onnxruntime-web/webgpu';
 import { MODELS, neededFiles, type ModelFile, type ModelId, type Precision } from '../models.ts';
 import { fixFloat64 } from './fixfloat64.ts';
+import { withTimeout } from './timeout.ts';
 import { CancelledError, SEGMENT, pickStems, separate, type Member, type Stereo } from './separate.ts';
 import type { Device } from '../settings.ts';
 
@@ -73,6 +74,10 @@ async function chooseBackend(pref: Device): Promise<'webgpu' | 'wasm'> {
   return (await hasWebGPU()) ? 'webgpu' : 'wasm';
 }
 
+/** How long a GPU session may take to appear before the CPU is used instead. Creating one takes seconds; on some Windows GPU /
+ * driver combinations it never returns, and with no error there is nothing to catch, so the wait itself has to be bounded. */
+const GPU_SESSION_TIMEOUT_MS = 60_000;
+
 // Graph optimisation must stay off: ONNX Runtime's constant folding expands
 // these Demucs exports from ~1.2 GB to ~4.3 GB peak, past the 4 GB WASM limit
 // ("std::bad_alloc"). Measured cost of leaving it off: ~30% slower.
@@ -103,10 +108,14 @@ async function getSession(f: ModelFile, backend: 'webgpu' | 'wasm'): Promise<{ s
   let s: OrtT.InferenceSession;
   let used = backend;
   let note: string | undefined;
+  const attempt = ort.InferenceSession.create(bytes, { executionProviders: [backend], ...SESSION_OPTS });
   try {
-    s = await ort.InferenceSession.create(bytes, { executionProviders: [backend], ...SESSION_OPTS });
+    s = backend === 'webgpu' ? await withTimeout(attempt, GPU_SESSION_TIMEOUT_MS, 'Loading the model on the GPU') : await attempt;
   } catch (e) {
     if (backend !== 'webgpu') throw e;
+    // If the GPU attempt does turn up later, don't hold on to it.
+    attempt.then((late) => late.release().catch(() => {}), () => {});
+    gpuOk = false; // the rest of this run goes straight to the CPU
     note = `GPU failed (${(e as Error).message}); using CPU`;
     used = 'wasm';
     s = await ort.InferenceSession.create(bytes, { executionProviders: ['wasm'], ...SESSION_OPTS });

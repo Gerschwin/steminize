@@ -29,6 +29,7 @@ import { moveItem, nextSong, parseSetlists, prevSong, pruneSongs, totalSeconds, 
 import { detectLatency } from '../src/player/latency.ts';
 import { placeTake, shiftTake } from '../src/player/placement.ts';
 import { StreamResampler } from '../src/player/resample.ts';
+import { withTimeout } from '../src/engine/timeout.ts';
 import { BarTally, barColour, barPercent, barTip } from '../src/lyrics/barScores.ts';
 
 let failed = 0;
@@ -1007,6 +1008,17 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('bars: all wrong is red, all right is green', barColour(0, 4) === 'hsl(0 70% 52%)' && barColour(4, 4) === 'hsl(120 70% 52%)');
   ok('bars: half right is amber', barColour(2, 4) === 'hsl(60 70% 52%)');
   ok('bars: the tooltip adds the last result', barTip(4, [3, 4]).endsWith('3 of 4 notes (75%)') && !barTip(4, undefined).includes('Last time'));
+}
+
+// ---- the watchdog on the GPU session (a hang on some Windows GPUs)
+{
+  const never = new Promise<number>(() => {});
+  const slow = withTimeout(never, 30, 'Loading the model on the GPU');
+  const hung = await slow.then(() => 'resolved', (e: Error) => e.message);
+  ok('timeout: a promise that never settles is rejected with what and how long', hung === "Loading the model on the GPU didn't finish within 0.03 s");
+  ok('timeout: a quick result passes straight through', (await withTimeout(Promise.resolve(7), 1000, 'x')) === 7);
+  const failed = await withTimeout(Promise.reject(new Error('boom')), 1000, 'x').then(() => 'resolved', (e: Error) => e.message);
+  ok('timeout: a real failure is passed on, not replaced by the timeout', failed === 'boom');
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

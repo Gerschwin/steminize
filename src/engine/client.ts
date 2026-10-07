@@ -28,7 +28,8 @@ export class Engine {
       const m = e.data;
       if (m.type === 'need-model') {
         const f = ALL_FILES.find((x) => x.key === m.key);
-        const bytes = f ? await getModelBytes(f) : null;
+        // If the stored model can't be read, say so (the worker then reports it as missing) rather than leave it waiting for ever.
+        const bytes = f ? await getModelBytes(f).catch(() => null) : null;
         this.worker.postMessage({ type: 'model-bytes', key: m.key, bytes }, bytes ? [bytes] : []);
       } else if (m.type === 'backend') {
         this.onBackend(m);

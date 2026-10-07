@@ -68,7 +68,25 @@ gpuLinuxNote.onclick = () => {
     showGpuNote(gpu);
   }
 })();
+const GPU_FAILED_KEY = 'steminize.gpuFailed';
+/** The GPU didn't work for a previous song (see worker.ts): with Device on Auto, start on the CPU instead of waiting for it to fail again. */
+const gpuFailedBefore = () => {
+  try {
+    return localStorage.getItem(GPU_FAILED_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+
 engine.onBackend = ({ backend, threads, note }) => {
+  if (note?.startsWith('GPU failed')) {
+    try {
+      localStorage.setItem(GPU_FAILED_KEY, '1');
+    } catch {
+      /* ignore */
+    }
+    toast('The GPU did not work, so Steminize is using the CPU. Set Device to GPU in Settings to try it again.', true, 9000);
+  }
   setBackendInfo({ backend, threads, note });
   chip.textContent = backend === 'webgpu' ? 'Running on GPU' : `Running on CPU · ${threads} thread${threads > 1 ? 's' : ''}`;
   chip.className = `chip${backend === 'webgpu' ? ' gpu' : ''}`;
@@ -318,10 +336,23 @@ async function processTrack(t: Track) {
 
     let t0 = 0;
     let stage = '';
+    let loadTimer = 0;
     const stems = await engine.separate(
-      { id: t.id, mix, model: s.model, precision: s.precision, device: s.device, shifts: s.shifts, overlap: s.overlap, twoStems: s.twoStems, skip: s.skipStems },
+      { id: t.id, mix, model: s.model, precision: s.precision, device: s.device === 'auto' && gpuFailedBefore() ? 'cpu' : s.device, shifts: s.shifts, overlap: s.overlap, twoStems: s.twoStems, skip: s.skipStems },
       (p) => {
-        if (p.done < 0) return set('separating', `${p.stage}…`, -1);
+        if (p.done < 0) {
+          // Loading a model can take a while (the first time especially): count the seconds so it doesn't look stuck.
+          clearInterval(loadTimer);
+          const began = performance.now();
+          const say = () => {
+            if (t.status !== 'separating') return clearInterval(loadTimer); // finished, failed or cancelled meanwhile
+            set('separating', `${p.stage}… ${Math.round((performance.now() - began) / 1000)} s`, -1);
+          };
+          say();
+          loadTimer = window.setInterval(say, 1000);
+          return;
+        }
+        clearInterval(loadTimer);
         // The model is loaded and the first pass is running: say so, rather than leave "Loading model…" up for it.
         if (p.done === 0) return set('separating', 'Separating…', -1);
         if (p.stage !== stage || !t0) [stage, t0] = [p.stage, performance.now()];
@@ -329,6 +360,7 @@ async function processTrack(t: Track) {
         set('separating', [`${Math.round((100 * p.done) / p.total)}%`, fmtEta(eta)].filter(Boolean).join(' · '), p.done / p.total);
       },
     );
+    clearInterval(loadTimer);
     const took = (performance.now() - t.started) / 1000;
     t.started = undefined;
     t.result = { title: t.file.name, stems, settings: s, seconds, took };
