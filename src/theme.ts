@@ -1,5 +1,7 @@
 // Dark/light: dark is always the default, regardless of the OS preference, unless the button
 // here has set an explicit choice, which is remembered and wins from then on either way.
+// A small inline script in index.html applies the stored choice before the first paint (so there is no
+// flash of the wrong theme); keep its storage key and values in step with this file.
 const KEY = 'steminize.theme';
 const DARK_BG = '#09090d';
 const LIGHT_BG = '#f5f6fa';

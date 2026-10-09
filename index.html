@@ -6,6 +6,16 @@
     <title>Steminize</title>
     <meta name="description" content="A practice studio for musicians. Split songs into stems, loop and slow them down, and learn them with chords and tab. Runs entirely on your device." />
     <meta name="theme-color" content="#09090d" id="themeColorMeta" />
+    <script>
+      // Pick the theme before anything is drawn, so the page never flashes the wrong one (the full logic is in src/theme.ts).
+      (function () {
+        var t = 'dark';
+        try {
+          if (localStorage.getItem('steminize.theme') === 'light') t = 'light';
+        } catch (e) {}
+        document.documentElement.setAttribute('data-theme', t);
+      })();
+    </script>
     <link rel="icon" href="./icon.svg" type="image/svg+xml" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="apple-touch-icon" href="./icon-192.png" />

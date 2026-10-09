@@ -15,23 +15,9 @@
   --shadow: 0 12px 34px rgba(0, 0, 0, 0.5);
   color-scheme: dark;
 }
-/* Dark is the default. Follow the OS preference only until the theme button sets an explicit
-   choice (data-theme on <html>), which then wins over prefers-color-scheme either way. */
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme='dark']) {
-    --bg: #f5f6fa;
-    --panel: #ffffff;
-    --panel-2: #f0f1f6;
-    --line: #dfe2ea;
-    --text: #151821;
-    --muted: #5f677a;
-    --accent: #c97a1a;
-    --accent-2: #a8630f;
-    --loop: #0891b2; /* loop section on the waveforms: distinct from the played colour, markers and playhead */
-    --shadow: 0 10px 30px rgba(20, 24, 40, 0.12);
-    color-scheme: light;
-  }
-}
+/* Dark is the default and the system's light/dark setting is ignored (a rule that followed it made the page flash light
+   for a moment before the script picked dark). Light only comes from an explicit choice, data-theme='light' on <html>,
+   which an inline script in index.html sets before the first paint. */
 :root[data-theme='light'] {
   --bg: #f5f6fa;
   --panel: #ffffff;
