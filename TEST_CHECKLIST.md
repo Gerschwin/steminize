@@ -150,7 +150,14 @@ E|-0---0---0---0---|
 - [ ] **Delete part** (added parts only) asks before deleting if the part has a tab in it, goes straight back to Guitar, and the part is gone after a restart. Guitar, Bass and Drums have no Delete button.
 - [ ] **Float** pops the Scratchpad out as a floating window: it can be dragged, resized and docked again; its position is remembered.
 - [ ] **Lyrics:** paste plain lyrics; paste LRC (`[mm:ss.xx] words`) or **Import .lrc…**: **Follow along** highlights the line being sung, dims sung ones, and clicking a line jumps the song there; **− / +** nudge by 0.2 s; **Search lyrics ↗** opens a search.
-- [ ] The **Drums** tab keeps ASCII aligned; **Extend line** adds bars.
+- [ ] The **Drums** tab opens a drum grid template (CC, HH, SN, HT, FT, BD); **Extend line** adds bars to it.
+- [ ] **NEW: drum staff.** Type a pattern (`HH|x-x-x-x-x-x-x-x-|`, `SD|----o-------o---|`, `BD|o-------o-o-----|`), press **Tap** with the cursor on the first hit, then **Follow along**: the grid is drawn as a percussion staff: hi-hat and cymbals as x heads, snare in the middle, kick below with its stem down, rests, beams. Bar numbers show.
+- [ ] `o` on the hi-hat row draws an open hi-hat (a small circle above); `X` an accent mark; `g` a ghost note in brackets; a crash/ride row draws above the staff.
+- [ ] Press play: the staff scrolls past the marker, the hit sounding now is highlighted, and it stays with the music at other tempos.
+- [ ] Click a bar number: that bar loops. Repeat signs (`|*` … `*|`) and `x3` repeat as in a guitar tab. **Ear** hides the staff while it plays.
+- [ ] A `4/4` line above the grid makes eight-column bars last a whole bar; a counting line (`1 e + a`) above the grid is ignored; an unknown row label is ignored, not misdrawn.
+- [ ] The Drums tab has no Staff, Trainer or Add rhythm line buttons; **Symbols** shows the drum notation (not the guitar one).
+- [ ] A song saved with the old Drum tab text opens with that grid in the Drums tab.
 - [ ] Typing in a Scratchpad box never triggers the player's shortcuts (e.g. typing "1" or "-" doesn't mute or zoom).
 
 ## 11. Tab+ (Scratchpad → Tab)

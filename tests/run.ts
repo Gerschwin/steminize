@@ -30,6 +30,7 @@ import { detectLatency } from '../src/player/latency.ts';
 import { placeTake, shiftTake } from '../src/player/placement.ts';
 import { StreamResampler } from '../src/player/resample.ts';
 import { withTimeout } from '../src/engine/timeout.ts';
+import { voiceSlots } from '../src/ui/drumStaff.ts';
 import { DRUM_VOICES, drumMidi, hitStyle, parseDrums, voiceOfLabel } from '../src/lyrics/drumTab.ts';
 import { PART_IDS, defaultTrack, isBuiltinPart, legacyTabPart, newPartId, partKind, stringCount } from '../src/lyrics/tabParts.ts';
 import { BarTally, barColour, barPercent, barTip } from '../src/lyrics/barScores.ts';
@@ -1077,6 +1078,35 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('drums: repeat signs are read as in the guitar tab', rep.length === 1 && rep[0].repeatStart === true && rep[0].repeatEnd === true);
   ok('drums: nothing written gives nothing', parseDrums('').notes.length === 0 && parseDrums('CC|--------|\nBD|--------|').notes.length === 0);
   ok('drums: hands up, the kick foot down; cymbals and hi-hat drawn as x', DRUM_VOICES.kick.up === false && DRUM_VOICES.snare.up === true && DRUM_VOICES.hihat.head === 'x' && DRUM_VOICES.crash.head === 'x' && DRUM_VOICES.snare.head === 'normal' && drumMidi('hihat', 'open') === 46);
+}
+
+// ---- drum staff: how a voice's hits become notes and rests that fill a bar
+{
+  const mk = (slot: number) => ({ slot, note: { drum: { voice: 'snare', style: 'normal' }, start: slot, col: slot, bar: 0 } as any });
+  const sum = (s: { d: number }[]) => s.reduce((n, x) => n + x.d, 0);
+  const eighths = voiceSlots([0, 2, 4, 6, 8, 10, 12, 14].map(mk), 16);
+  ok('drum staff: eight eighth-note hits are eight eighth notes', eighths.length === 8 && eighths.every((s) => s.d === 2 && s.hits.length === 1));
+  const kick = voiceSlots([mk(0), mk(8)], 16);
+  ok('drum staff: a hit is never longer than a quarter; the rest is rests', kick.map((s) => `${s.at}:${s.d}${s.hits.length ? 'n' : 'r'}`).join() === '0:4n,4:4r,8:4n,12:4r');
+  ok('drum staff: an empty bar is one whole rest', voiceSlots([], 16).length === 1 && voiceSlots([], 16)[0].d === 16 && voiceSlots([], 16)[0].hits.length === 0);
+  const offbeat = voiceSlots([mk(1)], 16);
+  ok('drum staff: a hit on an off sixteenth gets rests before it and after, all on natural places', offbeat[0].at === 0 && offbeat[0].d === 1 && offbeat[1].at === 1 && offbeat[1].hits.length === 1 && sum(offbeat) === 16 && offbeat.every((s) => s.at % s.d === 0));
+  ok('drum staff: two hits at the same moment make one chord', voiceSlots([mk(0), mk(0), mk(4)], 16).filter((s) => s.hits.length === 2).length === 1);
+  let always = true;
+  for (let seed = 1; seed <= 200; seed++) {
+    let r = seed * 2654435761;
+    const rnd = () => ((r = (r * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    const len = [16, 12, 8, 14][seed % 4];
+    const hits = Array.from({ length: Math.floor(rnd() * 9) }, () => mk(Math.floor(rnd() * len)));
+    const slots = voiceSlots(hits, len);
+    let at = 0;
+    for (const s of slots) {
+      if (s.at !== at || s.d < 1) always = false;
+      at += s.d;
+    }
+    if (at !== len) always = false;
+  }
+  ok('drum staff: whatever the pattern, notes and rests run on from the start and fill the bar exactly', always);
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

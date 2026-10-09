@@ -12,8 +12,10 @@ import { openSink, safeName, saveFile } from '../platform.ts';
 import { MAX_REC_LATENCY_MS, loadLiveChannel, loadLowLatencyAudio, loadRecLatencyMs, saveLiveChannel, saveLowLatencyAudio, saveRecLatencyMs, type LiveChannel, type Settings } from '../settings.ts';
 import { BarTally, barColour, barTip, type BarScores, type BarVisit } from '../lyrics/barScores.ts';
 import { initNativeAudio } from './nativeAudio.ts';
+import { parseDrums, type DrumNote } from '../lyrics/drumTab.ts';
+import { drawDrumScore } from './drumStaff.ts';
 import { createDropdown, type Dropdown } from './dropdown.ts';
-import { DEFAULT_PART_NAMES, PART_IDS, TAB_FIELDS, defaultTrack, isBuiltinPart, legacyTabPart, newPartId, partKind, type ExtraPart, type PartId, type TabPartId } from '../lyrics/tabParts.ts';
+import { DEFAULT_PART_NAMES, PART_IDS, TAB_FIELDS, defaultTrack, isBuiltinPart, legacyTabPart, newPartId, type ExtraPart, type PartId, type TabPartId } from '../lyrics/tabParts.ts';
 import { placeTake, shiftTake } from '../player/placement.ts';
 import { lineAt, parseLrc, type Lrc } from '../lyrics/lrc.ts';
 import {
@@ -2043,8 +2045,8 @@ export class Deck {
       if (!areas[name].hidden) areas[name].focus();
     };
     this.showPart = (id) => {
-      if (partKind(id) === 'tab') this.switchTabPart(id);
-      show(partKind(id) === 'drums' ? 'drums' : 'tab');
+      this.switchTabPart(id); // every part, the drums too, is edited in the one tab editor (and followed along in the one strip)
+      show('tab');
     };
     tabBtns.lyrics.onclick = () => show('lyrics');
     tabBtns.notes.onclick = () => show('notes');
@@ -2074,12 +2076,12 @@ export class Deck {
     // of hand-typing dashes onto each one separately. Works on whichever of Tab/Drum tab is open.
     const extend = (ta: HTMLTextAreaElement) => {
       const pos = ta.selectionStart;
-      ta.value = extendTabText(ta.value, ta.placeholder);
+      ta.value = extendTabText(ta.value, this.isDrums() ? areas.drums.placeholder : ta.placeholder);
       ta.setSelectionRange(pos, pos);
       ta.dispatchEvent(new Event('input'));
       ta.focus();
     };
-    $('tabExtendBtn').onclick = () => extend(areas.tab.hidden ? areas.drums : areas.tab);
+    $('tabExtendBtn').onclick = () => extend(areas.tab);
     for (const ta of [areas.tab, areas.drums])
       ta.addEventListener('keydown', (e) => {
         if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -2285,11 +2287,6 @@ export class Deck {
       this.emit();
     };
     $('tabTapRemoveBtn').onclick = () => this.removeSelectedTap();
-    areas.drums.oninput = () => {
-      this.scratch.drums = areas.drums.value;
-      this.updateScratchSummary();
-      this.emit();
-    };
     areas.notes.oninput = () => {
       this.scratch.notes = areas.notes.value;
       this.updateScratchSummary();
@@ -2298,7 +2295,7 @@ export class Deck {
   }
 
   private applyScratch(s?: ScratchState) {
-    this.scratch = { lyrics: s?.lyrics ?? '', tab: s?.tab ?? '', drums: s?.drums ?? '', notes: s?.notes ?? '' };
+    this.scratch = { lyrics: s?.lyrics ?? '', tab: s?.tab ?? '', notes: s?.notes ?? '' };
     if (s?.lyricsFollow) this.scratch.lyricsFollow = true;
     if (s?.lyricsOffset) this.scratch.lyricsOffset = s.lyricsOffset;
     if (s?.tabAnchors?.length) this.scratch.tabAnchors = s.tabAnchors;
@@ -2313,8 +2310,11 @@ export class Deck {
     const part = s?.tabPart ?? legacyTabPart(s?.tab);
     if (part !== 'guitar') this.scratch.tabPart = part;
     if (s?.tabParts && Object.keys(s.tabParts).length) this.scratch.tabParts = structuredClone(s.tabParts);
+    // A drum grid saved before the drums had a part of their own lives in `drums`: it becomes the drums part's tab.
+    if (s?.drums?.trim() && s.tabPart !== 'drums' && !this.scratch.tabParts?.drums?.tab) this.scratch.tabParts = { ...this.scratch.tabParts, drums: { tab: s.drums } };
     if (s?.extraParts?.length) this.scratch.extraParts = s.extraParts.map((p) => ({ ...p }));
-    if (this.scratch.tabPart && !this.scratch.extraParts?.some((p) => p.id === this.scratch.tabPart) && this.scratch.tabPart !== 'bass') delete this.scratch.tabPart;
+    // (A saved open part that no longer exists, an added part deleted since, falls back to guitar.)
+    if (this.scratch.tabPart && !isBuiltinPart(this.scratch.tabPart) && !this.scratch.extraParts?.some((p) => p.id === this.scratch.tabPart)) delete this.scratch.tabPart;
     if (s?.partNames && Object.keys(s.partNames).length) this.scratch.partNames = { ...s.partNames };
     if (s?.partTracks && Object.keys(s.partTracks).length) this.scratch.partTracks = { ...s.partTracks };
     this.scratchAreas.lyrics.value = this.scratch.lyrics ?? '';
@@ -2324,7 +2324,6 @@ export class Deck {
     // for a song that has nothing saved yet; this.scratch itself stays empty until they edit it,
     // so an untouched template is never mistaken for real content or saved as one.
     this.showTabText();
-    this.scratchAreas.drums.value = this.scratch.drums || this.scratchAreas.drums.placeholder;
     this.scratchAreas.notes.value = this.scratch.notes ?? '';
     this.updateTabView();
     this.updateScratchSummary();
@@ -2408,16 +2407,21 @@ export class Deck {
     const strip = onTab && follow;
     $('tabStrip').hidden = !strip;
     if (strip) void this.renderTabStrip();
-    const staff = onTab && !!this.scratch.tabStaff;
+    // The drums have no rhythm line, no second staff and nothing for the playing trainer to judge (a mic hears a kit, not notes),
+    // and their own legend instead of the guitar's symbols.
+    const drums = onTab && this.isDrums();
+    $('tabRhythmBtn').hidden = !onTab || drums;
+    const staff = onTab && !drums && !!this.scratch.tabStaff;
     $('tabSymbolsBtn').hidden = !onTab;
-    $('tabSymbols').hidden = !onTab || !this.tabSymbolsOpen;
+    $('tabSymbols').hidden = !onTab || drums || !this.tabSymbolsOpen;
+    $('tabDrumSymbols').hidden = !drums || !this.tabSymbolsOpen;
     pressed($('tabSymbolsBtn'), this.tabSymbolsOpen);
-    $('tabStaffBtn').hidden = !onTab;
+    $('tabStaffBtn').hidden = !onTab || drums;
     pressed($('tabStaffBtn'), !!this.scratch.tabStaff);
     $('tabStaff').hidden = !staff;
     if (staff) void this.renderStaff();
-    const trainer = canFollow && !!this.scratch.tabTrainer;
-    $('tabTrainerBtn').hidden = !(onTab && canFollow);
+    const trainer = canFollow && !drums && !!this.scratch.tabTrainer;
+    $('tabTrainerBtn').hidden = !(onTab && canFollow) || drums;
     pressed($('tabTrainerBtn'), trainer);
     $('tabTrainerStatus').hidden = !(onTab && trainer);
     this.paintBarScores();
@@ -2449,7 +2453,7 @@ export class Deck {
     const coords = anchorCoords(text, blocks, anchors);
     // Repeats: taps are on the written tab (the first time through); playback keeps counting up through
     // a repeat, so the taps are converted to that counting-up ("unrolled") position to work from.
-    const plan = repeatPlan(parseScore(text).bars);
+    const plan = repeatPlan(this.parseActive(text).bars);
     const coordsU = plan ? coords.map((a) => ({ ...a, charOffset: toUnrolled(plan, a.charOffset) })) : coords;
     this.tabTimeline = { text, anchors, blocks, coords, plan, coordsU };
     return this.tabTimeline;
@@ -2484,21 +2488,22 @@ export class Deck {
     const text = this.scratchAreas.tab.value;
     if (text === this.stripText && this.stripLayout) return;
     const token = ++this.stripToken;
-    const { notes, bars } = parseScore(text);
+    const drums = this.isDrums();
+    const { notes, bars } = this.parseActive(text);
     const track = $('tabStripTrack');
     if (!notes.length) {
       if (token !== this.stripToken) return;
-      track.replaceChildren(h('div', { class: 'tab-staff-note' }, 'No notes to show yet: type some fret numbers on the strings above.'));
+      track.replaceChildren(h('div', { class: 'tab-staff-note' }, drums ? 'No hits to show yet: write x or o in the drum grid (one row per kit piece, one column per sixteenth).' : 'No notes to show yet: type some fret numbers on the strings above.'));
       this.stripLayout = null;
       this.stripText = null;
       this.stripNotes = null;
       return;
     }
     const spare = document.createElement('div');
-    const layout = await drawTabScore(spare, notes, bars).catch(() => null);
+    const layout = await (drums ? drawDrumScore(spare, notes as DrumNote[], bars) : drawTabScore(spare, notes, bars)).catch(() => null);
     if (token !== this.stripToken) return;
     if (!layout) {
-      track.replaceChildren(h('div', { class: 'tab-staff-note' }, "Couldn't draw the tab."));
+      track.replaceChildren(h('div', { class: 'tab-staff-note' }, drums ? "Couldn't draw the drums." : "Couldn't draw the tab."));
       this.stripLayout = null;
       this.stripText = null;
       this.stripNotes = null;
@@ -2657,6 +2662,16 @@ export class Deck {
 
   // ---------- scratchpad parts: Guitar / Bass / Drums, each linked to its track ----------
 
+  /** The open part is the drums, so the tab editor holds a drum grid, drawn as a percussion staff. */
+  private isDrums(): boolean {
+    return this.activeTabPart() === 'drums';
+  }
+
+  /** The open part's text as timed notes and bars: a drum grid or a guitar-style tab. */
+  private parseActive(text: string) {
+    return this.isDrums() ? parseDrums(text) : parseScore(text);
+  }
+
   /** The tab part the (single) tab editor currently holds. */
   private activeTabPart(): TabPartId {
     return this.scratch.tabPart ?? 'guitar';
@@ -2680,7 +2695,6 @@ export class Deck {
 
   /** The text of a part's tab, wherever it is kept (the editor, for the open part; the stash for the other). */
   private partText(id: PartId): string {
-    if (partKind(id) === 'drums') return this.scratch.drums ?? '';
     return (id === this.activeTabPart() ? this.scratch.tab : this.scratch.tabParts?.[id]?.tab) ?? '';
   }
 
@@ -2701,6 +2715,9 @@ export class Deck {
     this.scratch.tabPart = next;
     if (next === 'guitar') delete this.scratch.tabPart; // guitar is the default, not stored
     this.showTabText();
+    this.tabTimeline = null;
+    this.stripText = null;
+    this.staffText = null;
     this.selectedTap = null;
     this.selectedRhythmNote = null;
     this.lastLoopBar = null;
@@ -2713,7 +2730,9 @@ export class Deck {
   /** Puts the open part's text in the tab editor: its own, or a blank template (four strings for the bass). */
   private showTabText() {
     const ta = this.scratchAreas.tab;
-    const blank = this.activeTabPart() === 'bass' ? ta.placeholder.split('\n').slice(2).join('\n') : ta.placeholder; // bass: four strings, the rest six
+    const part = this.activeTabPart();
+    // Blank templates: the drum grid for the drums, four strings for the bass, six for everything else.
+    const blank = part === 'drums' ? this.scratchAreas.drums.placeholder : part === 'bass' ? ta.placeholder.split('\n').slice(2).join('\n') : ta.placeholder;
     ta.value = this.scratch.tab || blank;
   }
 
@@ -4005,7 +4024,7 @@ export class Deck {
     const sel = this.selectedRhythmNote;
     if (!sel) return;
     const text = this.scratchAreas.tab.value;
-    const note = findNoteAt(parseScore(text).notes, sel.bar, sel.col);
+    const note = findNoteAt(this.parseActive(text).notes, sel.bar, sel.col);
     if (!note) {
       this.selectedRhythmNote = null; // the tab changed under us; nothing there to edit any more
       return;
@@ -4029,7 +4048,7 @@ export class Deck {
   private moveSelectedRhythmNote(dir: 1 | -1, byBar: boolean) {
     const sel = this.selectedRhythmNote;
     if (!sel) return;
-    const cols = noteCols(parseScore(this.scratchAreas.tab.value).notes);
+    const cols = noteCols(this.parseActive(this.scratchAreas.tab.value).notes);
     let target: { bar: number; col: number } | undefined;
     if (byBar) {
       const bars = [...new Set(cols.map((c) => c.bar))].sort((a, b) => a - b);
