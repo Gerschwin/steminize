@@ -134,10 +134,18 @@ E|-0---0---0---0---|
 
 ## 10. Scratchpad: lyrics, drum tab, notes
 
-- [ ] The four tabs (Lyrics, Tab, Drum tab, Notes) keep separate text per song and survive a restart.
+- [ ] The five tabs (Lyrics, Guitar, Bass, Drums, Notes) keep separate text per song and survive a restart.
+- [ ] **NEW: parts.** Guitar and Bass each keep their own tab text, taps, Follow along / Staff / Trainer / Ear and bar colours: type a tab in Guitar, switch to Bass (it starts with a blank four-string template), switch back and nothing has changed or leaked across.
+- [ ] A song saved before parts existed opens with its tab on Guitar (a four-string tab opens on Bass instead).
+- [ ] **Track link:** on opening a part, a **Track** dropdown shows the track it is linked to: with a 4-stem split, Bass is linked to "bass", Drums to "drums" and Guitar to "other"; with a 6-stem split Guitar is linked to "guitar"; with a multitrack, parts match by file name ("Lead Guitar", "Bass DI", "Drums"); no match shows "(none)". Choose a different track from the dropdown and it sticks after a restart.
+- [ ] The linked track is outlined with a dashed line in the track list while its part is open, and the outline goes when you go to Lyrics or Notes.
+- [ ] A track that has a linked part shows a small **Tab** button; pressing it opens the Scratchpad on that part.
+- [ ] **Play without …** mutes the linked track and the button stays lit; unmuting the track from its own M button un-lights it.
+- [ ] Double-click Guitar / Bass / Drums to rename it (Enter keeps, Escape cancels, empty goes back to the default); the "Play without …" label and the track's Tab tooltip use the new name; it sticks after a restart.
+- [ ] The drawer summary lists the parts that have something in them.
 - [ ] **Float** pops the Scratchpad out as a floating window: it can be dragged, resized and docked again; its position is remembered.
 - [ ] **Lyrics:** paste plain lyrics; paste LRC (`[mm:ss.xx] words`) or **Import .lrc…**: **Follow along** highlights the line being sung, dims sung ones, and clicking a line jumps the song there; **− / +** nudge by 0.2 s; **Search lyrics ↗** opens a search.
-- [ ] **Drum tab** box keeps ASCII aligned; **Extend line** adds bars.
+- [ ] The **Drums** tab keeps ASCII aligned; **Extend line** adds bars.
 - [ ] Typing in a Scratchpad box never triggers the player's shortcuts (e.g. typing "1" or "-" doesn't mute or zoom).
 
 ## 11. Tab+ (Scratchpad → Tab)

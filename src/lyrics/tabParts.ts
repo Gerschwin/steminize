@@ -1,0 +1,38 @@
+// Scratchpad parts: a song's tabs are kept per instrument (Guitar, Bass, Drums), each linked to the track it is the music for.
+// This holds the logic that needs no browser: which track a part is linked to by default, and which part an old single tab belongs to.
+
+import { tabBlocks } from './tabSync.ts';
+
+export type PartId = 'guitar' | 'bass' | 'drums';
+/** The parts that use the engraved-tab editor (the drums part keeps its own plain-text grid). */
+export type TabPartId = 'guitar' | 'bass';
+
+export const PART_IDS: PartId[] = ['guitar', 'bass', 'drums'];
+export const DEFAULT_PART_NAMES: Record<PartId, string> = { guitar: 'Guitar', bass: 'Bass', drums: 'Drums' };
+
+/** The ScratchState fields that belong to whichever tab part is open: swapped in and out when you change part. */
+export const TAB_FIELDS = ['tab', 'tabAnchors', 'tabFollow', 'tabStaff', 'tabTrainer', 'tabEar', 'tabBarScores'] as const;
+
+/**
+ * The track a part is linked to when nothing was chosen, matched by name: multitrack files are named after their parts
+ * ("Lead Guitar", "Bass DI"), and a Demucs split has no guitar track of its own (guitar ends up in "other", unless it
+ * is the 6-stem model, which has one). Returns the track's name, or undefined when nothing fits.
+ */
+export function defaultTrack(part: PartId, trackNames: string[]): string | undefined {
+  const find = (want: RegExp, not?: RegExp) => trackNames.find((n) => want.test(n) && !(not && not.test(n)));
+  if (part === 'bass') return find(/bass/i, /drum/i);
+  if (part === 'drums') return find(/drum|kit|perc/i);
+  return find(/guitar|gtr/i) ?? trackNames.find((n) => n.trim().toLowerCase() === 'other');
+}
+
+/** How many strings the first tab in the text has (0 when there is none). */
+export function stringCount(text: string): number {
+  const b = tabBlocks(text)[0];
+  const n = b ? b.stringLast - b.stringFirst + 1 : 0;
+  return n >= 2 ? n : 0; // a lone line of text isn't a tab
+}
+
+/** Which part an existing single tab (from before parts existed) belongs to: a four-string tab is a bass line, anything else guitar. */
+export function legacyTabPart(text: string | undefined): TabPartId {
+  return text && stringCount(text) === 4 ? 'bass' : 'guitar';
+}

@@ -471,7 +471,7 @@ canvas, img, svg { -webkit-user-drag: none; user-drag: none; }
 #lyricsSearchLink { display: none; margin-left: auto; text-decoration: none; }
 #scratchTabLyrics[aria-pressed='true'] ~ #lyricsSearchLink { display: inline-flex; }
 #tabExtendBtn { display: none; margin-left: auto; }
-#scratchTabTab[aria-pressed='true'] ~ #tabExtendBtn, #scratchTabDrums[aria-pressed='true'] ~ #tabExtendBtn { display: inline-flex; }
+#scratchTabGuitar[aria-pressed='true'] ~ #tabExtendBtn, #scratchTabBass[aria-pressed='true'] ~ #tabExtendBtn, #scratchTabDrums[aria-pressed='true'] ~ #tabExtendBtn { display: inline-flex; }
 .tool.live .live-grp { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .tool.native-audio { margin-top: 6px; }
 .tool.native-audio .na-dd { width: 190px; flex: none; }
@@ -576,11 +576,11 @@ canvas, img, svg { -webkit-user-drag: none; user-drag: none; }
 .take-note:hover { border-color: var(--c); color: var(--text); }
 .take-note-edit { flex: 1; min-width: 0; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--accent); background: var(--panel); color: var(--text); font-size: 11px; }
 .take-chip.current { flex: 0 0 auto; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--c); color: var(--c); font-size: 12px; font-weight: 600; }
-.lane-ctl { display: grid; grid-template-columns: auto auto auto auto 1fr; align-content: start; gap: 6px; align-items: center; background: var(--panel-2); border-radius: 9px; padding: 6px 8px; border-left: 3px solid var(--c); }
+.lane-ctl { display: grid; grid-template-columns: auto auto auto auto auto 1fr; align-content: start; gap: 6px; align-items: center; background: var(--panel-2); border-radius: 9px; padding: 6px 8px; border-left: 3px solid var(--c); }
 .lane-ctl input[type='range'] { accent-color: var(--c); }
 .lane-ctl .name { font-weight: 600; text-transform: capitalize; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; grid-column: 1 / -1; border: 0; background: transparent; padding: 0; text-align: left; cursor: text; color: inherit; font-size: inherit; }
 .lane-ctl .name-edit { grid-column: 1 / -1; width: 100%; border: 0; outline: 1px solid var(--accent); background: var(--panel); border-radius: 4px; font-size: 13px; font-weight: 600; padding: 2px 6px; }
-.lane-ctl .mini.vol { grid-column: 5; grid-template-columns: 1fr; padding-left: 4px; }
+.lane-ctl .mini.vol { grid-column: 6; grid-template-columns: 1fr; padding-left: 4px; }
 .lane-ctl .mini.vol span { display: none; }
 .lane-ctl .mini { grid-column: 1 / -1; display: grid; grid-template-columns: 26px 1fr 30px; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
 .lane-ctl .mini output { font-size: 11px; text-align: right; }
@@ -830,3 +830,15 @@ kbd {
 .toast { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; box-shadow: var(--shadow); animation: pop 0.2s ease-out; }
 .toast.bad { border-color: var(--bad); }
 @keyframes pop { from { opacity: 0; transform: translateY(8px); } }
+
+/* Scratchpad parts (Guitar / Bass / Drums): the link to a track */
+.part-link { display: inline-flex; align-items: center; gap: 6px; }
+.part-link[hidden] { display: none; }
+.part-link .dd { width: 150px; }
+.part-link .dd-btn { height: var(--h); padding: 0 8px; font-size: 12px; }
+.part-link .dd-label, .part-link .dd-opt { text-transform: capitalize; } /* track names are stored in lower case ("bass") and shown capitalised, as on the track itself */
+.part-link .dd-list { right: auto; width: max-content; min-width: 100%; max-width: 280px; }
+.part-rename { height: var(--h); width: 90px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--accent); background: var(--panel); color: var(--text); font-size: 12px; }
+/* The track the open tab is for is outlined in the track list; its own Tab button jumps to the tab. */
+.lane.part-linked .lane-ctl { outline: 2px dashed var(--accent); outline-offset: -2px; }
+.lane-ctl .lane-tab[hidden] { display: none; }

@@ -30,6 +30,7 @@ import { detectLatency } from '../src/player/latency.ts';
 import { placeTake, shiftTake } from '../src/player/placement.ts';
 import { StreamResampler } from '../src/player/resample.ts';
 import { withTimeout } from '../src/engine/timeout.ts';
+import { PART_IDS, defaultTrack, legacyTabPart, stringCount } from '../src/lyrics/tabParts.ts';
 import { BarTally, barColour, barPercent, barTip } from '../src/lyrics/barScores.ts';
 
 let failed = 0;
@@ -1019,6 +1020,24 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('timeout: a quick result passes straight through', (await withTimeout(Promise.resolve(7), 1000, 'x')) === 7);
   const failed = await withTimeout(Promise.reject(new Error('boom')), 1000, 'x').then(() => 'resolved', (e: Error) => e.message);
   ok('timeout: a real failure is passed on, not replaced by the timeout', failed === 'boom');
+}
+
+// ---- scratchpad parts (guitar / bass / drums) and the track each is linked to
+{
+  const demucs4 = ['drums', 'bass', 'other', 'vocals'];
+  const demucs6 = ['drums', 'bass', 'other', 'vocals', 'guitar', 'piano'];
+  ok('parts: three parts', PART_IDS.join() === 'guitar,bass,drums');
+  ok('parts: 4-stem Demucs links bass and drums by name', defaultTrack('bass', demucs4) === 'bass' && defaultTrack('drums', demucs4) === 'drums');
+  ok('parts: 4-stem Demucs has no guitar track, so guitar links to "other"', defaultTrack('guitar', demucs4) === 'other');
+  ok('parts: 6-stem Demucs has a guitar track and it wins over "other"', defaultTrack('guitar', demucs6) === 'guitar');
+  const multi = ['Lead Guitar', 'Bass Drum', 'Bass DI', 'Drums Overhead', 'Vox'];
+  ok('parts: multitrack names are matched, and "Bass Drum" is not the bass', defaultTrack('bass', multi) === 'Bass DI' && defaultTrack('guitar', multi) === 'Lead Guitar');
+  ok('parts: kit / percussion names count as drums', defaultTrack('drums', ['Kit', 'Keys']) === 'Kit' && defaultTrack('drums', ['Perc']) === 'Perc');
+  ok('parts: nothing fits gives no link, not a wrong one', defaultTrack('bass', ['Vox', 'Keys']) === undefined && defaultTrack('guitar', ['Vox', 'Keys']) === undefined);
+  const six = 'e|-0-|\nB|-0-|\nG|-0-|\nD|-0-|\nA|-0-|\nE|-0-|';
+  const four = 'G|-0-|\nD|-0-|\nA|-0-|\nE|-0-|';
+  ok('parts: counts strings', stringCount(six) === 6 && stringCount(four) === 4 && stringCount('hello') === 0);
+  ok('parts: an old four-string tab becomes the bass part, six strings or none the guitar part', legacyTabPart(four) === 'bass' && legacyTabPart(six) === 'guitar' && legacyTabPart('') === 'guitar' && legacyTabPart(undefined) === 'guitar');
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

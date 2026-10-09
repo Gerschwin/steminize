@@ -12,6 +12,8 @@ import { openSink, safeName, saveFile } from '../platform.ts';
 import { MAX_REC_LATENCY_MS, loadLiveChannel, loadLowLatencyAudio, loadRecLatencyMs, saveLiveChannel, saveLowLatencyAudio, saveRecLatencyMs, type LiveChannel, type Settings } from '../settings.ts';
 import { BarTally, barColour, barTip, type BarScores, type BarVisit } from '../lyrics/barScores.ts';
 import { initNativeAudio } from './nativeAudio.ts';
+import { createDropdown, type Dropdown } from './dropdown.ts';
+import { DEFAULT_PART_NAMES, PART_IDS, TAB_FIELDS, defaultTrack, legacyTabPart, type PartId, type TabPartId } from '../lyrics/tabParts.ts';
 import { placeTake, shiftTake } from '../player/placement.ts';
 import { lineAt, parseLrc, type Lrc } from '../lyrics/lrc.ts';
 import {
@@ -151,6 +153,13 @@ export interface ScratchState {
   tabEar?: boolean;
   /** How each bar of the tab was played the last time it came round (from the playing trainer), shown as heat colours on the bar numbers. */
   tabBarScores?: BarScores;
+  /** Which tab part (guitar or bass) the `tab…` fields above belong to; the other part's are kept in `tabParts`. Guitar when unset. */
+  tabPart?: TabPartId;
+  tabParts?: Partial<Record<TabPartId, Pick<ScratchState, (typeof TAB_FIELDS)[number]>>>;
+  /** Custom names for the Guitar / Bass / Drums tabs. */
+  partNames?: Partial<Record<PartId, string>>;
+  /** The track each part is linked to, by track name ('' = none); unset means the default match (see tabParts.ts). */
+  partTracks?: Partial<Record<PartId, string>>;
   drums?: string;
   notes?: string;
 }
@@ -167,6 +176,8 @@ const LANE_MIN_H = 58;
 const PAN_MIN_H = 88;
 
 interface Lane {
+  /** The small button that opens the tab linked to this track (shown only when one is). */
+  tabBtn?: HTMLButtonElement;
   name: string;
   colour: string;
   vol: number;
@@ -413,6 +424,11 @@ export class Deck {
   private tx: Transcribe;
   private scratch: ScratchState = {};
   private scratchTab: 'lyrics' | 'tab' | 'drums' | 'notes' = 'lyrics';
+  /** Opens a part's tab (set by initScratchpad), and the drawer it lives in (set by initDrawer). */
+  private showPart: (id: PartId) => void = () => {};
+  private openDrawer: (name: string | null) => void = () => {};
+  private partTrackDd: Dropdown | null = null;
+  private partBtns!: Record<PartId, HTMLButtonElement>;
   /** The lyrics text parsed as LRC, or null if it's plain lyrics. */
   private lrc: Lrc | null = null;
   private lyricEls: HTMLElement[] = [];
@@ -617,6 +633,7 @@ export class Deck {
     const dl = h('button', { class: 'dl', type: 'button', title: `Save ${laneLabel({ name: s.name })}` });
     dl.innerHTML =
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>';
+    const tabBtn = h('button', { class: 'ms lane-tab', type: 'button', hidden: true, title: 'Open the tab for this track' }, 'Tab');
     const vol = h('input', { type: 'range', min: '0', max: '1.5', step: '0.01', value: '1', title: 'Level' });
     const pan = h('input', { type: 'range', min: '-1', max: '1', step: '0.05', value: '0', title: 'Pan (double-click to centre)' });
     const panOut = h('output', {}, 'C');
@@ -634,6 +651,7 @@ export class Deck {
       solo,
       eqBtn,
       dl,
+      tabBtn,
       h('label', { class: 'mini vol' }, h('span', {}, 'Vol'), vol),
       h('label', { class: 'mini pan' }, h('span', {}, 'Pan'), pan, panOut),
     );
@@ -644,7 +662,8 @@ export class Deck {
     });
     const el = h('div', { class: 'lane', style: `--c:${colour}` }, ctl, wave, resizeHandle);
     $('lanes').append(el);
-    const lane: Lane = { name: s.name, colour, vol: 1, pan: 0, mute: false, solo: false, el, canvas, peaks: peaksOf(s.data), data: s.data };
+    const lane: Lane = { name: s.name, colour, vol: 1, pan: 0, mute: false, solo: false, el, canvas, peaks: peaksOf(s.data), data: s.data, tabBtn };
+    tabBtn.onclick = () => this.openPartForLane(lane);
     eqBtn.onclick = () => this.toggleEq(lane, lane.colour);
     pressed(eqBtn, false);
     nameBtn.ondblclick = () => this.renameLane(lane, nameBtn, dl);
@@ -1989,10 +2008,14 @@ export class Deck {
   private initScratchpad() {
     const tabBtns = {
       lyrics: $<HTMLButtonElement>('scratchTabLyrics'),
-      tab: $<HTMLButtonElement>('scratchTabTab'),
-      drums: $<HTMLButtonElement>('scratchTabDrums'),
       notes: $<HTMLButtonElement>('scratchTabNotes'),
     };
+    const partBtns: Record<PartId, HTMLButtonElement> = {
+      guitar: $<HTMLButtonElement>('scratchTabGuitar'),
+      bass: $<HTMLButtonElement>('scratchTabBass'),
+      drums: $<HTMLButtonElement>('scratchTabDrums'),
+    };
+    this.partBtns = partBtns;
     const areas = {
       lyrics: $<HTMLTextAreaElement>('scratchLyrics'),
       tab: $<HTMLTextAreaElement>('scratchTab'),
@@ -2001,10 +2024,9 @@ export class Deck {
     };
     this.scratchAreas = areas;
     const show = (name: keyof typeof areas) => {
-      for (const k of Object.keys(areas) as (keyof typeof areas)[]) {
-        pressed(tabBtns[k], k === name);
-        areas[k].hidden = k !== name;
-      }
+      for (const k of Object.keys(areas) as (keyof typeof areas)[]) areas[k].hidden = k !== name;
+      pressed(tabBtns.lyrics, name === 'lyrics');
+      pressed(tabBtns.notes, name === 'notes');
       // Clicking the tab button leaves focus on the button itself, not the text box it reveals,
       // so typing right after switching tabs (the natural next move) hit the deck's own keyboard
       // shortcuts instead of the text — a "0"/"-" for tab notation would zoom out, "1"-"6" would
@@ -2013,9 +2035,33 @@ export class Deck {
       this.scratchTab = name;
       this.updateLyricsView();
       this.updateTabView();
+      this.updatePartUi();
       if (!areas[name].hidden) areas[name].focus();
     };
-    for (const k of Object.keys(tabBtns) as (keyof typeof tabBtns)[]) tabBtns[k].onclick = () => show(k);
+    this.showPart = (id) => {
+      if (id !== 'drums') this.switchTabPart(id);
+      show(id === 'drums' ? 'drums' : 'tab');
+    };
+    tabBtns.lyrics.onclick = () => show('lyrics');
+    tabBtns.notes.onclick = () => show('notes');
+    for (const id of PART_IDS) {
+      partBtns[id].onclick = () => this.showPart(id);
+      partBtns[id].ondblclick = () => this.renamePart(id);
+    }
+    this.partTrackDd = createDropdown();
+    $('partTrackMount').replaceWith(this.partTrackDd.el);
+    this.partTrackDd.onChange = (v) => {
+      const id = this.currentPart();
+      if (!id) return;
+      this.scratch.partTracks = { ...this.scratch.partTracks, [id]: v };
+      this.updatePartUi();
+      this.emit();
+    };
+    $('partMuteBtn').onclick = () => {
+      const id = this.currentPart();
+      const lane = id && this.partLane(id);
+      if (lane) this.setLaneRecorded(lane, { mute: !lane.mute });
+    };
     show('lyrics');
 
     // "Extend line": add more bars to every string/beat line at once, staying lined up, instead
@@ -2256,17 +2302,25 @@ export class Deck {
     if (s?.tabEar) this.scratch.tabEar = true;
     this.resetTrainerTally(); // (before the scores below are restored: it commits whatever bar the last song left half played)
     if (s?.tabBarScores && Object.keys(s.tabBarScores).length) this.scratch.tabBarScores = s.tabBarScores;
+    // Which part the saved tab belongs to. A song saved before parts existed has just one tab: a four-string one is a bass
+    // line, anything else guitar.
+    const part = s?.tabPart ?? legacyTabPart(s?.tab);
+    if (part !== 'guitar') this.scratch.tabPart = part;
+    if (s?.tabParts && Object.keys(s.tabParts).length) this.scratch.tabParts = structuredClone(s.tabParts);
+    if (s?.partNames && Object.keys(s.partNames).length) this.scratch.partNames = { ...s.partNames };
+    if (s?.partTracks && Object.keys(s.partTracks).length) this.scratch.partTracks = { ...s.partTracks };
     this.scratchAreas.lyrics.value = this.scratch.lyrics ?? '';
     this.setLyricsText(this.scratch.lyrics ?? '');
     // Tab/Drum tab start with the blank string/beat template actually typed in (not just a
     // placeholder hint), so there's something to type fret numbers or hits onto directly. Only
     // for a song that has nothing saved yet; this.scratch itself stays empty until they edit it,
     // so an untouched template is never mistaken for real content or saved as one.
-    this.scratchAreas.tab.value = this.scratch.tab || this.scratchAreas.tab.placeholder;
+    this.showTabText();
     this.scratchAreas.drums.value = this.scratch.drums || this.scratchAreas.drums.placeholder;
     this.scratchAreas.notes.value = this.scratch.notes ?? '';
     this.updateTabView();
     this.updateScratchSummary();
+    this.updatePartUi();
   }
 
   /** Re-reads the lyrics text: synced (LRC) lyrics get a follow-along view, plain ones don't. */
@@ -2593,11 +2647,147 @@ export class Deck {
     $('tabStripTrack').style.transform = `translateX(${px}px)`;
   }
 
+  // ---------- scratchpad parts: Guitar / Bass / Drums, each linked to its track ----------
+
+  /** The tab part the (single) tab editor currently holds. */
+  private activeTabPart(): TabPartId {
+    return this.scratch.tabPart ?? 'guitar';
+  }
+
+  /** The part whose tab is showing, or null on Lyrics / Notes. */
+  private currentPart(): PartId | null {
+    return this.scratchTab === 'tab' ? this.activeTabPart() : this.scratchTab === 'drums' ? 'drums' : null;
+  }
+
+  private partName(id: PartId): string {
+    return this.scratch.partNames?.[id]?.trim() || DEFAULT_PART_NAMES[id];
+  }
+
+  /** The text of a part's tab, wherever it is kept (the editor, for the open part; the stash for the other). */
+  private partText(id: PartId): string {
+    if (id === 'drums') return this.scratch.drums ?? '';
+    return (id === this.activeTabPart() ? this.scratch.tab : this.scratch.tabParts?.[id]?.tab) ?? '';
+  }
+
+  /** Changes which part (guitar or bass) the tab editor holds: the open part's state is put away and the other's brought back. */
+  private switchTabPart(next: TabPartId) {
+    const cur = this.activeTabPart();
+    if (next === cur) return;
+    this.resetTrainerTally(); // finishes the bar in progress into the part it was played in
+    const stash: Record<string, unknown> = {};
+    for (const k of TAB_FIELDS) if (this.scratch[k] !== undefined) stash[k] = this.scratch[k];
+    this.scratch.tabParts = { ...this.scratch.tabParts, [cur]: stash };
+    const incoming = (this.scratch.tabParts[next] ?? {}) as Record<string, unknown>;
+    for (const k of TAB_FIELDS) {
+      if (incoming[k] === undefined) delete this.scratch[k];
+      else (this.scratch as Record<string, unknown>)[k] = incoming[k];
+    }
+    delete this.scratch.tabParts[next];
+    this.scratch.tabPart = next;
+    if (next === 'guitar') delete this.scratch.tabPart; // guitar is the default, not stored
+    this.showTabText();
+    this.selectedTap = null;
+    this.selectedRhythmNote = null;
+    this.lastLoopBar = null;
+    this.updateTabView();
+    this.paintBarScores();
+    this.updateScratchSummary();
+    this.emit();
+  }
+
+  /** Puts the open part's text in the tab editor: its own, or a blank template (four strings for the bass). */
+  private showTabText() {
+    const ta = this.scratchAreas.tab;
+    const blank = this.activeTabPart() === 'bass' ? ta.placeholder.split('\n').slice(2).join('\n') : ta.placeholder;
+    ta.value = this.scratch.tab || blank;
+  }
+
+  /** The track a part is linked to: the one chosen, else the default match by name. */
+  private partTrackName(id: PartId): string | undefined {
+    const chosen = this.scratch.partTracks?.[id];
+    if (chosen !== undefined) return chosen || undefined;
+    return defaultTrack(id, this.lanes.map((l) => l.name));
+  }
+
+  private partLane(id: PartId): Lane | undefined {
+    const name = this.partTrackName(id);
+    return name === undefined ? undefined : this.lanes.find((l) => l.name === name);
+  }
+
+  /** Brings the part tabs, the track link and the track list in line with the state: names, which is open, what it is linked to. */
+  private updatePartUi() {
+    if (!this.partBtns) return;
+    const open = this.currentPart();
+    for (const id of PART_IDS) {
+      this.partBtns[id].textContent = this.partName(id);
+      pressed(this.partBtns[id], id === open);
+    }
+    const link = $('partLink');
+    link.hidden = !open;
+    const lane = open ? this.partLane(open) : undefined;
+    if (open && this.partTrackDd) {
+      this.partTrackDd.setOptions([{ value: '', label: '(none)' }, ...this.lanes.map((l) => ({ value: l.name, label: laneLabel(l) }))]);
+      this.partTrackDd.value = lane?.name ?? '';
+      const mute = $<HTMLButtonElement>('partMuteBtn');
+      mute.hidden = !lane;
+      mute.textContent = `Play without ${this.partName(open)}`;
+      mute.title = lane ? `Mute ${laneLabel(lane)} so you play this part yourself` : '';
+      pressed(mute, !!lane?.mute);
+    }
+    for (const l of this.lanes) {
+      l.el.classList.toggle('part-linked', !!open && l === lane);
+      const linked = PART_IDS.filter((id) => this.partLane(id) === l);
+      if (l.tabBtn) {
+        l.tabBtn.hidden = linked.length === 0;
+        l.tabBtn.title = linked.length ? `Open the ${linked.map((id) => this.partName(id)).join(' / ')} tab` : '';
+      }
+    }
+  }
+
+  /** A track's Tab button: opens the Scratchpad on the first part linked to it. */
+  private openPartForLane(lane: Lane) {
+    const id = PART_IDS.find((p) => this.partLane(p) === lane);
+    if (!id) return;
+    this.openDrawer('scratch');
+    this.showPart(id);
+  }
+
+  /** Double-click on a part's tab: rename it in place (an empty name goes back to the default). */
+  private renamePart(id: PartId) {
+    const btn = this.partBtns[id];
+    const input = h('input', { class: 'part-rename', type: 'text', value: this.partName(id), maxLength: 20 });
+    let done = false;
+    const finish = (commit: boolean) => {
+      if (done) return;
+      done = true;
+      const name = input.value.trim();
+      if (commit) {
+        const names = { ...this.scratch.partNames };
+        if (!name || name === DEFAULT_PART_NAMES[id]) delete names[id];
+        else names[id] = name;
+        if (Object.keys(names).length) this.scratch.partNames = names;
+        else delete this.scratch.partNames;
+        this.emit();
+      }
+      input.replaceWith(btn);
+      this.updatePartUi();
+      this.updateScratchSummary();
+    };
+    input.onkeydown = (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') finish(true);
+      if (e.key === 'Escape') finish(false);
+    };
+    input.onblur = () => finish(true);
+    btn.replaceWith(input);
+    input.focus();
+    input.select();
+  }
+
   private updateScratchSummary() {
     const bits = [
       this.scratch.lyrics ? 'Lyrics' : '',
-      this.scratch.tab ? 'Tab' : '',
-      this.scratch.drums ? 'Drum tab' : '',
+      ...PART_IDS.filter((id) => this.partText(id).trim()).map((id) => this.partName(id)),
       this.scratch.notes ? 'Notes' : '',
     ].filter(Boolean);
     const sum = $('sumScratch');
@@ -2628,6 +2818,7 @@ export class Deck {
         /* ignore */
       }
     };
+    this.openDrawer = open;
     for (const t of tabs) t.onclick = () => open(t.getAttribute('aria-expanded') === 'true' ? null : t.dataset.tab!);
     let saved = '';
     try {
@@ -3001,6 +3192,7 @@ export class Deck {
     for (const x of this.lanes) x.el.querySelector('.eq')!.classList.toggle('on', !isFlat(x.eq));
     // If pan is hidden but in use, say so on the button so it isn't forgotten.
     $('panToggle').textContent = this.lanes.some((x) => x.pan) ? 'Pan (active)' : 'Pan';
+    this.updatePartUi(); // the part's "play without it" button follows its track's mute
   }
 
   /** setLane, but also records one undo step. Use for discrete, one-shot changes (a mute/solo

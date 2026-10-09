@@ -444,9 +444,15 @@
                   <div class="tool scratch-tabs">
                   <button class="btn tiny ghost" type="button" id="scratchFloatBtn" title="Pop out into a moveable, resizable window">Float ⧉</button>
                   <button class="btn tiny ghost toggle" type="button" id="scratchTabLyrics" aria-pressed="true">Lyrics</button>
-                  <button class="btn tiny ghost toggle" type="button" id="scratchTabTab" aria-pressed="false">Tab</button>
-                  <button class="btn tiny ghost toggle" type="button" id="scratchTabDrums" aria-pressed="false">Drum tab</button>
+                  <button class="btn tiny ghost toggle" type="button" id="scratchTabGuitar" aria-pressed="false" title="Guitar tab. Double-click to rename">Guitar</button>
+                  <button class="btn tiny ghost toggle" type="button" id="scratchTabBass" aria-pressed="false" title="Bass tab. Double-click to rename">Bass</button>
+                  <button class="btn tiny ghost toggle" type="button" id="scratchTabDrums" aria-pressed="false" title="Drum tab. Double-click to rename">Drums</button>
                   <button class="btn tiny ghost toggle" type="button" id="scratchTabNotes" aria-pressed="false">Notes</button>
+                  <span class="part-link" id="partLink" hidden>
+                    <span class="muted small">Track</span>
+                    <span id="partTrackMount" title="The track this tab is for: it is outlined in the track list, and its Tab button jumps back here"></span>
+                    <button class="btn tiny ghost toggle" type="button" id="partMuteBtn" aria-pressed="false">Play without it</button>
+                  </span>
                   <a class="btn tiny ghost" id="lyricsSearchLink" href="https://genius.com/search" target="_blank" rel="noopener noreferrer" title="Search Genius for lyrics, to copy in yourself">Search lyrics ↗</a>
                   <label class="btn tiny ghost" id="lyricsImportLabel" title="Load a synced lyrics (.lrc) file into the Lyrics box">Import .lrc…<input type="file" id="lyricsImport" accept=".lrc,.txt,text/plain" hidden /></label>
                   <button class="btn tiny ghost toggle" type="button" id="lyricsFollowBtn" aria-pressed="false" hidden title="Show the lyrics as a follow-along view that highlights the line being sung">Follow along</button>
