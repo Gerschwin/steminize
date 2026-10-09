@@ -143,6 +143,11 @@ E|-0---0---0---0---|
 - [ ] **Play without …** mutes the linked track and the button stays lit; unmuting the track from its own M button un-lights it.
 - [ ] Double-click Guitar / Bass / Drums to rename it (Enter keeps, Escape cancels, empty goes back to the default); the "Play without …" label and the track's Tab tooltip use the new name; it sticks after a restart.
 - [ ] The drawer summary lists the parts that have something in them.
+- [ ] **NEW: added parts.** The **+** button (after Drums) adds a part: it opens straight in rename mode with the name selected; type a name and press Enter. It gets its own six-string tab, its own timing, Follow along, Trainer and bar colours, and a **Track** dropdown that starts on (None).
+- [ ] Add two or three parts, put a different tab in each and switch between them: nothing leaks across, and all of it survives a restart.
+- [ ] A part whose name exactly matches a track (a part called "Piano" and a track called "piano") links to it by itself; any other name starts on (None).
+- [ ] An added part's Tab button, track outline and "Play without …" behave as for Guitar, Bass and Drums, and double-click renames it.
+- [ ] **Delete part** (added parts only) asks before deleting if the part has a tab in it, goes straight back to Guitar, and the part is gone after a restart. Guitar, Bass and Drums have no Delete button.
 - [ ] **Float** pops the Scratchpad out as a floating window: it can be dragged, resized and docked again; its position is remembered.
 - [ ] **Lyrics:** paste plain lyrics; paste LRC (`[mm:ss.xx] words`) or **Import .lrc…**: **Follow along** highlights the line being sung, dims sung ones, and clicking a line jumps the song there; **− / +** nudge by 0.2 s; **Search lyrics ↗** opens a search.
 - [ ] The **Drums** tab keeps ASCII aligned; **Extend line** adds bars.

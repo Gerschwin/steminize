@@ -13,7 +13,7 @@ import { MAX_REC_LATENCY_MS, loadLiveChannel, loadLowLatencyAudio, loadRecLatenc
 import { BarTally, barColour, barTip, type BarScores, type BarVisit } from '../lyrics/barScores.ts';
 import { initNativeAudio } from './nativeAudio.ts';
 import { createDropdown, type Dropdown } from './dropdown.ts';
-import { DEFAULT_PART_NAMES, PART_IDS, TAB_FIELDS, defaultTrack, legacyTabPart, type PartId, type TabPartId } from '../lyrics/tabParts.ts';
+import { DEFAULT_PART_NAMES, PART_IDS, TAB_FIELDS, defaultTrack, isBuiltinPart, legacyTabPart, newPartId, partKind, type ExtraPart, type PartId, type TabPartId } from '../lyrics/tabParts.ts';
 import { placeTake, shiftTake } from '../player/placement.ts';
 import { lineAt, parseLrc, type Lrc } from '../lyrics/lrc.ts';
 import {
@@ -155,11 +155,13 @@ export interface ScratchState {
   tabBarScores?: BarScores;
   /** Which tab part (guitar or bass) the `tab…` fields above belong to; the other part's are kept in `tabParts`. Guitar when unset. */
   tabPart?: TabPartId;
-  tabParts?: Partial<Record<TabPartId, Pick<ScratchState, (typeof TAB_FIELDS)[number]>>>;
+  tabParts?: Record<TabPartId, Pick<ScratchState, (typeof TAB_FIELDS)[number]>>;
   /** Custom names for the Guitar / Bass / Drums tabs. */
-  partNames?: Partial<Record<PartId, string>>;
+  partNames?: Record<string, string>;
+  /** Parts the user added (a second guitar, keys, …), after Guitar / Bass / Drums. They use the tab editor like Guitar and Bass. */
+  extraParts?: ExtraPart[];
   /** The track each part is linked to, by track name ('' = none); unset means the default match (see tabParts.ts). */
-  partTracks?: Partial<Record<PartId, string>>;
+  partTracks?: Record<string, string>;
   drums?: string;
   notes?: string;
 }
@@ -429,6 +431,7 @@ export class Deck {
   private openDrawer: (name: string | null) => void = () => {};
   private partTrackDd: Dropdown | null = null;
   private partBtns!: Record<PartId, HTMLButtonElement>;
+  private addPartBtn!: HTMLButtonElement;
   /** The lyrics text parsed as LRC, or null if it's plain lyrics. */
   private lrc: Lrc | null = null;
   private lyricEls: HTMLElement[] = [];
@@ -2016,6 +2019,7 @@ export class Deck {
       drums: $<HTMLButtonElement>('scratchTabDrums'),
     };
     this.partBtns = partBtns;
+    this.addPartBtn = $<HTMLButtonElement>('scratchAddPart');
     const areas = {
       lyrics: $<HTMLTextAreaElement>('scratchLyrics'),
       tab: $<HTMLTextAreaElement>('scratchTab'),
@@ -2039,15 +2043,17 @@ export class Deck {
       if (!areas[name].hidden) areas[name].focus();
     };
     this.showPart = (id) => {
-      if (id !== 'drums') this.switchTabPart(id);
-      show(id === 'drums' ? 'drums' : 'tab');
+      if (partKind(id) === 'tab') this.switchTabPart(id);
+      show(partKind(id) === 'drums' ? 'drums' : 'tab');
     };
     tabBtns.lyrics.onclick = () => show('lyrics');
     tabBtns.notes.onclick = () => show('notes');
-    for (const id of PART_IDS) {
-      partBtns[id].onclick = () => this.showPart(id);
-      partBtns[id].ondblclick = () => this.renamePart(id);
-    }
+    for (const id of PART_IDS) this.wirePartButton(id, partBtns[id]);
+    this.addPartBtn.onclick = () => this.addPart();
+    $('partDeleteBtn').onclick = () => {
+      const id = this.currentPart();
+      if (id && !isBuiltinPart(id)) this.deletePart(id);
+    };
     this.partTrackDd = createDropdown();
     $('partTrackMount').replaceWith(this.partTrackDd.el);
     this.partTrackDd.onChange = (v) => {
@@ -2307,6 +2313,8 @@ export class Deck {
     const part = s?.tabPart ?? legacyTabPart(s?.tab);
     if (part !== 'guitar') this.scratch.tabPart = part;
     if (s?.tabParts && Object.keys(s.tabParts).length) this.scratch.tabParts = structuredClone(s.tabParts);
+    if (s?.extraParts?.length) this.scratch.extraParts = s.extraParts.map((p) => ({ ...p }));
+    if (this.scratch.tabPart && !this.scratch.extraParts?.some((p) => p.id === this.scratch.tabPart) && this.scratch.tabPart !== 'bass') delete this.scratch.tabPart;
     if (s?.partNames && Object.keys(s.partNames).length) this.scratch.partNames = { ...s.partNames };
     if (s?.partTracks && Object.keys(s.partTracks).length) this.scratch.partTracks = { ...s.partTracks };
     this.scratchAreas.lyrics.value = this.scratch.lyrics ?? '';
@@ -2659,13 +2667,20 @@ export class Deck {
     return this.scratchTab === 'tab' ? this.activeTabPart() : this.scratchTab === 'drums' ? 'drums' : null;
   }
 
+  /** Every part, in tab order: Guitar, Bass, Drums, then the ones the user added. */
+  private allParts(): { id: PartId; name: string }[] {
+    return [...PART_IDS.map((id) => ({ id, name: this.partName(id) })), ...(this.scratch.extraParts ?? []).map((p) => ({ id: p.id, name: p.name }))];
+  }
+
   private partName(id: PartId): string {
-    return this.scratch.partNames?.[id]?.trim() || DEFAULT_PART_NAMES[id];
+    const extra = this.scratch.extraParts?.find((p) => p.id === id);
+    if (extra) return extra.name;
+    return this.scratch.partNames?.[id]?.trim() || DEFAULT_PART_NAMES[id] || id;
   }
 
   /** The text of a part's tab, wherever it is kept (the editor, for the open part; the stash for the other). */
   private partText(id: PartId): string {
-    if (id === 'drums') return this.scratch.drums ?? '';
+    if (partKind(id) === 'drums') return this.scratch.drums ?? '';
     return (id === this.activeTabPart() ? this.scratch.tab : this.scratch.tabParts?.[id]?.tab) ?? '';
   }
 
@@ -2698,7 +2713,7 @@ export class Deck {
   /** Puts the open part's text in the tab editor: its own, or a blank template (four strings for the bass). */
   private showTabText() {
     const ta = this.scratchAreas.tab;
-    const blank = this.activeTabPart() === 'bass' ? ta.placeholder.split('\n').slice(2).join('\n') : ta.placeholder;
+    const blank = this.activeTabPart() === 'bass' ? ta.placeholder.split('\n').slice(2).join('\n') : ta.placeholder; // bass: four strings, the rest six
     ta.value = this.scratch.tab || blank;
   }
 
@@ -2706,7 +2721,7 @@ export class Deck {
   private partTrackName(id: PartId): string | undefined {
     const chosen = this.scratch.partTracks?.[id];
     if (chosen !== undefined) return chosen || undefined;
-    return defaultTrack(id, this.lanes.map((l) => l.name));
+    return defaultTrack(id, this.lanes.map((l) => l.name), this.partName(id));
   }
 
   private partLane(id: PartId): Lane | undefined {
@@ -2718,10 +2733,14 @@ export class Deck {
   private updatePartUi() {
     if (!this.partBtns) return;
     const open = this.currentPart();
-    for (const id of PART_IDS) {
-      this.partBtns[id].textContent = this.partName(id);
-      pressed(this.partBtns[id], id === open);
+    this.renderExtraParts();
+    for (const { id } of this.allParts()) {
+      const btn = this.partBtns[id];
+      if (!btn) continue;
+      btn.textContent = this.partName(id);
+      pressed(btn, id === open);
     }
+    $('partDeleteBtn').hidden = !open || isBuiltinPart(open);
     const link = $('partLink');
     link.hidden = !open;
     const lane = open ? this.partLane(open) : undefined;
@@ -2736,7 +2755,7 @@ export class Deck {
     }
     for (const l of this.lanes) {
       l.el.classList.toggle('part-linked', !!open && l === lane);
-      const linked = PART_IDS.filter((id) => this.partLane(id) === l);
+      const linked = this.allParts().map((p) => p.id).filter((id) => this.partLane(id) === l);
       if (l.tabBtn) {
         l.tabBtn.hidden = linked.length === 0;
         l.tabBtn.title = linked.length ? `Open the ${linked.map((id) => this.partName(id)).join(' / ')} tab` : '';
@@ -2746,7 +2765,7 @@ export class Deck {
 
   /** A track's Tab button: opens the Scratchpad on the first part linked to it. */
   private openPartForLane(lane: Lane) {
-    const id = PART_IDS.find((p) => this.partLane(p) === lane);
+    const id = this.allParts().map((p) => p.id).find((p) => this.partLane(p) === lane);
     if (!id) return;
     this.openDrawer('scratch');
     this.showPart(id);
@@ -2762,11 +2781,16 @@ export class Deck {
       done = true;
       const name = input.value.trim();
       if (commit) {
-        const names = { ...this.scratch.partNames };
-        if (!name || name === DEFAULT_PART_NAMES[id]) delete names[id];
-        else names[id] = name;
-        if (Object.keys(names).length) this.scratch.partNames = names;
-        else delete this.scratch.partNames;
+        const extra = this.scratch.extraParts?.find((p) => p.id === id);
+        if (extra) {
+          if (name) extra.name = name; // an added part can't have no name
+        } else {
+          const names = { ...this.scratch.partNames };
+          if (!name || name === DEFAULT_PART_NAMES[id]) delete names[id];
+          else names[id] = name;
+          if (Object.keys(names).length) this.scratch.partNames = names;
+          else delete this.scratch.partNames;
+        }
         this.emit();
       }
       input.replaceWith(btn);
@@ -2784,10 +2808,60 @@ export class Deck {
     input.select();
   }
 
+  /** Makes (or re-makes) the buttons for the parts the user added, between Drums and the + button. */
+  private renderExtraParts() {
+    const extras = this.scratch.extraParts ?? [];
+    for (const id of Object.keys(this.partBtns)) {
+      if (!isBuiltinPart(id) && !extras.some((p) => p.id === id)) {
+        this.partBtns[id].remove();
+        delete this.partBtns[id];
+      }
+    }
+    for (const p of extras) {
+      if (this.partBtns[p.id]) continue;
+      const btn = h('button', { class: 'btn tiny ghost toggle', type: 'button', 'aria-pressed': 'false', title: 'Double-click to rename' }, p.name);
+      this.addPartBtn.before(btn);
+      this.partBtns[p.id] = btn;
+      this.wirePartButton(p.id, btn);
+    }
+  }
+
+  private wirePartButton(id: PartId, btn: HTMLButtonElement) {
+    btn.onclick = () => this.showPart(id);
+    btn.ondblclick = () => this.renamePart(id);
+  }
+
+  /** The + button: a new part (a second guitar, keys, …), opened ready to be named. */
+  private addPart() {
+    const extras = this.scratch.extraParts ?? [];
+    const id = newPartId(extras);
+    this.scratch.extraParts = [...extras, { id, name: `Part ${extras.length + 4}` }];
+    this.renderExtraParts();
+    this.showPart(id);
+    this.emit();
+    this.renamePart(id);
+  }
+
+  /** Removes a part the user added, with whatever tab is in it (after asking, if there is anything in it). */
+  private deletePart(id: PartId) {
+    const extra = this.scratch.extraParts?.find((p) => p.id === id);
+    if (!extra) return;
+    if (this.partText(id).trim() && !confirm(`Delete the ${extra.name} tab and everything in it? This can't be undone.`)) return;
+    if (this.activeTabPart() === id) this.showPart('guitar'); // puts this part's state away, bringing guitar back
+    if (this.scratch.tabParts) delete this.scratch.tabParts[id];
+    if (this.scratch.partTracks) delete this.scratch.partTracks[id];
+    const rest = (this.scratch.extraParts ?? []).filter((p) => p.id !== id);
+    if (rest.length) this.scratch.extraParts = rest;
+    else delete this.scratch.extraParts;
+    this.updatePartUi();
+    this.updateScratchSummary();
+    this.emit();
+  }
+
   private updateScratchSummary() {
     const bits = [
       this.scratch.lyrics ? 'Lyrics' : '',
-      ...PART_IDS.filter((id) => this.partText(id).trim()).map((id) => this.partName(id)),
+      ...this.allParts().filter((p) => this.partText(p.id).trim()).map((p) => p.name),
       this.scratch.notes ? 'Notes' : '',
     ].filter(Boolean);
     const sum = $('sumScratch');

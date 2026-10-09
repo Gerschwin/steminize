@@ -30,7 +30,7 @@ import { detectLatency } from '../src/player/latency.ts';
 import { placeTake, shiftTake } from '../src/player/placement.ts';
 import { StreamResampler } from '../src/player/resample.ts';
 import { withTimeout } from '../src/engine/timeout.ts';
-import { PART_IDS, defaultTrack, legacyTabPart, stringCount } from '../src/lyrics/tabParts.ts';
+import { PART_IDS, defaultTrack, isBuiltinPart, legacyTabPart, newPartId, partKind, stringCount } from '../src/lyrics/tabParts.ts';
 import { BarTally, barColour, barPercent, barTip } from '../src/lyrics/barScores.ts';
 
 let failed = 0;
@@ -1037,6 +1037,9 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   const six = 'e|-0-|\nB|-0-|\nG|-0-|\nD|-0-|\nA|-0-|\nE|-0-|';
   const four = 'G|-0-|\nD|-0-|\nA|-0-|\nE|-0-|';
   ok('parts: counts strings', stringCount(six) === 6 && stringCount(four) === 4 && stringCount('hello') === 0);
+  ok('parts: an added part links only to a track with exactly its name', defaultTrack('part1', ['piano', 'other', 'guitar'], 'Piano') === 'piano' && defaultTrack('part1', ['piano', 'guitar'], '2nd guitar') === undefined && defaultTrack('part1', ['piano'], '') === undefined);
+  ok('parts: built-in and added parts are told apart, and drums are the only non-tab kind', isBuiltinPart('bass') && !isBuiltinPart('part1') && partKind('drums') === 'drums' && partKind('part1') === 'tab' && partKind('guitar') === 'tab');
+  ok('parts: a new part id is never one already in use', newPartId([]) === 'part1' && newPartId([{ id: 'part1', name: 'a' }]) === 'part2' && newPartId([{ id: 'part2', name: 'b' }, { id: 'part1', name: 'a' }, { id: 'part3', name: 'c' }]) === 'part4');
   ok('parts: an old four-string tab becomes the bass part, six strings or none the guitar part', legacyTabPart(four) === 'bass' && legacyTabPart(six) === 'guitar' && legacyTabPart('') === 'guitar' && legacyTabPart(undefined) === 'guitar');
 }
 
