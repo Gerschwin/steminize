@@ -30,6 +30,7 @@ import { detectLatency } from '../src/player/latency.ts';
 import { placeTake, shiftTake } from '../src/player/placement.ts';
 import { StreamResampler } from '../src/player/resample.ts';
 import { withTimeout } from '../src/engine/timeout.ts';
+import { DRUM_VOICES, drumMidi, hitStyle, parseDrums, voiceOfLabel } from '../src/lyrics/drumTab.ts';
 import { PART_IDS, defaultTrack, isBuiltinPart, legacyTabPart, newPartId, partKind, stringCount } from '../src/lyrics/tabParts.ts';
 import { BarTally, barColour, barPercent, barTip } from '../src/lyrics/barScores.ts';
 
@@ -1041,6 +1042,41 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('parts: built-in and added parts are told apart, and drums are the only non-tab kind', isBuiltinPart('bass') && !isBuiltinPart('part1') && partKind('drums') === 'drums' && partKind('part1') === 'tab' && partKind('guitar') === 'tab');
   ok('parts: a new part id is never one already in use', newPartId([]) === 'part1' && newPartId([{ id: 'part1', name: 'a' }]) === 'part2' && newPartId([{ id: 'part2', name: 'b' }, { id: 'part1', name: 'a' }, { id: 'part3', name: 'c' }]) === 'part4');
   ok('parts: an old four-string tab becomes the bass part, six strings or none the guitar part', legacyTabPart(four) === 'bass' && legacyTabPart(six) === 'guitar' && legacyTabPart('') === 'guitar' && legacyTabPart(undefined) === 'guitar');
+}
+
+// ---- drum tab: the grid as timed hits
+{
+  const grid = [
+    'HH|x-x-x-x-x-x-x-x-|x-x-x-x-x-x-x-x-|',
+    'SD|----o-------o---|----o-------g---|',
+    'BD|o-------o-o-----|o---------------|',
+  ].join('\n');
+  const { notes, bars } = parseDrums(grid);
+  ok('drums: two bars of sixteen columns are two bars of sixteen sixteenths', bars.length === 2 && bars[0].start === 0 && bars[0].length === 16 && bars[1].start === 16 && bars[1].length === 16);
+  ok('drums: every hit is found, with its voice', notes.filter((n) => n.drum.voice === 'hihat').length === 16 && notes.filter((n) => n.drum.voice === 'snare').length === 4 && notes.filter((n) => n.drum.voice === 'kick').length === 4);
+  const kicks = notes.filter((n) => n.drum.voice === 'kick').map((n) => n.start);
+  ok('drums: a column is a sixteenth note: the kicks are at 0, 8, 10 and 16', kicks.join() === '0,8,10,16');
+  ok('drums: hits are in time order and carry their bar', notes.every((n, i) => i === 0 || notes[i - 1].start <= n.start) && notes.filter((n) => n.bar === 1).every((n) => n.start >= 16));
+  ok('drums: pitch is the General MIDI drum number', notes.find((n) => n.drum.voice === 'kick')!.midi === 36 && notes.find((n) => n.drum.voice === 'snare')!.midi === 38 && notes.find((n) => n.drum.voice === 'hihat')!.midi === 42);
+  ok('drums: a ghost note is marked', notes.filter((n) => n.drum.style === 'ghost').length === 1);
+  ok('drums: a hit lasts until the next hit anywhere', notes.find((n) => n.start === 0 && n.drum.voice === 'kick')!.length === 2 && notes[notes.length - 1].length === 2);
+  ok('drums: the row index tells which line a hit is on', notes.find((n) => n.drum.voice === 'hihat')!.string === 0 && notes.find((n) => n.drum.voice === 'kick')!.string === 2);
+
+  const open = parseDrums('HH|x-o-X-O-|').notes;
+  ok('drums: hi-hat o is the open hi-hat, with its own MIDI number', open[1].drum.style === 'open' && open[1].midi === 46 && open[0].midi === 42 && open[2].drum.style === 'accent' && open[3].drum.style === 'open');
+  ok('drums: o on a snare is just a hit', hitStyle('o', 'snare') === 'normal' && hitStyle('O', 'snare') === 'accent' && hitStyle('-', 'snare') === null && hitStyle(' ', 'kick') === null);
+
+  const eight = parseDrums('4/4\nHH|x-x-x-x-|x-x-x-x-|\nBD|o---o---|o---o---|');
+  ok('drums: a 4/4 line fits an eight-column bar to a whole bar', eight.bars.length === 2 && eight.bars[0].length === 16 && eight.bars[1].start === 16 && eight.notes.filter((n) => n.drum.voice === 'hihat').map((n) => n.start).slice(0, 4).join() === '0,4,8,12');
+
+  const labelled = parseDrums('1 e + a 2 e + a\nHH|x-x-x-x-|\nSN|----x---|');
+  ok('drums: a counting line above the grid is skipped', labelled.notes.length === 5 && labelled.notes.every((n) => n.string <= 1));
+  ok('drums: labels in the usual abbreviations are understood', voiceOfLabel('CC') === 'crash' && voiceOfLabel('RC') === 'ride' && voiceOfLabel('HH') === 'hihat' && voiceOfLabel('SN') === 'snare' && voiceOfLabel('SD') === 'snare' && voiceOfLabel('HT') === 'hightom' && voiceOfLabel('MT') === 'midtom' && voiceOfLabel('FT') === 'floortom' && voiceOfLabel('BD') === 'kick' && voiceOfLabel('xyz') === null);
+  ok('drums: a row it does not recognise is ignored, not guessed at', parseDrums('ZZ|x-x-|\nBD|o---|').notes.length === 1);
+  const rep = parseDrums('BD|*o---o---*|').bars;
+  ok('drums: repeat signs are read as in the guitar tab', rep.length === 1 && rep[0].repeatStart === true && rep[0].repeatEnd === true);
+  ok('drums: nothing written gives nothing', parseDrums('').notes.length === 0 && parseDrums('CC|--------|\nBD|--------|').notes.length === 0);
+  ok('drums: hands up, the kick foot down; cymbals and hi-hat drawn as x', DRUM_VOICES.kick.up === false && DRUM_VOICES.snare.up === true && DRUM_VOICES.hihat.head === 'x' && DRUM_VOICES.crash.head === 'x' && DRUM_VOICES.snare.head === 'normal' && drumMidi('hihat', 'open') === 46);
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

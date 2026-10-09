@@ -427,7 +427,7 @@ export interface TabBar {
 const OPEN_STRINGS: Record<number, number[]> = { 6: [64, 59, 55, 50, 45, 40], 4: [43, 38, 33, 28] };
 
 /** The column ranges [from, to) of each bar in a block: what lies between its bar lines. */
-function barSegments(b: TabBlock): [number, number][] {
+export function barSegments(b: TabBlock): [number, number][] {
   const segs: [number, number][] = [];
   let from = b.label;
   for (let c = b.label; c <= b.chars; c++) {
