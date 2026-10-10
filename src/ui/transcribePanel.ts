@@ -7,6 +7,7 @@
 
 import { background } from '../encode/client.ts';
 import { BINS, CQT_FPS, NOTE_HI, NOTE_LO, noteName, type Cqt } from '../analysis/cqt.ts';
+import { beatCells, beatPositionAt, displayName, type BeatCell } from '../analysis/chordStrip.ts';
 import { QUALITIES, chordName, chordSheet, detectChords, mergeSame, noteLetter, prefersSharps, type Chord, type Quality } from '../analysis/chords.ts';
 import { cancelTranscribe, transcribe } from '../analysis/transcribe.ts';
 import { singleLine, type NoteEvent } from '../analysis/basicPitch.ts';
@@ -41,6 +42,10 @@ export interface TxHost {
   key(): KeyResult | undefined;
   keyLabel(): string | undefined;
   seekFrac(f: number): void;
+  /** The playhead, smoothed between the player's reports, for motion that must look continuous. */
+  smoothPos(): number;
+  /** Loops the frames [a, b) and starts playing from the start of them. */
+  loopFrames(a: number, b: number): void;
   wheel(e: WheelEvent, el: HTMLElement): void;
   changed(): void; // save
   redraw(): void;
@@ -64,6 +69,10 @@ export interface TxState {
   chordList?: Chord[];
   midi?: Record<string, NoteEvent[]>;
   notesHeight?: number; // px; unset uses the CSS default
+  /** The scrolling chord timeline: shown, plain major / minor only, and its zoom (1 = default width of a beat). */
+  strip?: boolean;
+  simple?: boolean;
+  stripZoom?: number;
 }
 
 // Heat-map palette for the note view: dark → violet → orange → yellow.
@@ -121,6 +130,16 @@ function voiceFor(name: string): Voice {
 export class Transcribe {
   private notesOn = false;
   private chordsOn = false;
+  // The scrolling chord timeline (a row of beat boxes that moves with the music).
+  private stripLane: HTMLElement;
+  private simpleBox: HTMLInputElement;
+  private stripCanvas: HTMLCanvasElement;
+  private stripOn = false;
+  private simple = false;
+  private stripZoom = 1;
+  private cells: { chords: Chord[]; beats: number[]; downbeat: number; perBar: number; list: BeatCell[] } | null = null;
+  /** Where the timeline last drew the playhead, so a click can be turned back into a beat. */
+  private stripGeom = { cur: 0, hold: 0, cw: 78 };
   private source = HEAR;
   private img: { key: string; canvas: HTMLCanvasElement } | null = null;
   private hover: { row: number; t: number } | null = null;
@@ -151,6 +170,34 @@ export class Transcribe {
   private midiSaveBtn: HTMLButtonElement;
 
   constructor(private host: TxHost) {
+    // ---- chord timeline lane
+    this.stripCanvas = h('canvas');
+    const simpleBox = h('input', { type: 'checkbox' }) as HTMLInputElement;
+    simpleBox.onchange = () => {
+      this.simple = simpleBox.checked;
+      this.host.changed();
+    };
+    this.simpleBox = simpleBox;
+    const zoomOut = h('button', { class: 'btn tiny ghost', type: 'button', title: 'Show fewer beats' }, '−');
+    const zoomIn = h('button', { class: 'btn tiny ghost', type: 'button', title: 'Show more of each beat' }, '+');
+    zoomOut.onclick = () => this.setStripZoom(this.stripZoom / 1.25);
+    zoomIn.onclick = () => this.setStripZoom(this.stripZoom * 1.25);
+    const stripWave = h('div', { class: 'wave x-wave chord-strip-wave', title: 'Click a beat to jump to it; click a bar number to loop that bar' }, this.stripCanvas);
+    stripWave.onclick = (e) => this.stripClick(e.offsetX, e.offsetY);
+    this.stripLane = h(
+      'div',
+      { class: 'lane x-lane chord-strip-lane' },
+      h(
+        'div',
+        { class: 'lane-ctl x-ctl' },
+        h('span', { class: 'name' }, 'Chord timeline'),
+        h('label', { class: 'switch', title: 'Plain major and minor chords only: no sevenths, sus or slash chords' }, simpleBox, ' Simple'),
+        zoomOut,
+        zoomIn,
+      ),
+      stripWave,
+    );
+
     // ---- chords lane
     this.chordCanvas = h('canvas');
     this.chordNow = h('span', { class: 'x-now' });
@@ -341,7 +388,8 @@ export class Transcribe {
       { capture: true },
     );
 
-    $('xlanes').append(this.chordLane, this.editor, this.notesLane);
+    $('xlanes').append(this.stripLane, this.chordLane, this.editor, this.notesLane);
+    $('stripBtn').onclick = () => this.show({ strip: !this.stripOn });
     $('chordsBtn').onclick = () => this.show({ chords: !this.chordsOn });
     $('notesBtn').onclick = () => this.show({ notes: !this.notesOn });
     this.show({});
@@ -376,7 +424,10 @@ export class Transcribe {
       ...s.stems.map((x) => h('option', { value: x.name }, x.name.startsWith('no_') ? `No ${x.name.slice(3)}` : x.name)),
     );
     this.sourceSel.value = this.source;
-    this.show({ notes: st?.notes ?? this.notesOn, chords: st?.chords ?? this.chordsOn }, false);
+    this.simple = st?.simple ?? false;
+    this.simpleBox.checked = this.simple;
+    this.stripZoom = Math.max(0.5, Math.min(2.5, st?.stripZoom ?? 1));
+    this.show({ notes: st?.notes ?? this.notesOn, chords: st?.chords ?? this.chordsOn, strip: st?.strip ?? this.stripOn }, false);
     this.refreshMidiButtons();
     this.notesHeight = st?.notesHeight;
     if (this.notesHeight) (this.notesLane.querySelector('.notes-wave') as HTMLElement).style.height = `${this.notesHeight}px`;
@@ -385,14 +436,17 @@ export class Transcribe {
 
   getState(): TxState {
     const s = this.host.song();
-    return { notes: this.notesOn, chords: this.chordsOn, source: this.source, chordList: s?.chords, midi: s?.midi, notesHeight: this.notesHeight };
+    return { notes: this.notesOn, chords: this.chordsOn, strip: this.stripOn, simple: this.simple, stripZoom: this.stripZoom, source: this.source, chordList: s?.chords, midi: s?.midi, notesHeight: this.notesHeight };
   }
 
-  private show(p: { notes?: boolean; chords?: boolean }, save = true) {
+  private show(p: { notes?: boolean; chords?: boolean; strip?: boolean }, save = true) {
     if (p.notes != null) this.notesOn = p.notes;
     if (p.chords != null) this.chordsOn = p.chords;
+    if (p.strip != null) this.stripOn = p.strip;
     this.notesLane.hidden = !this.notesOn;
     this.chordLane.hidden = !this.chordsOn;
+    this.stripLane.hidden = !this.stripOn;
+    pressed($('stripBtn'), this.stripOn);
     if (!this.chordsOn) this.closeEditor();
     if (!this.notesOn) {
       this.unfreeze();
@@ -402,7 +456,7 @@ export class Transcribe {
     pressed($('chordsBtn'), this.chordsOn);
     const s = this.host.song();
     if (s && this.notesOn) void this.ensureCqt(this.sourceNames());
-    if (s && this.chordsOn && !s.chords) void this.detectChords();
+    if (s && (this.chordsOn || this.stripOn) && !s.chords) void this.detectChords();
     this.invalidate();
     if (save) this.host.changed();
   }
@@ -693,6 +747,127 @@ export class Transcribe {
   private sourceColour() {
     const lanes = this.host.lanes();
     return lanes.find((l) => l.name === this.source)?.colour ?? '#8b7cf6';
+  }
+
+  // ---------- chord timeline ----------
+  get stripShown() {
+    return this.stripOn;
+  }
+
+  private setStripZoom(z: number) {
+    this.stripZoom = Math.max(0.5, Math.min(2.5, z));
+    this.host.changed();
+    this.host.redraw();
+  }
+
+  private beatCellList(s: TxSong) {
+    const chords = s.chords ?? [];
+    const beats = this.host.beats();
+    const downbeat = this.host.downbeat();
+    const perBar = this.host.perBar();
+    const c = this.cells;
+    if (c && c.chords === chords && c.beats === beats && c.downbeat === downbeat && c.perBar === perBar) return c.list;
+    const list = beatCells(chords, beats, downbeat, perBar);
+    this.cells = { chords, beats, downbeat, perBar, list };
+    return list;
+  }
+
+  /** Draws the timeline: a row of beat boxes sliding past a fixed playhead, the chord shown where it starts, the current one lit. Called every screen frame while playing. */
+  drawStrip() {
+    if (!this.stripOn) return;
+    const s = this.host.song();
+    if (!s) return;
+    const c = this.stripCanvas;
+    const g = fitCanvas(c);
+    const { width: w, height: H } = c;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    g.clearRect(0, 0, w, H);
+    const beats = this.host.beats();
+    const ink = getComputedStyle(document.body).color;
+    const accent = '#8b7cf6';
+    g.textBaseline = 'middle';
+    const say = (text: string) => {
+      g.font = `500 ${13 * dpr}px system-ui, sans-serif`;
+      g.fillStyle = ink;
+      g.globalAlpha = 0.6;
+      g.fillText(text, 12 * dpr, H / 2);
+      g.globalAlpha = 1;
+    };
+    if (!beats.length) return say('Waiting for the tempo to be detected…');
+    if (!s.chords) return say('Detecting chords…');
+    const list = this.beatCellList(s);
+    const chords = s.chords;
+    const cw = 78 * dpr * this.stripZoom;
+    const hold = w * 0.28;
+    const cur = beatPositionAt(beats, this.host.smoothPos() / SR);
+    this.stripGeom = { cur, hold: hold / dpr, cw: cw / dpr };
+    const shift = this.host.pitch();
+    const sharps = this.sharps();
+    const names = (cell?: BeatCell) => (cell && cell.chord >= 0 ? displayName(chords[cell.chord], shift, sharps, this.simple) : '');
+    const curCell = list[Math.max(0, Math.min(list.length - 1, Math.floor(cur)))];
+    const curName = names(curCell);
+    const top = 22 * dpr;
+    const bottom = H - 6 * dpr;
+    const first = Math.max(0, Math.floor(cur - hold / cw) - 1);
+    const last = Math.min(list.length - 1, Math.ceil(cur + (w - hold) / cw) + 1);
+    g.font = `700 ${Math.round(21 * dpr * Math.min(1.25, this.stripZoom))}px system-ui, sans-serif`;
+    for (let i = first; i <= last; i++) {
+      const cell = list[i];
+      const x = hold + (i - cur) * cw;
+      const name = names(cell);
+      const prevName = i > 0 ? names(list[i - 1]) : '';
+      const isCur = i === Math.floor(cur);
+      const sameAsNow = name !== '' && name === curName;
+      g.fillStyle = isCur ? accent : sameAsNow ? 'rgba(139,124,246,0.30)' : name ? 'rgba(139,124,246,0.10)' : 'rgba(127,127,127,0.06)';
+      g.fillRect(x + dpr, top, cw - 2 * dpr, bottom - top);
+      // A new chord shows its name; the beats it carries on through stay quiet.
+      if (name && name !== prevName) {
+        g.fillStyle = isCur ? '#fff' : ink;
+        g.fillText(name, x + 8 * dpr, (top + bottom) / 2);
+      } else if (name) {
+        g.fillStyle = isCur ? '#fff' : ink;
+        g.globalAlpha = 0.35;
+        g.fillRect(x + cw / 2 - 2 * dpr, (top + bottom) / 2 - dpr, 4 * dpr, 2 * dpr);
+        g.globalAlpha = 1;
+      }
+      if (cell.beat === 0) {
+        g.fillStyle = ink;
+        g.globalAlpha = 0.55;
+        g.fillRect(x, 4 * dpr, dpr, bottom - 4 * dpr + dpr);
+        g.globalAlpha = 1;
+        if (cell.bar >= 1) {
+          g.font = `600 ${11 * dpr}px system-ui, sans-serif`;
+          g.fillStyle = ink;
+          g.globalAlpha = 0.7;
+          g.fillText(String(cell.bar), x + 4 * dpr, 11 * dpr);
+          g.globalAlpha = 1;
+          g.font = `700 ${Math.round(21 * dpr * Math.min(1.25, this.stripZoom))}px system-ui, sans-serif`;
+        }
+      }
+    }
+    // The playhead.
+    g.fillStyle = ink;
+    g.fillRect(Math.round(hold), 2 * dpr, Math.max(1, dpr), H - 4 * dpr);
+  }
+
+  /** A click on the timeline: the top strip is a bar number (loop that bar); anywhere else jumps to that beat. */
+  private stripClick(x: number, y: number) {
+    const s = this.host.song();
+    const beats = this.host.beats();
+    if (!s || !beats.length) return;
+    const { cur, hold, cw } = this.stripGeom;
+    const idx = Math.floor(cur + (x - hold) / cw);
+    const list = this.beatCellList(s);
+    if (idx < 0 || idx >= list.length) return;
+    if (y < 20) {
+      const bar = list[idx].bar;
+      const inBar = list.filter((c) => c.bar === bar);
+      if (!inBar.length) return;
+      this.host.loopFrames(inBar[0].t0 * SR, inBar[inBar.length - 1].t1 * SR);
+      toast(`Looping bar ${bar}`);
+      return;
+    }
+    this.host.player.seek(Math.round(list[idx].t0 * SR));
   }
 
   // ---------- chords ----------

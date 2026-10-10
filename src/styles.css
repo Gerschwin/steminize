@@ -850,3 +850,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* The scrolling chord timeline */
+.chord-strip-lane .lane-ctl { grid-template-columns: 1fr auto auto; row-gap: 4px; }
+.chord-strip-lane .lane-ctl .name { grid-column: 1 / -1; }
+.chord-strip-lane .lane-ctl .switch { grid-column: 1; }
+.chord-strip-lane .wave { height: 104px; cursor: pointer; }

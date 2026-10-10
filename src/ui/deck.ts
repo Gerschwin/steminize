@@ -609,10 +609,18 @@ export class Deck {
       changed: () => this.emit(),
       redraw: () => (this.dirty = true),
       baseName: () => this.baseName(),
+      smoothPos: () => this.smoothStripPos(),
+      loopFrames: (a, b) => {
+        this.loop.a = Math.max(0, Math.round(a));
+        this.loop.b = Math.min(this.length, Math.round(b));
+        this.setLoop(true);
+        this.player.seek(this.loop.a);
+      },
     };
     this.tx = new Transcribe(host);
     new ResizeObserver(() => this.invalidateLayers()).observe($('deck'));
     const frame = () => {
+      if (this.r && this.tx.stripShown) this.tx.drawStrip(); // the chord timeline moves every screen frame, like the tab strip
       if (this.dirty && this.r) this.draw();
       // The tab scroll strip moves every screen frame while playing, not just when a player report lands.
       else if (this.r && this.player.state.playing) {

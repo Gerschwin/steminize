@@ -35,6 +35,7 @@ are desktop only and are marked **[desktop]**.
 
 ## Understanding the music
 - **Notes view:** which notes are sounding over time (one row per semitone, E1 to C7), for all parts or one stem, with a keyboard you can click, zoom and play from your computer keyboard. Released.
+- **Chord timeline:** a scrolling row of beat boxes in time with the music: the chord shown where it starts, the current beat lit, bar numbers along the top; click a beat to jump to it or a bar number to loop it; zoom the beat width; a **Simple** switch for plain major and minor chords only; follows a pitch shift. Next release.
 - **Freeze:** hold the sound at the playhead as a steady tone. Released.
 - **Chords:** detected per beat along the bar grid using the separated bass; click a chord to correct it (corrections are kept per song); **Chart ⤓** saves a text chord chart with your markers as sections, transposed if you've shifted the pitch. Released.
 - **To MIDI** (Basic Pitch) for a stem or the whole mix, and **MIDI ⤓** to save one file at the song's tempo. Released.

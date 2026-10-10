@@ -126,6 +126,16 @@ E|-0---0---0---0---|
 - [ ] **Chords** detected along the bar grid; click a chord to correct it (suggestions, root/type, slash bass, split); corrections are marked and kept after reopening; **Chart ⤓** saves a text chart using your markers as sections, transposed if pitch is shifted.
 - [ ] **To MIDI** for a stem and for all parts; **MIDI ⤓** saves one MIDI file at the song's tempo.
 
+### 8b. Chord timeline (NEW)
+- [ ] **Timeline** (next to Chords and Notes) opens a strip: it says "Detecting chords…" at first, then shows beat boxes. A song with no tempo detected says it is waiting for the tempo.
+- [ ] Press play: the beats slide past a fixed line, smoothly (not in steps); the current beat is lit; beats of the same chord as now are tinted; each new chord shows its name and the beats it carries on through show dashes.
+- [ ] Bar numbers run along the top at each bar line, and match the Tempo & key bar grid (try **½× / 2×** correction and see the bars change).
+- [ ] Click a beat: playback jumps to it. Click a bar number: that bar loops (a message says which).
+- [ ] **−** and **+** change the width of a beat; the choice survives closing and reopening the song.
+- [ ] **Simple** turns every chord into plain major or minor (a G7 or Gsus4 shows G, an Am7 shows Am, a C/E shows C); it survives reopening.
+- [ ] Change the pitch: the chord names on the timeline move with it. Correct a chord in the Chords lane: the timeline updates.
+- [ ] With the timeline on, nothing else slows down (waveform scrubbing, tab follow-along, loops).
+
 ## 9. Tuner
 
 - [ ] **Tuner** drawer: with Live input monitoring, play a single open string: note, Hz and a needle showing cents sharp or flat.
