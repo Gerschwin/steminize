@@ -77,6 +77,7 @@ export function initNativeAudio(player: Player) {
   const status = $('naStatus');
   const playbackBox = $<HTMLInputElement>('naPlayback');
   player.onNativeError = (m) => toast(m, true);
+  player.onNativeNote = (m) => toast(m, false, 7000);
   let devices: DeviceInfo[] = [];
   let invoke: Invoke | null = null;
   let monitoring = false;

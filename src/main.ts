@@ -11,6 +11,7 @@ import { SettingsPanel } from './ui/settingsPanel.ts';
 import { initLibrary } from './ui/libraryPanel.ts';
 import { initSetlists } from './ui/setlistPanel.ts';
 import { initYoutubeDialog } from './ui/youtubeDialog.ts';
+import { songSizeWarning } from './engine/sizeHint.ts';
 import { initTheme } from './theme.ts';
 import { initAbout } from './ui/about.ts';
 import { installErrorLog, setBackendInfo } from './ui/diagnostics.ts';
@@ -331,6 +332,8 @@ async function processTrack(t: Track) {
     const mix = await decode(t.file);
     check();
     const seconds = mix[0].length / 44100;
+    const heads = songSizeWarning(seconds, MODELS[s.model].stems.length, (navigator as { deviceMemory?: number }).deviceMemory);
+    if (heads) toast(heads, false, 12000);
     t.started = performance.now();
     set('separating', `Starting · ${fmtTime(seconds)} of audio`, -1);
 

@@ -30,6 +30,7 @@ import { detectLatency } from '../src/player/latency.ts';
 import { placeTake, shiftTake } from '../src/player/placement.ts';
 import { StreamResampler } from '../src/player/resample.ts';
 import { withTimeout } from '../src/engine/timeout.ts';
+import { separationMemory, songSizeWarning } from '../src/engine/sizeHint.ts';
 import { voiceSlots } from '../src/ui/drumStaff.ts';
 import { DRUM_VOICES, drumMidi, hitStyle, parseDrums, voiceOfLabel } from '../src/lyrics/drumTab.ts';
 import { PART_IDS, defaultTrack, isBuiltinPart, legacyTabPart, newPartId, normaliseScratch, partKind, stringCount } from '../src/lyrics/tabParts.ts';
@@ -1130,6 +1131,16 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('migrate: an empty or missing scratchpad is fine', normaliseScratch({} as any).tabPart === undefined && Object.keys(normaliseScratch({} as any)).length === 0);
   const again = normaliseScratch(normaliseScratch({ tab: four, drums: 'BD|o---|' } as any));
   ok('migrate: doing it twice changes nothing more', again.tabPart === 'bass' && again.tabParts?.drums?.tab === 'BD|o---|');
+}
+
+// ---- a heads-up before separating a very long file
+{
+  ok('size: a normal song on a normal machine gets no warning', songSizeWarning(240, 6, 8) === null && songSizeWarning(240, 4, undefined) === null);
+  ok('size: the estimate grows with length and with the number of stems', separationMemory(600, 6) > separationMemory(300, 6) && separationMemory(300, 6) > separationMemory(300, 4));
+  const w = songSizeWarning(25 * 60, 6, 8);
+  ok('size: a 25-minute file is warned about, with its length and a way out', !!w && w.includes('25-minute') && w.includes('Compact model') && w.includes('shorter file'));
+  ok('size: a smaller machine is warned about a song a big one would not be', songSizeWarning(600, 6, 2) !== null && songSizeWarning(600, 6, 8) === null);
+  ok('size: "a lot for this computer" is said only when the memory really is a lot', (songSizeWarning(600, 6, 2) ?? '').includes('a lot for this computer') && (songSizeWarning(16 * 60, 4, 8) ?? '').includes('16-minute') && !(songSizeWarning(16 * 60, 4, 8) ?? '').includes('a lot'));
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

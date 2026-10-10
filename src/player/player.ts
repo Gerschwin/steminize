@@ -53,6 +53,8 @@ export class Player {
   private nativeUnlisten: (() => void) | null = null;
   /** A native call failed (shown to the user by whoever sets this). */
   onNativeError: (message: string) => void = () => {};
+  /** Something worth saying that isn't an error (shown by whoever sets this). */
+  onNativeNote: (message: string) => void = () => {};
   /** The native engine's sound device went away, so it has been shut down; the deck carries on in the webview engine. */
   onNativeLost: (message: string) => void = () => {};
   /** How busy the native audio callback is (1 = a whole block's time) and how many glitches there have been. */
@@ -261,6 +263,7 @@ export class Player {
       });
       return;
     }
+    if (this.nativeRunning && !libId) this.onNativeNote('This song is not saved in the library, so it plays in the normal engine. Keep it (Keep new songs) to use native audio.');
     this.webLoad(stems, gains);
   }
 
