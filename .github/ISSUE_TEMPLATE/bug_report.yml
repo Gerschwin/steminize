@@ -1,0 +1,51 @@
+name: Report a problem
+description: Something isn't working, looks wrong, or crashed
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping. The more of this you can fill in, the faster it can be fixed. Nothing here needs your songs or personal details.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what actually happened. A screenshot helps.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Steminize version
+      description: Shown next to the name at the top of the app (for example v0.9.3).
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where are you running it?
+      options:
+        - Windows desktop app
+        - macOS desktop app
+        - Linux desktop app (.deb / .rpm)
+        - Linux desktop app (AppImage)
+        - Web app in a browser
+        - Phone or tablet
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Your computer
+      description: For example Windows 11, macOS 14 on an Apple chip, Ubuntu 24.04.
+  - type: textarea
+    id: diag
+    attributes:
+      label: Diagnostic info
+      description: In the app click the ⓘ button (top right), press "Copy diagnostic info", and paste it here. It contains no songs, file names or personal information.
+      render: text
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to repeat it
+      description: If you know how to make it happen again, list the steps.

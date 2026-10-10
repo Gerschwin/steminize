@@ -182,6 +182,13 @@ The float64 conversion is done by `src/engine/fixfloat64.ts`, which rewrites tho
 - **Fine-tuned + two-stem mode** runs only the one specialist model it needs and computes "everything else" as *original minus stem*. That's 4× faster, but not bit-identical to the Demucs CLI, which sums the other three stems.
 - **Shifts** use random offsets, as in Demucs, so two runs with shifts > 1 differ very slightly.
 
+## More documents
+- [FAQ.md](FAQ.md): installing, slow separation, recording delay and other common questions.
+- [PRIVACY.md](PRIVACY.md): what stays on your computer and when the app uses the internet.
+- [FEATURES.md](FEATURES.md): everything the app does.
+- [LICENCES.md](LICENCES.md): every dependency and its licence (regenerate with `node scripts/licence-report.mjs`).
+- [TEST_CHECKLIST.md](TEST_CHECKLIST.md) and [V1_CRITERIA.md](V1_CRITERIA.md): testing, and what 1.0 needs.
+
 ## Support
 
 Steminize is free and open source, and nothing is held back behind a payment. If it's useful to you, an optional contribution helps keep it maintained: [contribute via PayPal](https://www.paypal.com/ncp/payment/FZTNXUUZ3QWH6).

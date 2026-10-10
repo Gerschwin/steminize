@@ -79,5 +79,14 @@ are desktop only and are marked **[desktop]**.
 - **No stray text selection** and no ghost image when dragging controls or resizing a track. Next release.
 - **Export:** single stems, all stems (folder or ZIP), or "what you hear" as a mix with your levels, loop, tempo and pitch applied. Released.
 
+## Safety and help (next release)
+- **Before separating a very long file** (about 15 minutes or more, or more than the machine's memory allows) a heads-up with what to try if it stalls.
+- **Disk-space check** before saving a song to the library, and a "last backed up" line (with a nudge after a month) under the Library.
+- **Older saved songs** are brought up to date by one tested function, so an update never loses a scratchpad.
+- **Unsaved songs** tell you they use the normal engine when native audio is on.
+- **Reset app preferences** (Settings): puts the theme, panels, live-input and native-audio choices back to how they start, without touching songs, setlists or separation settings.
+- **Accessibility:** a visible keyboard focus ring on every control; bar-accuracy colours also shown by an outline.
+- **Documents:** `FAQ.md`, `PRIVACY.md`, `LICENCES.md` (dependency licences), bug-report and suggestion forms on GitHub.
+
 ## Known limits
 See "Honest limitations" in `README.md` and "Known limits" at the end of `TEST_CHECKLIST.md`. In short: chord detection is a first draft (about 60–75% right); the playing Trainer is for pitched parts only; drum grids finer than sixteenths are rounded; native audio needs a saved song and shared sample rates.

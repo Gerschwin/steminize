@@ -1,0 +1,16 @@
+name: Suggest something
+description: An idea or a feature you'd like
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like to be able to do?
+      description: Describe what you are trying to achieve, not just the feature, so it can be solved the best way.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why would it help?
+      description: How you practise or play, and where this gets in the way today.

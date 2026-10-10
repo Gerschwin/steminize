@@ -24,32 +24,32 @@ needed for 1.0.
 ### 3. A good first run
 - [ ] A short welcome: what the app does, what will be downloaded and how big it is, and that nothing is uploaded. (Claude)
 - [ ] A bundled sample song (royalty-free) so a new user can try the player before importing or downloading a model. Needs a song with a usable licence. (Neil to choose, Claude to add)
-- [ ] A clear message when a song is too long or the machine too small (memory), instead of a stall or a crash. (Claude)
+- [x] A clear message when a song is too long or the machine too small: a warning before separating a long file, and the out-of-memory message already in place.
 - [ ] The model download explains itself (size, one-off, works offline afterwards) and can be cancelled and resumed. (Claude)
 
 ### 4. Data safety
-- [ ] The saved-song format is frozen, with tests that open songs saved by older versions, so an update never loses a library. (Claude)
-- [ ] A disk-space check before saving a song, and a reminder to back up. (Claude)
+- [x] Older saved songs are brought up to date by one tested function (`normaliseScratch`), covering the single-tab, old drum box and deleted-part cases. Still to do: a frozen written-down format description and tests with real saved files from each release.
+- [x] A disk-space check before saving a song, and a "last backed up" reminder under the Library.
 - [x] Back up and restore the whole library as one zip.
 
 ### 5. Legal and licensing
-- [ ] A full dependency licence report (npm and Rust), checked against the MIT licence and the About credits. (Claude)
+- [x] A full dependency licence report (`LICENCES.md`, regenerate with `node scripts/licence-report.mjs`). Findings: two LGPL web libraries (soundtouchjs, lamejs) that matter only for a closed-source version, a few unmodified MPL Rust crates, and one dev-only build tool. Still to do for Neil: read it before deciding on a paid version.
 - [ ] Decision on **From YouTube**: remove, make opt-in, or keep, given the platform-terms risk. (Neil)
 - [ ] Decision on the licence and any paid version before 1.0 (see the paid-version note in `BACKLOG.md`). Published code stays MIT either way. (Neil)
 - [x] About shows what uses the network, credits and licences; nothing is uploaded.
-- [ ] A short privacy statement on the website. (Claude)
+- [x] A privacy statement (`PRIVACY.md`, matching the About dialog).
 
 ### 6. Help and a front door
 - [x] README with features, install steps and honest limitations.
-- [ ] A simple website or page with screenshots, a getting-started guide, an FAQ (including the unsigned-installer steps until signing is done) and how to report a bug. (Claude)
-- [ ] A bug-report template on GitHub that asks for the Copy diagnostic info text. (Claude)
+- [x] An FAQ (`FAQ.md`, including the unsigned-installer steps and how to report a bug). Still to do: a simple website page with screenshots and a getting-started guide.
+- [x] Bug-report and suggestion templates on GitHub that ask for the Copy diagnostic info text.
 - [x] Release notes on every release (the changelog).
 
 ## Should have
-- [ ] Unsaved songs in the native engine: auto-save them, or say clearly that they use the normal engine. (Claude)
-- [ ] Accessibility basics: keyboard navigation through the main controls, readable contrast, a larger-text option, and bar-accuracy colours that don't rely on red / green alone. (Claude)
+- [x] Unsaved songs in the native engine now say clearly that they use the normal engine.
+- [ ] Accessibility basics: done so far: a visible keyboard focus ring everywhere, and bar-accuracy colours also shown by an outline (dashed or heavy). Still to do: a keyboard walk-through of the main controls, a contrast check, and a larger-text option. (Claude)
 - [ ] Desktop-only features say so in the interface (native audio, From YouTube) instead of just being absent in the browser. (Claude)
-- [ ] Settings: a reset-to-defaults, and one place that shows every setting. (Claude)
+- [x] Settings: a Reset for app preferences that never touches songs or setlists (separation settings already had one).
 - [ ] Merge `native-audio` into `main` (this redeploys the website). Only after the checklist run. (Neil to say go, Claude to do)
 
 ## Already in place for 1.0
