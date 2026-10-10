@@ -135,6 +135,7 @@ E|-0---0---0---0---|
 - [ ] **Simple** turns every chord into plain major or minor (a G7 or Gsus4 shows G, an Am7 shows Am, a C/E shows C); it survives reopening.
 - [ ] Change the pitch: the chord names on the timeline move with it. Correct a chord in the Chords lane: the timeline updates.
 - [ ] **Chord diagrams** drop-down (No diagrams / Guitar / Ukulele / Piano chords): choose Guitar and two diagrams appear under the timeline, **Now** and **Next** (with "in N beats"); they change as the music plays. Try a few chords you know (C, G, Am, F, Bm, E7) and check the shapes are playable and correct; barre chords show a bar across the strings and a fret number when high up the neck. Ukulele and Piano the same; the choice survives reopening the song.
+- [ ] **Capo** drop-down: choosing Capo 3 changes the timeline names and diagrams to the lower shapes (a C becomes an A) and says so beside the diagrams; the sound is unchanged. **Suggest** picks a capo and a message lists the main shapes (a song in A-flat should give Capo 1: G, C, D, Em). The choice survives reopening; the piano ignores the capo.
 - [ ] With Simple on, the diagrams show the plain chord; shift the pitch and the diagrams move with the names.
 - [ ] With the timeline on, nothing else slows down (waveform scrubbing, tab follow-along, loops).
 

@@ -37,7 +37,7 @@ import { backupNote, fmtBytes, spaceNeeded, spaceStatus } from '../src/library/s
 import { voiceSlots } from '../src/ui/drumStaff.ts';
 import { DRUM_VOICES, drumMidi, hitStyle, parseDrums, voiceOfLabel } from '../src/lyrics/drumTab.ts';
 import { PART_IDS, defaultTrack, isBuiltinPart, legacyTabPart, newPartId, normaliseScratch, partKind, stringCount } from '../src/lyrics/tabParts.ts';
-import { CHORD_TONES, fretShape, pianoKeys, shapeIsRight } from '../src/analysis/chordShapes.ts';
+import { CHORD_TONES, chordCost, fretShape, pianoKeys, shapeIsRight, suggestCapo } from '../src/analysis/chordShapes.ts';
 import { QUALITIES } from '../src/analysis/chords.ts';
 import { BarTally, barColour, barCue, barPercent, barTip } from '../src/lyrics/barScores.ts';
 
@@ -1233,6 +1233,12 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('shapes: F and B minor on guitar are the usual barre chords', fr('guitar', 5, '') === '1,3,3,2,1,1' && fr('guitar', 11, 'm') === '-1,2,4,4,3,2', fr('guitar', 5, '') + ' ' + fr('guitar', 11, 'm'));
   ok('shapes: a slash chord on guitar has its bass note lowest', (() => { const sh = fretShape('guitar', 0, '', 4)!; return shapeIsRight('guitar', sh.frets, 0, '', 4); })());
   ok('shapes: piano keys are the chord notes within an octave of the root', pianoKeys(0, '').join() === '0,4,7' && pianoKeys(11, '9').join() === '11,13,15,18,21' && Math.max(...pianoKeys(11, '9')) < 24);
+  const cs = (names: [number, string][]) => names.map(([root, q]) => ({ root, q: q as (typeof QUALITIES)[number], dur: 1 }));
+  ok('capo: a song in G with open chords needs no capo', suggestCapo('guitar', cs([[7, ''], [0, ''], [2, ''], [4, 'm']])).capo === 0);
+  ok('capo: a song in A-flat is easiest with the capo on 1 (G, C, D, Em shapes)', suggestCapo('guitar', cs([[8, ''], [1, ''], [3, ''], [5, 'm']])).capo === 1);
+  ok('capo: a song in B-flat major is easiest with the capo on 3 (G shapes)', suggestCapo('guitar', cs([[10, ''], [3, ''], [5, ''], [7, 'm']])).capo === 3);
+  ok('capo: chord time counts, a long chord outweighs a short one', suggestCapo('guitar', [{ root: 7, q: '', dur: 10 }, { root: 6, q: '', dur: 1 }]).capo === 0);
+  ok('capo: open chords cost nothing and barre chords cost something', chordCost('guitar', 0, '') === 0 && chordCost('guitar', 5, '') === 1);
   ok('shapes: every quality has a note list', QUALITIES.every((q) => CHORD_TONES[q]?.length >= 2));
 }
 

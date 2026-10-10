@@ -852,11 +852,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 
 /* The scrolling chord timeline */
-.chord-strip-lane .lane-ctl { grid-template-columns: 1fr auto auto; row-gap: 4px; }
-.chord-strip-lane .lane-ctl .name { grid-column: 1 / -1; }
-.chord-strip-lane .lane-ctl .switch { grid-column: 1; }
+.chord-strip-lane .lane-ctl { display: flex; flex-wrap: wrap; row-gap: 4px; align-content: flex-start; }
+.chord-strip-lane .lane-ctl .name { flex-basis: 100%; }
 .chord-strip-lane .wave { height: 104px; cursor: pointer; }
-.chord-strip-lane .lane-ctl select { grid-column: 1; max-width: 100%; }
+.chord-strip-lane .lane-ctl select { max-width: 100%; }
 .chord-shapes { display: flex; flex-wrap: wrap; gap: 10px 22px; padding: 6px 12px 8px; align-items: flex-start; }
 .chord-shapes[hidden] { display: none; }
 .chord-shape { display: flex; flex-direction: column; gap: 3px; min-width: 120px; }
@@ -865,5 +864,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .cs-label { font-size: 11px; opacity: .6; text-transform: uppercase; letter-spacing: .04em; }
 .cs-name { font-weight: 700; font-size: 18px; }
 .cs-extra { font-size: 11px; opacity: .6; }
+.cs-capo { align-self: center; max-width: 220px; font-size: 12px; opacity: .7; }
 .cs-none { font-size: 12px; opacity: .5; padding: 14px 0; }
 .chord-svg { display: block; }

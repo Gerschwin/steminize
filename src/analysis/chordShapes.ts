@@ -219,3 +219,27 @@ export function pianoKeys(root: number, q: Quality): number[] {
   const iv = CHORD_TONES[q] ?? CHORD_TONES[''];
   return iv.map((i) => root + (i % 12)).sort((a, b) => a - b); // kept within an octave of the root, so a ninth sits close in
 }
+
+const LETTERS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+/** How awkward a chord is on the guitar or ukulele: 0 for a common open chord, 1 for anything that needs a barre or a search. */
+export function chordCost(instrument: 'guitar' | 'ukulele', root: number, q: Quality): number {
+  const table = instrument === 'guitar' ? OPEN_GUITAR : OPEN_UKULELE;
+  return `${LETTERS[((root % 12) + 12) % 12]}:${q}` in table ? 0 : 1;
+}
+
+/**
+ * The capo position (0 to 7) that makes a song's chords easiest: the one where the most chord time is spent on common open shapes.
+ * `chords` are the sounding chords with how long each lasts; a tie goes to the lower capo. Returns the cost of each position too.
+ */
+export function suggestCapo(instrument: 'guitar' | 'ukulele', chords: { root: number; q: Quality; dur: number }[]): { capo: number; costs: number[] } {
+  const costs: number[] = [];
+  for (let capo = 0; capo <= 7; capo++) {
+    let c = 0;
+    for (const ch of chords) if (ch.root >= 0) c += ch.dur * chordCost(instrument, ch.root - capo, ch.q);
+    costs.push(c + capo * 0.02); // a small push towards no capo when it makes no difference
+  }
+  let best = 0;
+  costs.forEach((c, i) => { if (c < costs[best] - 1e-9) best = i; });
+  return { capo: best, costs };
+}

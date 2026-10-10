@@ -8,7 +8,7 @@
 import { background } from '../encode/client.ts';
 import { BINS, CQT_FPS, NOTE_HI, NOTE_LO, noteName, type Cqt } from '../analysis/cqt.ts';
 import { beatCells, beatPositionAt, displayName, simplifyChord, type BeatCell } from '../analysis/chordStrip.ts';
-import type { Instrument } from '../analysis/chordShapes.ts';
+import { suggestCapo, type Instrument } from '../analysis/chordShapes.ts';
 import { chordDiagram } from './chordDiagram.ts';
 import { QUALITIES, chordName, chordSheet, detectChords, mergeSame, noteLetter, prefersSharps, type Chord, type Quality } from '../analysis/chords.ts';
 import { cancelTranscribe, transcribe } from '../analysis/transcribe.ts';
@@ -77,6 +77,8 @@ export interface TxState {
   stripZoom?: number;
   /** Chord diagrams under the timeline: for which instrument, or none. */
   shapes?: Instrument | '';
+  /** Capo fret (0 = none): the timeline and diagrams then show the shapes to play, not the sounding chords. */
+  capo?: number;
 }
 
 // Heat-map palette for the note view: dark → violet → orange → yellow.
@@ -145,6 +147,8 @@ export class Transcribe {
   private shapeSel: HTMLSelectElement;
   private shapesRow: HTMLElement;
   private shapeKey = '';
+  private capo = 0;
+  private capoSel: HTMLSelectElement;
   private cells: { chords: Chord[]; beats: number[]; downbeat: number; perBar: number; list: BeatCell[] } | null = null;
   /** Where the timeline last drew the playhead, so a click can be turned back into a beat. */
   private stripGeom = { cur: 0, hold: 0, cw: 78 };
@@ -201,6 +205,15 @@ export class Transcribe {
       this.host.changed();
     };
     this.shapeSel = shapeSel;
+    const capoSel = h(
+      'select',
+      { class: 'tiny', title: 'With a capo, the timeline and diagrams show the shapes to play (the sound is the same)', 'aria-label': 'Capo' },
+      ...Array.from({ length: 10 }, (_, i) => h('option', { value: String(i) }, i === 0 ? 'No capo' : `Capo ${i}`)),
+    ) as HTMLSelectElement;
+    capoSel.onchange = () => this.setCapo(Number(capoSel.value));
+    this.capoSel = capoSel;
+    const capoBtn = h('button', { class: 'btn tiny ghost', type: 'button', title: 'Pick the capo position that gives the easiest shapes for this song' }, 'Suggest');
+    capoBtn.onclick = () => this.suggestCapoNow();
     this.shapesRow = h('div', { class: 'chord-shapes', hidden: true, 'aria-live': 'off' });
     const zoomOut = h('button', { class: 'btn tiny ghost', type: 'button', title: 'Show fewer beats' }, '−');
     const zoomIn = h('button', { class: 'btn tiny ghost', type: 'button', title: 'Show more of each beat' }, '+');
@@ -217,6 +230,8 @@ export class Transcribe {
         h('span', { class: 'name' }, 'Chord timeline'),
         h('label', { class: 'switch', title: 'Plain major and minor chords only: no sevenths, sus or slash chords' }, simpleBox, ' Simple'),
         shapeSel,
+        capoSel,
+        capoBtn,
         zoomOut,
         zoomIn,
       ),
@@ -453,6 +468,8 @@ export class Transcribe {
     this.simpleBox.checked = this.simple;
     this.shapes = st?.shapes === 'guitar' || st?.shapes === 'ukulele' || st?.shapes === 'piano' ? st.shapes : '';
     this.shapeSel.value = this.shapes;
+    this.capo = Math.max(0, Math.min(9, Math.round(st?.capo ?? 0)));
+    this.capoSel.value = String(this.capo);
     this.shapeKey = '';
     this.stripZoom = Math.max(0.5, Math.min(2.5, st?.stripZoom ?? 1));
     this.show({ notes: st?.notes ?? this.notesOn, chords: st?.chords ?? this.chordsOn, strip: st?.strip ?? this.stripOn }, false);
@@ -464,7 +481,7 @@ export class Transcribe {
 
   getState(): TxState {
     const s = this.host.song();
-    return { notes: this.notesOn, chords: this.chordsOn, strip: this.stripOn, simple: this.simple, stripZoom: this.stripZoom, shapes: this.shapes, source: this.source, chordList: s?.chords, midi: s?.midi, notesHeight: this.notesHeight };
+    return { notes: this.notesOn, chords: this.chordsOn, strip: this.stripOn, simple: this.simple, stripZoom: this.stripZoom, shapes: this.shapes, capo: this.capo, source: this.source, chordList: s?.chords, midi: s?.midi, notesHeight: this.notesHeight };
   }
 
   private show(p: { notes?: boolean; chords?: boolean; strip?: boolean }, save = true) {
@@ -830,8 +847,8 @@ export class Transcribe {
     const hold = w * 0.28;
     const cur = beatPositionAt(beats, this.host.smoothPos() / SR);
     this.stripGeom = { cur, hold: hold / dpr, cw: cw / dpr };
-    const shift = this.host.pitch();
-    const sharps = this.sharps();
+    const shift = this.shapeShift();
+    const sharps = this.sharps(-this.capoNow());
     const names = (cell?: BeatCell) => (cell && cell.chord >= 0 ? displayName(chords[cell.chord], shift, sharps, this.simple) : '');
     const curCell = list[Math.max(0, Math.min(list.length - 1, Math.floor(cur)))];
     const curName = names(curCell);
@@ -891,10 +908,10 @@ export class Transcribe {
     }
     const nextName = next >= 0 ? names(list[next]) : '';
     const away = next >= 0 ? next - at : 0;
-    const key = `${this.shapes}|${nowName}|${nextName}|${away}|${this.simple}`;
+    const key = `${this.shapes}|${nowName}|${nextName}|${away}|${this.simple}|${this.capoNow()}`;
     if (key === this.shapeKey) return;
     this.shapeKey = key;
-    const shift = this.host.pitch();
+    const shift = this.shapeShift();
     const block = (label: string, name: string, idx: number, extra = '') => {
       const c = idx >= 0 && list[idx].chord >= 0 ? chords[list[idx].chord] : undefined;
       const d = c ? (this.simple ? simplifyChord(c) : c) : undefined;
@@ -902,7 +919,8 @@ export class Transcribe {
       const svg = d && this.shapes ? chordDiagram(this.shapes, wrap(d.root), d.q, d.bass == null ? undefined : wrap(d.bass)) : null;
       return h('div', { class: `chord-shape ${label === 'Now' ? 'now' : ''}` }, h('div', { class: 'cs-head' }, h('span', { class: 'cs-label' }, label), h('span', { class: 'cs-name' }, name || '–'), extra ? h('span', { class: 'cs-extra' }, extra) : ''), svg ?? h('div', { class: 'cs-none' }, name ? 'No diagram' : ''));
     };
-    this.shapesRow.replaceChildren(block('Now', nowName, at), block('Next', nextName, next, next >= 0 ? `in ${away} beat${away === 1 ? '' : 's'}` : ''));
+    const capo = this.capoNow();
+    this.shapesRow.replaceChildren(block('Now', nowName, at), block('Next', nextName, next, next >= 0 ? `in ${away} beat${away === 1 ? '' : 's'}` : ''), ...(capo ? [h('div', { class: 'cs-capo' }, `Capo ${capo}: these are the shapes to play with the capo on fret ${capo}. The sound is the same.`)] : []));
   }
 
   /** A click on the timeline: the top strip is a bar number (loop that bar); anywhere else jumps to that beat. */
@@ -926,10 +944,55 @@ export class Transcribe {
   }
 
   // ---------- chords ----------
-  private sharps() {
-    // Spell for the key you hear (after any pitch shift).
+  /** The capo fret in use: none for the piano, which has no capo. */
+  private capoNow() {
+    return this.shapes === 'piano' ? 0 : this.capo;
+  }
+
+  /** How far the timeline and diagrams move the chords: the pitch shift, less the capo (with a capo you play shapes that many frets lower). */
+  private shapeShift() {
+    return this.host.pitch() - this.capoNow();
+  }
+
+  private setCapo(n: number) {
+    this.capo = Math.max(0, Math.min(9, n));
+    this.capoSel.value = String(this.capo);
+    this.shapeKey = '';
+    this.host.changed();
+    this.host.redraw();
+  }
+
+  /** Picks the capo that puts the most chord time on common open shapes, and says which shapes that gives. */
+  private suggestCapoNow() {
+    const s = this.host.song();
+    if (!s?.chords?.length) {
+      toast('Detect the chords first (open Timeline or Chords)');
+      return;
+    }
+    const inst = this.shapes === 'ukulele' ? 'ukulele' : 'guitar';
+    const pitch = this.host.pitch();
+    const time = new Map<string, { root: number; q: Quality; dur: number }>();
+    for (const c of s.chords) {
+      if (c.root < 0) continue;
+      const d = this.simple ? simplifyChord(c) : c;
+      const root = (((d.root + pitch) % 12) + 12) % 12;
+      const k = `${root}${d.q}`;
+      const e = time.get(k) ?? { root, q: d.q, dur: 0 };
+      e.dur += c.end - c.start;
+      time.set(k, e);
+    }
+    const { capo } = suggestCapo(inst, [...time.values()]);
+    if (this.shapes === 'piano') this.shapes = 'guitar', (this.shapeSel.value = 'guitar');
+    this.setCapo(capo);
+    this.show({});
+    const top = [...time.values()].sort((a, b) => b.dur - a.dur).slice(0, 4).map((e) => chordName({ root: e.root - capo, q: e.q }, 0, this.sharps(-capo)));
+    toast(capo === 0 ? `No capo needed: ${top.join(', ')}` : `Capo ${capo}: play ${top.join(', ')}`);
+  }
+
+  private sharps(extra = 0) {
+    // Spell for the key you hear (after any pitch shift), or for the shapes you play with a capo.
     const k = this.host.key();
-    return prefersSharps(k && { tonic: (((k.tonic + this.host.pitch()) % 12) + 12) % 12, mode: k.mode });
+    return prefersSharps(k && { tonic: (((k.tonic + this.host.pitch() + extra) % 12) + 12) % 12, mode: k.mode });
   }
 
   private chordAt(t: number) {
