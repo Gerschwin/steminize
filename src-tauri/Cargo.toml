@@ -1,6 +1,6 @@
 [package]
 name = "steminize"
-version = "0.9.3"
+version = "0.9.4"
 description = "A practice studio for musicians: stem separation, practice tools and tab, all on your own machine"
 edition = "2021"
 license = "MIT"

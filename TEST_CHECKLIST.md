@@ -49,7 +49,7 @@ E|-0---0---0---0---|
 
 - [ ] The installer for your platform installs and the app opens (note the OS and version).
 - [ ] Linux AppImage: opens, and a saved song opens and plays (it used to sit on "Opening…").
-- [ ] The version number in the header matches the release (0.9.3).
+- [ ] The version number in the header matches the release (0.9.4).
 - [ ] **ⓘ About** shows the version, what uses the network, credits and licences, and a Support link that opens in your browser.
 - [ ] **Check for updates** (desktop) says whether a newer version exists; for 0.x it should only mention newer 0.x pre-releases.
 - [ ] **Copy diagnostic info** copies a plain-text summary (try pasting it); it holds no song names or personal details.
@@ -126,7 +126,7 @@ E|-0---0---0---0---|
 - [ ] **Chords** detected along the bar grid; click a chord to correct it (suggestions, root/type, slash bass, split); corrections are marked and kept after reopening; **Chart ⤓** saves a text chart using your markers as sections, transposed if pitch is shifted.
 - [ ] **To MIDI** for a stem and for all parts; **MIDI ⤓** saves one MIDI file at the song's tempo.
 
-### 8b. Chord timeline (NEW)
+### 8b. Chord timeline, diagrams, capo (NEW in 0.9.4)
 - [ ] **Timeline** (next to Chords and Notes) opens a strip: it says "Detecting chords…" at first, then shows beat boxes. A song with no tempo detected says it is waiting for the tempo.
 - [ ] Press play: the beats slide past a fixed line, smoothly (not in steps); the current beat is lit; beats of the same chord as now are tinted; each new chord shows its name and the beats it carries on through show dashes.
 - [ ] Bar numbers run along the top at each bar line, and match the Tempo & key bar grid (try **½× / 2×** correction and see the bars change).

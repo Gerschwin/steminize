@@ -1,7 +1,6 @@
 # Steminize: features
 
-Everything the app does as of 2026-10-10 (branch `native-audio`). **Released** means it is in v0.9.3 or earlier. **Next release** means it
-is built and on the branch but not yet in an installer. Ideas that are not built are in `BACKLOG.md`; what 1.0 needs is in `V1_CRITERIA.md`.
+Everything the app does as of 2026-10-10 (branch `native-audio`, version 0.9.4). **Released** means it is in v0.9.3 or earlier; **Released in 0.9.4** means it is new in that pre-release. Ideas that are not built are in `BACKLOG.md`; what 1.0 needs is in `V1_CRITERIA.md`.
 
 Where it works: the desktop app (Windows, macOS, Linux) and the web app (installable on desktop and phone) are the same code. A few features
 are desktop only and are marked **[desktop]**.
@@ -35,9 +34,9 @@ are desktop only and are marked **[desktop]**.
 
 ## Understanding the music
 - **Notes view:** which notes are sounding over time (one row per semitone, E1 to C7), for all parts or one stem, with a keyboard you can click, zoom and play from your computer keyboard. Released.
-- **Chord timeline:** a scrolling row of beat boxes in time with the music: the chord shown where it starts, the current beat lit, bar numbers along the top; click a beat to jump to it or a bar number to loop it; zoom the beat width; a **Simple** switch for plain major and minor chords only; follows a pitch shift. Next release.
-- **Chord diagrams:** under the timeline, how to play the chord now and the next one (with the number of beats until it) as a guitar or ukulele fingering, or on a piano keyboard; they follow the Simple switch and pitch shift. Next release.
-- **Capo:** a Capo setting (1 to 9) shows the timeline and diagrams as the shapes to play with the capo on; **Suggest** picks the capo that makes most of the song open chords. Next release.
+- **Chord timeline:** a scrolling row of beat boxes in time with the music: the chord shown where it starts, the current beat lit, bar numbers along the top; click a beat to jump to it or a bar number to loop it; zoom the beat width; a **Simple** switch for plain major and minor chords only; follows a pitch shift. Released in 0.9.4.
+- **Chord diagrams:** under the timeline, how to play the chord now and the next one (with the number of beats until it) as a guitar or ukulele fingering, or on a piano keyboard; they follow the Simple switch and pitch shift. Released in 0.9.4.
+- **Capo:** a Capo setting (1 to 9) shows the timeline and diagrams as the shapes to play with the capo on; **Suggest** picks the capo that makes most of the song open chords. Released in 0.9.4.
 - **Freeze:** hold the sound at the playhead as a steady tone. Released.
 - **Chords:** detected per beat along the bar grid using the separated bass; click a chord to correct it (corrections are kept per song); **Chart ⤓** saves a text chord chart with your markers as sections, transposed if you've shifted the pitch. Released.
 - **To MIDI** (Basic Pitch) for a stem or the whole mix, and **MIDI ⤓** to save one file at the song's tempo. Released.
@@ -52,9 +51,9 @@ are desktop only and are marked **[desktop]**.
 - **Latency tools:** Measure (output patched to an input, or speakers near a mic), a typed value, and **Line up** (nudge a take against the beat lines, then Use as latency). **Low-latency audio** option. Released in 0.9.2.
 
 ## Tab and notation (Scratchpad)
-- **Five tabs:** Lyrics, Guitar, Bass, Drums, Notes; each song keeps its own text. Next release.
-- **Parts:** double-click Guitar / Bass / Drums to rename; a **+** button adds any number of extra parts (second guitar, keys, anything); **Delete part** for ones you added. Next release.
-- **Track link:** each part has a **Track** dropdown (defaults to the matching track by name; guitar goes to "other" in a 4-stem split); the linked track is outlined, gets a small **Tab** button that jumps to the tab, and **Play without …** mutes it so you play that part yourself. Works for multitracks. Next release.
+- **Five tabs:** Lyrics, Guitar, Bass, Drums, Notes; each song keeps its own text. Released in 0.9.4.
+- **Parts:** double-click Guitar / Bass / Drums to rename; a **+** button adds any number of extra parts (second guitar, keys, anything); **Delete part** for ones you added. Released in 0.9.4.
+- **Track link:** each part has a **Track** dropdown (defaults to the matching track by name; guitar goes to "other" in a 4-stem split); the linked track is outlined, gets a small **Tab** button that jumps to the tab, and **Play without …** mutes it so you play that part yourself. Works for multitracks. Released in 0.9.4.
 - **Tab+ (Guitar, Bass and added parts):** type or paste ASCII tab and tap it in time (one tap is enough with a detected tempo). **Follow along** draws it as engraved notation that scrolls with the music. Released.
   - Notation: rhythm line and time signatures, hammer-ons, pull-offs, slides, bends and pre-bends, vibrato, harmonics, taps, repeats (including `x3`), picking, fingering and palm-mute marks, joins across bar lines; a **Symbols** reference. Released.
   - Editing: click a note and press a key for its length; arrow keys move between notes and bars. Released.
@@ -62,9 +61,9 @@ are desktop only and are marked **[desktop]**.
   - **Staff** shows real notation under the tab. Released.
   - **Trainer:** listens through Live input and marks each note right or wrong, with a running score; bends and pre-bends handled. Released.
   - **Bar-accuracy colours:** each bar number is coloured by how well that bar was last played (green clean to red missed), with the count on hover, saved per song, and **Clear bar colours**. Released in 0.9.3.
-- **Drum notation:** the Drums part takes a drum grid (one row per kit piece such as `HH`, `SD`, `BD`, `CC`; one column per sixteenth; `x` hit, `X` accent, `o` open hi-hat, `g` ghost) and draws it as a percussion staff (hands up, kick down, x heads for hi-hat and cymbals, rests, beams, bar numbers, repeats); follows along like a guitar tab with taps, bar loops, repeats and Ear; has its own Symbols legend. Next release.
+- **Drum notation:** the Drums part takes a drum grid (one row per kit piece such as `HH`, `SD`, `BD`, `CC`; one column per sixteenth; `x` hit, `X` accent, `o` open hi-hat, `g` ghost) and draws it as a percussion staff (hands up, kick down, x heads for hi-hat and cymbals, rests, beams, bar numbers, repeats); follows along like a guitar tab with taps, bar loops, repeats and Ear; has its own Symbols legend. Released in 0.9.4.
 - **Lyrics:** plain, or synced (LRC) with Follow along, click a line to jump, a timing nudge, and Import .lrc. Released.
-- **Chords over the lyrics:** with synced lyrics in Follow along, a **Chords** button writes each chord above the word where it changes, like a chord sheet; the chord sounding now is lit. It uses the same names as the timeline (Simple, pitch shift, capo) and redraws when you correct a chord. Chords are placed by their time within each line (lyrics are timed by line, not by word), so they are close, not exact. Next release.
+- **Chords over the lyrics:** with synced lyrics in Follow along, a **Chords** button writes each chord above the word where it changes, like a chord sheet; the chord sounding now is lit. It uses the same names as the timeline (Simple, pitch shift, capo) and redraws when you correct a chord. Chords are placed by their time within each line (lyrics are timed by line, not by word), so they are close, not exact. Released in 0.9.4.
 - **Float** the Scratchpad as a movable, resizable window. Released.
 
 ## Native audio engine [desktop] (experimental)
@@ -79,11 +78,11 @@ are desktop only and are marked **[desktop]**.
 - **Desktop app** for Windows (`.exe`, `.msi`), macOS (`.dmg`) and Linux (`.deb`, `.rpm`, AppImage), built by CI; the web app installs on desktop and phone. Released.
 - **About:** version, what uses the network, credits and licences, a Support link, **Check for updates** [desktop], and **Copy diagnostic info** for bug reports. Released.
 - **Support:** a PayPal link in About and the README, and a Sponsor button on the repository. Released.
-- **Appearance:** dark theme by default, a light theme, remembered. No flash of the wrong theme at start, and the desktop window starts dark. Next release.
-- **No stray text selection** and no ghost image when dragging controls or resizing a track. Next release.
+- **Appearance:** dark theme by default, a light theme, remembered. No flash of the wrong theme at start, and the desktop window starts dark. Released in 0.9.4.
+- **No stray text selection** and no ghost image when dragging controls or resizing a track. Released in 0.9.4.
 - **Export:** single stems, all stems (folder or ZIP), or "what you hear" as a mix with your levels, loop, tempo and pitch applied. Released.
 
-## Safety and help (next release)
+## Safety and help (0.9.4)
 - **Before separating a very long file** (about 15 minutes or more, or more than the machine's memory allows) a heads-up with what to try if it stalls.
 - **Disk-space check** before saving a song to the library, and a "last backed up" line (with a nudge after a month) under the Library.
 - **Older saved songs** are brought up to date by one tested function, so an update never loses a scratchpad.
