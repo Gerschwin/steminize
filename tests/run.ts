@@ -31,6 +31,7 @@ import { placeTake, shiftTake } from '../src/player/placement.ts';
 import { StreamResampler } from '../src/player/resample.ts';
 import { withTimeout } from '../src/engine/timeout.ts';
 import { separationMemory, songSizeWarning } from '../src/engine/sizeHint.ts';
+import { beatCells, beatPositionAt, displayName, simplifyChord, timeAtBeat } from '../src/analysis/chordStrip.ts';
 import { APP_PREFERENCE_KEYS, resetAppPreferences } from '../src/prefs.ts';
 import { backupNote, fmtBytes, spaceNeeded, spaceStatus } from '../src/library/safety.ts';
 import { voiceSlots } from '../src/ui/drumStaff.ts';
@@ -1178,6 +1179,34 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('prefs: setlists, the last-backup time, separation settings and other apps\' keys are left alone', store.get('steminize.setlist.active') === 'abc' && store.get('steminize.lastBackup') === '123' && store.get('steminize.settings') === '{"model":"htdemucs"}' && store.get('something.else') === 'x');
   ok('prefs: nothing that looks like a library or setlist key is in the list', APP_PREFERENCE_KEYS.every((k) => !/setlist|library|backup|settings$/.test(k)));
   ok('prefs: a store that throws does not break the reset', resetAppPreferences({ removeItem: () => { throw new Error('blocked'); } }) === APP_PREFERENCE_KEYS.length);
+}
+
+// ---- the chord timeline's logic
+{
+  const ch = (start: number, end: number, root: number, q: string, extra: object = {}) => ({ start, end, root, q, ...extra }) as any;
+  ok('chords: sevenths, sixths, sus, add, power and augmented chords simplify to plain major', ['7', 'maj7', 'sus2', 'sus4', 'add9', '5', '6', '9', 'aug', ''].every((q) => simplifyChord(ch(0, 1, 0, q)).q === ''));
+  ok('chords: minor sevenths, sixths and diminished chords simplify to plain minor', ['m', 'm7', 'm6', 'dim'].every((q) => simplifyChord(ch(0, 1, 9, q)).q === 'm'));
+  ok('chords: a slash bass is dropped and the root kept; no chord stays no chord', simplifyChord(ch(0, 1, 0, '', { bass: 4 })).bass === undefined && simplifyChord(ch(0, 1, 7, '7')).root === 7 && simplifyChord(ch(0, 1, -1, '')).root === -1);
+  ok('chords: the name shown follows the pitch shift, the key spelling and the simple switch', displayName(ch(0, 1, 0, 'maj7'), 2, false, false) === 'Dmaj7' && displayName(ch(0, 1, 0, 'maj7'), 2, false, true) === 'D' && displayName(ch(0, 1, 9, 'm7', { bass: 0 }), 0, false, true) === 'Am' && displayName(undefined, 0, false, false) === '' && displayName(ch(0, 1, -1, ''), 0, false, false) === 'N.C.');
+  ok('chords: the input chord is not changed by simplifying', (() => { const c = ch(0, 1, 0, '7', { bass: 4 }); simplifyChord(c); return c.q === '7' && c.bass === 4; })());
+
+  const beats = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5];
+  const chords = [ch(0, 1, 0, ''), ch(1, 2, 7, ''), ch(2, 3.4, 9, 'm')];
+  const cells = beatCells(chords, beats, 0, 4);
+  ok('chords: each beat gets the chord that covers it', cells.map((c) => c.chord).join() === '0,0,1,1,2,2,2,-1');
+  ok('chords: beats are numbered within their bar from the downbeat', cells.map((c) => `${c.bar}.${c.beat}`).join() === '1.0,1.1,1.2,1.3,2.0,2.1,2.2,2.3');
+  const late = beatCells(chords, beats, 2, 4);
+  ok('chords: beats before the first downbeat belong to bar 0 or earlier', late[0].bar === 0 && late[0].beat === 2 && late[1].beat === 3 && late[2].bar === 1 && late[2].beat === 0);
+  ok('chords: a beat with no chord over it has none', beatCells([ch(1, 2, 7, '')], beats, 0, 4).map((c) => c.chord).join() === '-1,-1,0,0,-1,-1,-1,-1');
+  ok('chords: the last beat is given a length from the one before', cells[7].t1 === 4);
+  ok('chords: three beats in a bar (waltz time) and no beats at all both work', beatCells(chords, beats, 0, 3).map((c) => c.bar).join() === '1,1,1,2,2,2,3,3' && beatCells(chords, [], 0, 4).length === 0);
+
+  ok('chords: the position among the beats is fractional and exact on a beat', beatPositionAt(beats, 0) === 0 && beatPositionAt(beats, 1) === 2 && Math.abs(beatPositionAt(beats, 1.25) - 2.5) < 1e-9);
+  ok('chords: before the first beat and after the last, it carries on at the nearest tempo', beatPositionAt(beats, -0.5) === -1 && beatPositionAt(beats, 4) === 8);
+  ok('chords: with an uneven tempo it follows the real beats', Math.abs(beatPositionAt([0, 1, 1.5, 2], 1.25) - 1.5) < 1e-9);
+  let inverse = true;
+  for (let t = -0.7; t < 4.6; t += 0.137) if (Math.abs(timeAtBeat(beats, beatPositionAt(beats, t)) - t) > 1e-9) inverse = false;
+  ok('chords: time at a beat position is the inverse of the position at a time', inverse && timeAtBeat([0, 1, 1.5, 2], 1.5) === 1.25);
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');
