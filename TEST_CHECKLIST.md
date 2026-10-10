@@ -134,6 +134,8 @@ E|-0---0---0---0---|
 - [ ] **−** and **+** change the width of a beat; the choice survives closing and reopening the song.
 - [ ] **Simple** turns every chord into plain major or minor (a G7 or Gsus4 shows G, an Am7 shows Am, a C/E shows C); it survives reopening.
 - [ ] Change the pitch: the chord names on the timeline move with it. Correct a chord in the Chords lane: the timeline updates.
+- [ ] **Chord diagrams** drop-down (No diagrams / Guitar / Ukulele / Piano chords): choose Guitar and two diagrams appear under the timeline, **Now** and **Next** (with "in N beats"); they change as the music plays. Try a few chords you know (C, G, Am, F, Bm, E7) and check the shapes are playable and correct; barre chords show a bar across the strings and a fret number when high up the neck. Ukulele and Piano the same; the choice survives reopening the song.
+- [ ] With Simple on, the diagrams show the plain chord; shift the pitch and the diagrams move with the names.
 - [ ] With the timeline on, nothing else slows down (waveform scrubbing, tab follow-along, loops).
 
 ## 9. Tuner

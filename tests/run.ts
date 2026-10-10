@@ -37,6 +37,8 @@ import { backupNote, fmtBytes, spaceNeeded, spaceStatus } from '../src/library/s
 import { voiceSlots } from '../src/ui/drumStaff.ts';
 import { DRUM_VOICES, drumMidi, hitStyle, parseDrums, voiceOfLabel } from '../src/lyrics/drumTab.ts';
 import { PART_IDS, defaultTrack, isBuiltinPart, legacyTabPart, newPartId, normaliseScratch, partKind, stringCount } from '../src/lyrics/tabParts.ts';
+import { CHORD_TONES, fretShape, pianoKeys, shapeIsRight } from '../src/analysis/chordShapes.ts';
+import { QUALITIES } from '../src/analysis/chords.ts';
 import { BarTally, barColour, barCue, barPercent, barTip } from '../src/lyrics/barScores.ts';
 
 let failed = 0;
@@ -1207,6 +1209,31 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   let inverse = true;
   for (let t = -0.7; t < 4.6; t += 0.137) if (Math.abs(timeAtBeat(beats, beatPositionAt(beats, t)) - t) > 1e-9) inverse = false;
   ok('chords: time at a beat position is the inverse of the position at a time', inverse && timeAtBeat([0, 1, 1.5, 2], 1.5) === 1.25);
+}
+
+
+{
+  // Chord diagrams: every chord gets a fingering that sounds exactly its notes, within a hand's reach.
+  for (const inst of ['guitar', 'ukulele'] as const) {
+    const bad: string[] = [];
+    let wide = 0;
+    for (let r = 0; r < 12; r++)
+      for (const q of QUALITIES) {
+        const sh = fretShape(inst, r, q);
+        if (!sh) { bad.push(`${r}${q}: none`); continue; }
+        if (!shapeIsRight(inst, sh.frets, r, q)) bad.push(`${r}${q}: wrong notes ${sh.frets.join(',')}`);
+        const f = sh.frets.filter((x) => x > 0);
+        if (f.length && Math.max(...f) - Math.min(...f) > 3) wide++;
+      }
+    ok(`shapes: every root and quality has a correct ${inst} fingering`, bad.length === 0, bad.slice(0, 5).join(' | '));
+    ok(`shapes: no ${inst} fingering stretches more than four frets`, wide === 0);
+  }
+  const fr = (inst: 'guitar' | 'ukulele', r: number, q: (typeof QUALITIES)[number]) => fretShape(inst, r, q)!.frets.join(inst === 'guitar' ? ',' : ',');
+  ok('shapes: C is the open shape on guitar and ukulele', fr('guitar', 0, '') === '-1,3,2,0,1,0' && fr('ukulele', 0, '') === '0,0,0,3', fr('guitar', 0, ''));
+  ok('shapes: F and B minor on guitar are the usual barre chords', fr('guitar', 5, '') === '1,3,3,2,1,1' && fr('guitar', 11, 'm') === '-1,2,4,4,3,2', fr('guitar', 5, '') + ' ' + fr('guitar', 11, 'm'));
+  ok('shapes: a slash chord on guitar has its bass note lowest', (() => { const sh = fretShape('guitar', 0, '', 4)!; return shapeIsRight('guitar', sh.frets, 0, '', 4); })());
+  ok('shapes: piano keys are the chord notes within an octave of the root', pianoKeys(0, '').join() === '0,4,7' && pianoKeys(11, '9').join() === '11,13,15,18,21' && Math.max(...pianoKeys(11, '9')) < 24);
+  ok('shapes: every quality has a note list', QUALITIES.every((q) => CHORD_TONES[q]?.length >= 2));
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

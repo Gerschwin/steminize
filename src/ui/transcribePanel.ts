@@ -7,7 +7,9 @@
 
 import { background } from '../encode/client.ts';
 import { BINS, CQT_FPS, NOTE_HI, NOTE_LO, noteName, type Cqt } from '../analysis/cqt.ts';
-import { beatCells, beatPositionAt, displayName, type BeatCell } from '../analysis/chordStrip.ts';
+import { beatCells, beatPositionAt, displayName, simplifyChord, type BeatCell } from '../analysis/chordStrip.ts';
+import type { Instrument } from '../analysis/chordShapes.ts';
+import { chordDiagram } from './chordDiagram.ts';
 import { QUALITIES, chordName, chordSheet, detectChords, mergeSame, noteLetter, prefersSharps, type Chord, type Quality } from '../analysis/chords.ts';
 import { cancelTranscribe, transcribe } from '../analysis/transcribe.ts';
 import { singleLine, type NoteEvent } from '../analysis/basicPitch.ts';
@@ -73,6 +75,8 @@ export interface TxState {
   strip?: boolean;
   simple?: boolean;
   stripZoom?: number;
+  /** Chord diagrams under the timeline: for which instrument, or none. */
+  shapes?: Instrument | '';
 }
 
 // Heat-map palette for the note view: dark → violet → orange → yellow.
@@ -137,6 +141,10 @@ export class Transcribe {
   private stripOn = false;
   private simple = false;
   private stripZoom = 1;
+  private shapes: Instrument | '' = '';
+  private shapeSel: HTMLSelectElement;
+  private shapesRow: HTMLElement;
+  private shapeKey = '';
   private cells: { chords: Chord[]; beats: number[]; downbeat: number; perBar: number; list: BeatCell[] } | null = null;
   /** Where the timeline last drew the playhead, so a click can be turned back into a beat. */
   private stripGeom = { cur: 0, hold: 0, cw: 78 };
@@ -178,6 +186,22 @@ export class Transcribe {
       this.host.changed();
     };
     this.simpleBox = simpleBox;
+    const shapeSel = h(
+      'select',
+      { class: 'tiny', title: 'Show how to play the current and the next chord', 'aria-label': 'Chord diagrams' },
+      h('option', { value: '' }, 'No diagrams'),
+      h('option', { value: 'guitar' }, 'Guitar chords'),
+      h('option', { value: 'ukulele' }, 'Ukulele chords'),
+      h('option', { value: 'piano' }, 'Piano chords'),
+    ) as HTMLSelectElement;
+    shapeSel.onchange = () => {
+      this.shapes = shapeSel.value as Instrument | '';
+      this.shapeKey = '';
+      this.show({});
+      this.host.changed();
+    };
+    this.shapeSel = shapeSel;
+    this.shapesRow = h('div', { class: 'chord-shapes', hidden: true, 'aria-live': 'off' });
     const zoomOut = h('button', { class: 'btn tiny ghost', type: 'button', title: 'Show fewer beats' }, '−');
     const zoomIn = h('button', { class: 'btn tiny ghost', type: 'button', title: 'Show more of each beat' }, '+');
     zoomOut.onclick = () => this.setStripZoom(this.stripZoom / 1.25);
@@ -192,6 +216,7 @@ export class Transcribe {
         { class: 'lane-ctl x-ctl' },
         h('span', { class: 'name' }, 'Chord timeline'),
         h('label', { class: 'switch', title: 'Plain major and minor chords only: no sevenths, sus or slash chords' }, simpleBox, ' Simple'),
+        shapeSel,
         zoomOut,
         zoomIn,
       ),
@@ -388,7 +413,7 @@ export class Transcribe {
       { capture: true },
     );
 
-    $('xlanes').append(this.stripLane, this.chordLane, this.editor, this.notesLane);
+    $('xlanes').append(this.stripLane, this.shapesRow, this.chordLane, this.editor, this.notesLane);
     $('stripBtn').onclick = () => this.show({ strip: !this.stripOn });
     $('chordsBtn').onclick = () => this.show({ chords: !this.chordsOn });
     $('notesBtn').onclick = () => this.show({ notes: !this.notesOn });
@@ -426,6 +451,9 @@ export class Transcribe {
     this.sourceSel.value = this.source;
     this.simple = st?.simple ?? false;
     this.simpleBox.checked = this.simple;
+    this.shapes = st?.shapes === 'guitar' || st?.shapes === 'ukulele' || st?.shapes === 'piano' ? st.shapes : '';
+    this.shapeSel.value = this.shapes;
+    this.shapeKey = '';
     this.stripZoom = Math.max(0.5, Math.min(2.5, st?.stripZoom ?? 1));
     this.show({ notes: st?.notes ?? this.notesOn, chords: st?.chords ?? this.chordsOn, strip: st?.strip ?? this.stripOn }, false);
     this.refreshMidiButtons();
@@ -436,7 +464,7 @@ export class Transcribe {
 
   getState(): TxState {
     const s = this.host.song();
-    return { notes: this.notesOn, chords: this.chordsOn, strip: this.stripOn, simple: this.simple, stripZoom: this.stripZoom, source: this.source, chordList: s?.chords, midi: s?.midi, notesHeight: this.notesHeight };
+    return { notes: this.notesOn, chords: this.chordsOn, strip: this.stripOn, simple: this.simple, stripZoom: this.stripZoom, shapes: this.shapes, source: this.source, chordList: s?.chords, midi: s?.midi, notesHeight: this.notesHeight };
   }
 
   private show(p: { notes?: boolean; chords?: boolean; strip?: boolean }, save = true) {
@@ -446,6 +474,7 @@ export class Transcribe {
     this.notesLane.hidden = !this.notesOn;
     this.chordLane.hidden = !this.chordsOn;
     this.stripLane.hidden = !this.stripOn;
+    this.shapesRow.hidden = !this.stripOn || !this.shapes;
     pressed($('stripBtn'), this.stripOn);
     if (!this.chordsOn) this.closeEditor();
     if (!this.notesOn) {
@@ -845,9 +874,35 @@ export class Transcribe {
         }
       }
     }
+    this.drawShapes(list, Math.max(0, Math.min(list.length - 1, Math.floor(cur))), curName, names);
     // The playhead.
     g.fillStyle = ink;
     g.fillRect(Math.round(hold), 2 * dpr, Math.max(1, dpr), H - 4 * dpr);
+  }
+
+  /** The chord diagrams under the timeline: how to play the chord now and the next one that differs, with how many beats away it is. Rebuilt only when something changes. */
+  private drawShapes(list: BeatCell[], at: number, nowName: string, names: (c?: BeatCell) => string) {
+    if (!this.shapes) return;
+    const chords = this.host.song()?.chords ?? [];
+    let next = -1;
+    for (let j = at + 1; j < list.length && j <= at + 96; j++) {
+      const n = names(list[j]);
+      if (n && n !== nowName) { next = j; break; }
+    }
+    const nextName = next >= 0 ? names(list[next]) : '';
+    const away = next >= 0 ? next - at : 0;
+    const key = `${this.shapes}|${nowName}|${nextName}|${away}|${this.simple}`;
+    if (key === this.shapeKey) return;
+    this.shapeKey = key;
+    const shift = this.host.pitch();
+    const block = (label: string, name: string, idx: number, extra = '') => {
+      const c = idx >= 0 && list[idx].chord >= 0 ? chords[list[idx].chord] : undefined;
+      const d = c ? (this.simple ? simplifyChord(c) : c) : undefined;
+      const wrap = (n: number) => (((n + shift) % 12) + 12) % 12;
+      const svg = d && this.shapes ? chordDiagram(this.shapes, wrap(d.root), d.q, d.bass == null ? undefined : wrap(d.bass)) : null;
+      return h('div', { class: `chord-shape ${label === 'Now' ? 'now' : ''}` }, h('div', { class: 'cs-head' }, h('span', { class: 'cs-label' }, label), h('span', { class: 'cs-name' }, name || '–'), extra ? h('span', { class: 'cs-extra' }, extra) : ''), svg ?? h('div', { class: 'cs-none' }, name ? 'No diagram' : ''));
+    };
+    this.shapesRow.replaceChildren(block('Now', nowName, at), block('Next', nextName, next, next >= 0 ? `in ${away} beat${away === 1 ? '' : 's'}` : ''));
   }
 
   /** A click on the timeline: the top strip is a bar number (loop that bar); anywhere else jumps to that beat. */
