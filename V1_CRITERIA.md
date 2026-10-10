@@ -22,10 +22,10 @@ needed for 1.0.
 - [ ] In-app update that downloads and installs, not only "a newer version exists" (Tauri updater with signed update files). (Claude)
 
 ### 3. A good first run
-- [ ] A short welcome: what the app does, what will be downloaded and how big it is, and that nothing is uploaded. (Claude)
+- [x] A short welcome (the panel shown when no song is open): what the app is for, three ways to start, what the first split downloads (model name and size, whether it is already here), and that nothing is uploaded. A "Try a sample song" button is built in and hidden until a sample exists.
 - [ ] A bundled sample song (royalty-free) so a new user can try the player before importing or downloading a model. Needs a song with a usable licence. (Neil to choose, Claude to add)
 - [x] A clear message when a song is too long or the machine too small: a warning before separating a long file, and the out-of-memory message already in place.
-- [ ] The model download explains itself (size, one-off, works offline afterwards) and can be cancelled and resumed. (Claude)
+- [ ] The model download explains itself (done: the welcome panel and Models say the size, that it is one-off and works offline afterwards) and can be cancelled (done) and resumed (not done: a cancelled download starts again from the beginning). (Claude)
 
 ### 4. Data safety
 - [x] Older saved songs are brought up to date by one tested function (`normaliseScratch`), covering the single-tab, old drum box and deleted-part cases. Still to do: a frozen written-down format description and tests with real saved files from each release.

@@ -211,14 +211,24 @@
 
       <section class="stage">
         <div class="welcome" id="welcome">
-          <h1>Split any song into stems</h1>
-          <p class="lead">Vocals, drums, bass and the rest, using Meta's Demucs model. Everything runs on this device; your audio is never uploaded.</p>
-          <ol class="steps">
-            <li><b>Add songs</b> on the left. You can queue several.</li>
-            <li><b>Pick a model.</b> The first run downloads it once (136–664 MB), then it works offline.</li>
-            <li><b>Play, loop and practise.</b> Mute or solo stems, slow down, change key, then export.</li>
-          </ol>
-          <p class="muted small">Speed depends heavily on your hardware: a recent GPU is much faster than CPU only. Try one song first to see how long yours takes.</p>
+          <h1>Practise any song, your way</h1>
+          <p class="lead">Split a song into its parts, then loop the tricky bit, slow it down, change the key, mute the part you play and play along. Everything runs on this computer; your audio is never uploaded.</p>
+          <div class="start-row">
+            <button class="btn primary" id="welcomeChoose" type="button" title="Pick a song from this computer to split into stems">Choose a song…</button>
+            <button class="btn ghost" id="welcomeSample" type="button" hidden>Try a sample song</button>
+            <button class="btn ghost" id="welcomeTracks" type="button" title="Open separate audio files (one per instrument) as one song, with no splitting">Open tracks I already have…</button>
+          </div>
+          <p class="muted small">Or drop songs on the left. You can queue several.</p>
+          <h2 class="welcome-sub">The first time</h2>
+          <p id="welcomeModel" class="welcome-model"></p>
+          <p class="muted small">Speed depends on your computer: a recent graphics card is much faster than the processor alone. Try one song first to see how long yours takes. Nothing is ever uploaded.</p>
+          <h2 class="welcome-sub">What you can do with a song</h2>
+          <ul class="can-do">
+            <li><b>Loop and slow down</b> a section, and change the key</li>
+            <li><b>Mute or solo</b> any part, so you play it yourself</li>
+            <li><b>Play along and record</b> your instrument over the tracks</li>
+            <li><b>See the chords</b> and learn parts from tab that follows the song</li>
+          </ul>
         </div>
 
         <div class="deck" id="deck" hidden>

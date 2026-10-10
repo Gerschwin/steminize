@@ -7,6 +7,7 @@ import { loadSettings, type Settings } from './settings.ts';
 import { Deck, type Result } from './ui/deck.ts';
 import { $, fmtDuration, fmtEta, fmtTime, h, openDialog, toast } from './ui/dom.ts';
 import { ensureDownloaded, initModelsDialog, onModelsChanged } from './ui/modelsDialog.ts';
+import { initWelcome } from './ui/welcome.ts';
 import { SettingsPanel } from './ui/settingsPanel.ts';
 import { initLibrary } from './ui/libraryPanel.ts';
 import { initSetlists } from './ui/setlistPanel.ts';
@@ -36,8 +37,10 @@ library.onOpen = () => refreshQueue();
 initSetlists(deck, library);
 const engine = new Engine();
 initModelsDialog();
+const renderWelcome = initWelcome(() => settings.s);
 initAbout();
 onModelsChanged.add(() => settings.render());
+onModelsChanged.add(() => void renderWelcome());
 $('helpBtn').onclick = () => openDialog($<HTMLDialogElement>('helpDlg'));
 
 const chip = $('backendChip');
@@ -244,6 +247,7 @@ $('applyWaiting').onclick = () => {
   toast('Waiting songs will use the current settings');
 };
 settings.onChange = () => {
+  void renderWelcome();
   refreshQueue();
   updateUseSummary();
 };

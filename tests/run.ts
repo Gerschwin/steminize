@@ -40,6 +40,7 @@ import { PART_IDS, defaultTrack, isBuiltinPart, legacyTabPart, newPartId, normal
 import { CHORD_TONES, chordCost, fretShape, pianoKeys, shapeIsRight, suggestCapo } from '../src/analysis/chordShapes.ts';
 import { QUALITIES } from '../src/analysis/chords.ts';
 import { segmentsFor, snapToWord, sungSeconds } from '../src/lyrics/lyricChords.ts';
+import { modelNote } from '../src/models.ts';
 import { BarTally, barColour, barCue, barPercent, barTip } from '../src/lyrics/barScores.ts';
 
 let failed = 0;
@@ -1256,6 +1257,14 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('lyric chords: a chord after the next line starts is left for that line', segmentsFor(txt, 0, 3, [{ t: 0, name: 'A' }, { t: 3.5, name: 'B' }]).every((s) => s.chord !== 'B'));
   ok('lyric chords: two chords landing on one word are shown together', segmentsFor('one', 0, 5, [{ t: 0, name: 'A' }, { t: 0.2, name: 'B' }])[0].chord === 'A B');
   ok('lyric chords: a line with no words still carries its chords, and no chords leaves the text alone', segmentsFor('', 0, 4, [{ t: 0, name: 'Am' }])[0].chord === 'Am' && segmentsFor(txt, 0, 3, []).length === 1 && segmentsFor(txt, 0, 3, [])[0].chord === undefined);
+}
+
+
+{
+  ok('welcome: says the model is already here once it is downloaded', /already on this computer/.test(modelNote('HT Demucs 6-stem', 136 * 1048576, true)) && !/download/i.test(modelNote('HT Demucs 6-stem', 136 * 1048576, true)));
+  const fresh = modelNote('HT Demucs 6-stem', 136 * 1048576, false);
+  ok('welcome: a first-time user is told the size, that it is one-off, and that it then works offline', /136 MB/.test(fresh) && /one-off/.test(fresh) && /offline/.test(fresh) && fresh.includes('HT Demucs 6-stem'));
+  ok('welcome: a part-finished download says the rest will be fetched once', /Part of/.test(modelNote('X', 1048576, 'partly')));
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

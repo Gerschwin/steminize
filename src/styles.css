@@ -367,6 +367,12 @@ details.more[open] summary { color: var(--text); }
 .lead { font-size: 16px; color: var(--muted); max-width: 60ch; }
 .steps { padding-left: 20px; display: grid; gap: 8px; margin: 22px 0; }
 .steps li::marker { color: var(--accent-2); font-weight: 700; }
+.draft-tag { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; margin-left: 4px; vertical-align: 1px; cursor: help; }
+.start-row { display: flex; flex-wrap: wrap; gap: 10px; margin: 22px 0 6px; }
+.welcome-sub { font-size: 14px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 26px 0 6px; font-weight: 600; }
+.welcome-model { max-width: 62ch; margin: 0 0 8px; }
+.can-do { padding-left: 20px; display: grid; gap: 6px; margin: 6px 0 0; }
+.can-do li::marker { color: var(--accent-2); }
 
 /* ---------- deck ---------- */
 .deck { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; display: flex; flex-direction: column; gap: 16px; }

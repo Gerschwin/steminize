@@ -83,6 +83,8 @@ are desktop only and are marked **[desktop]**.
 - **Export:** single stems, all stems (folder or ZIP), or "what you hear" as a mix with your levels, loop, tempo and pitch applied. Released.
 
 ## Safety and help (0.9.4)
+- **Welcome panel** when no song is open: what the app is for, **Choose a song** / **Open tracks I already have** buttons, what the first split downloads (the chosen model's name and size, and whether it is already on this computer), and what you can do with a song. Next release.
+- **"Draft" tags** on the Chord timeline and Chords lanes: chord detection is a first attempt, roughly 60 to 75% right. Next release.
 - **Before separating a very long file** (about 15 minutes or more, or more than the machine's memory allows) a heads-up with what to try if it stalls.
 - **Disk-space check** before saving a song to the library, and a "last backed up" line (with a nudge after a month) under the Library.
 - **Older saved songs** are brought up to date by one tested function, so an update never loses a scratchpad.

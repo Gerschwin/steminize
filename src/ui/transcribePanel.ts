@@ -134,6 +134,9 @@ function voiceFor(name: string): Voice {
   return 'default';
 }
 
+/** A small "draft" tag: chord detection is a first attempt, roughly 60 to 75% right, so say so where the chords are shown. */
+const DRAFT = () => h('span', { class: 'draft-tag', title: 'Chord detection is a first draft: roughly 60 to 75% right. Click a chord to correct it by ear.' }, 'draft');
+
 export class Transcribe {
   private notesOn = false;
   private chordsOn = false;
@@ -228,7 +231,7 @@ export class Transcribe {
       h(
         'div',
         { class: 'lane-ctl x-ctl' },
-        h('span', { class: 'name' }, 'Chord timeline'),
+        h('span', { class: 'name' }, 'Chord timeline ', DRAFT()),
         h('label', { class: 'switch', title: 'Plain major and minor chords only: no sevenths, sus or slash chords' }, simpleBox, ' Simple'),
         shapeSel,
         capoSel,
@@ -259,7 +262,7 @@ export class Transcribe {
     this.chordLane = h(
       'div',
       { class: 'lane x-lane chord-lane' },
-      h('div', { class: 'lane-ctl x-ctl' }, h('span', { class: 'name' }, 'Chords'), this.chordNow, redo, sheet, this.chordStatus),
+      h('div', { class: 'lane-ctl x-ctl' }, h('span', { class: 'name' }, 'Chords ', DRAFT()), this.chordNow, redo, sheet, this.chordStatus),
       chordWave,
     );
     this.editor = h('div', { class: 'chord-edit', hidden: true });

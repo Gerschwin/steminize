@@ -45,6 +45,11 @@ A|-----------------|
 E|-0---0---0---0---|
 ```
 
+## 0b. Welcome panel (NEW)
+- [ ] With no song open, the panel says "Practise any song, your way". **Choose a song…** opens the file picker; **Open tracks I already have…** opens the multitrack picker.
+- [ ] "The first time" names the current model and its size (change the model under Models or Settings and it updates). Once the model is downloaded it says it is already on this computer.
+- [ ] The Chord timeline and Chords lanes carry a small "draft" tag with a tooltip about accuracy.
+
 ## 1. Install, launch and About
 
 - [ ] The installer for your platform installs and the app opens (note the OS and version).

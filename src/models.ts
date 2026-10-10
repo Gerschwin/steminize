@@ -106,3 +106,13 @@ export function neededFiles(model: ModelId, precision: Precision, twoStems: stri
     : info.stems.map((_, i) => i).filter((i) => !skip.includes(info.stems[i]));
   return files.filter((f) => f.rows.some((r) => wanted.includes(r)));
 }
+
+/** A file size the way the app shows it. */
+const sizeText = (b: number) => (b >= 1e9 ? `${(b / 1024 ** 3).toFixed(2)} GB` : `${Math.round(b / 1024 ** 2)} MB`);
+
+/** The words about the model download: the model that will be used, its size, and whether it is already here. */
+export function modelNote(label: string, bytes: number, have: boolean | 'partly'): string {
+  if (have === true) return `The separation model (${label}) is already on this computer, so your first split can start straight away. It works offline.`;
+  if (have === 'partly') return `Part of the separation model (${label}, ${sizeText(bytes)}) is already on this computer. Your first split finishes the download once, then it works offline.`;
+  return `Splitting a song needs a one-off download of the separation model (${label}, ${sizeText(bytes)}). After that it works offline. You can choose a different model under Models.`;
+}
