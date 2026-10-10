@@ -18,6 +18,7 @@ import { createDropdown, type Dropdown } from './dropdown.ts';
 import { DEFAULT_PART_NAMES, PART_IDS, TAB_FIELDS, defaultTrack, isBuiltinPart, newPartId, normaliseScratch, type ExtraPart, type PartId, type TabPartId } from '../lyrics/tabParts.ts';
 import { placeTake, shiftTake } from '../player/placement.ts';
 import { lineAt, parseLrc, type Lrc } from '../lyrics/lrc.ts';
+import { segmentsFor } from '../lyrics/lyricChords.ts';
 import {
   acceptedMidis,
   addAnchor,
@@ -138,6 +139,8 @@ export interface ScratchState {
   lyricsFollow?: boolean;
   /** Seconds added to every synced lyric's time, to line up a file made for a different recording. */
   lyricsOffset?: number;
+  /** Show the detected chords over the words of synced lyrics. */
+  lyricsChords?: boolean;
   tab?: string;
   /** Tab+ timing: character-offset-into-tab anchors tapped in while playing, for the follow-along
    * view to interpolate a scroll position between (see src/lyrics/tabSync.ts). */
@@ -438,6 +441,10 @@ export class Deck {
   private lrc: Lrc | null = null;
   private lyricEls: HTMLElement[] = [];
   private lyricIdx = -2;
+  /** What the lyric chords were last drawn from, and the chord pieces of the current line (to light the one sounding). */
+  private lyricChordKey = '';
+  private lyricChordEls: { t: number; el: HTMLElement }[] = [];
+  private lyricChordNow = -1;
   /** The tab's block layout and tap coordinates, rebuilt only when the text or taps change (not every frame). */
   private tabTimeline: { text: string; anchors: TabAnchor[]; blocks: TabBlock[]; coords: TabAnchor[]; plan: RepeatPlan | null; coordsU: TabAnchor[] } | null = null;
   // ---- the engraved tab (fret numbers + rhythm row, follow-along's read-only view — see staff.ts's
@@ -2134,9 +2141,19 @@ export class Deck {
       this.updateLyricsView();
       this.emit();
     };
+    $('lyricsChordsBtn').onclick = () => {
+      this.scratch.lyricsChords = !this.scratch.lyricsChords;
+      if (this.scratch.lyricsChords) this.tx.ensureChords();
+      this.lyricChordKey = '';
+      this.lyricIdx = -2;
+      this.updateLyricsView();
+      this.dirty = true;
+      this.emit();
+    };
     const nudge = (d: number) => {
       this.scratch.lyricsOffset = Math.round(((this.scratch.lyricsOffset ?? 0) + d) * 10) / 10;
       this.lyricIdx = -2; // re-highlight for the new timing
+      this.lyricChordKey = ''; // and put the chords where the new timing says
       this.updateLyricsView();
       this.dirty = true;
       this.emit();
@@ -2317,6 +2334,7 @@ export class Deck {
     this.scratch = { lyrics: s?.lyrics ?? '', tab: s?.tab ?? '', notes: s?.notes ?? '' };
     if (s?.lyricsFollow) this.scratch.lyricsFollow = true;
     if (s?.lyricsOffset) this.scratch.lyricsOffset = s.lyricsOffset;
+    if (s?.lyricsChords) this.scratch.lyricsChords = true;
     if (s?.tabAnchors?.length) this.scratch.tabAnchors = s.tabAnchors;
     if (s?.tabFollow) this.scratch.tabFollow = true;
     if (s?.tabStaff) this.scratch.tabStaff = true;
@@ -2349,10 +2367,29 @@ export class Deck {
     box.replaceChildren();
     this.lyricEls = [];
     this.lyricIdx = -2;
-    for (const [i, line] of (this.lrc?.lines ?? []).entries()) {
-      const el = h('div', { class: 'lyric-line' }, line.text || '\u00a0');
-      el.onclick = () => this.player.seek((line.t + (this.scratch.lyricsOffset ?? 0)) * SR);
-      el.title = `Jump to ${fmtTime(line.t + (this.scratch.lyricsOffset ?? 0))}`;
+    this.lyricChordEls = [];
+    this.lyricChordNow = -1;
+    const withChords = !!this.scratch.lyricsChords && !!this.lrc;
+    this.lyricChordKey = withChords ? this.tx.chordKey() : '';
+    box.classList.toggle('with-chords', withChords);
+    const lines = this.lrc?.lines ?? [];
+    const off = this.scratch.lyricsOffset ?? 0;
+    for (const [i, line] of lines.entries()) {
+      const el = h('div', { class: 'lyric-line' });
+      if (withChords) {
+        const next = lines.find((l) => l.t > line.t)?.t;
+        const t0 = line.t + off;
+        const nextT = next == null ? t0 + Math.max(4, line.text.length * 0.2) : next + off; // the last line ends when its words would
+        const marks = this.tx.chordMarks(t0, nextT);
+        for (const seg of segmentsFor(line.text, t0, nextT, marks)) {
+          const ch = h('span', { class: 'lc-ch' }, seg.chord ?? '');
+          if (seg.chord && seg.t != null) this.lyricChordEls.push({ t: seg.t, el: ch });
+          el.append(h('span', { class: 'lc-seg' }, ch, h('span', { class: 'lc-tx' }, seg.text || '\u00a0')));
+        }
+        if (!line.text && !el.childElementCount) el.append(h('span', { class: 'lc-tx' }, '\u00a0'));
+      } else el.textContent = line.text || '\u00a0';
+      el.onclick = () => this.player.seek((line.t + off) * SR);
+      el.title = `Jump to ${fmtTime(line.t + off)}`;
       el.dataset.i = String(i);
       this.lyricEls.push(el);
       box.append(el);
@@ -2369,6 +2406,8 @@ export class Deck {
     $('lyricsImportLabel').hidden = !onLyrics;
     $('lyricsFollowBtn').hidden = !(onLyrics && synced);
     pressed($('lyricsFollowBtn'), follow);
+    $('lyricsChordsBtn').hidden = !(onLyrics && follow);
+    pressed($('lyricsChordsBtn'), !!this.scratch.lyricsChords);
     $('lyricsNudge').hidden = !(onLyrics && follow);
     const off = this.scratch.lyricsOffset ?? 0;
     $('lyricsOffsetVal').textContent = off === 0 ? 'timing 0 s' : `timing ${off > 0 ? '+' : ''}${off.toFixed(1)} s`;
@@ -2379,6 +2418,22 @@ export class Deck {
   /** Highlights the line being sung and keeps it in view; called every frame, but only touches the page when the line changes. */
   private updateLyricsFollow(pos: number) {
     if (!this.lrc || $('lyricsFollow').hidden) return;
+    if (this.scratch.lyricsChords) {
+      // Redraw when the chords or their names change (detected, corrected, pitch, Simple, capo), and light the one sounding now.
+      const key = this.tx.chordKey();
+      if (key !== this.lyricChordKey) {
+        this.setLyricsText(this.scratch.lyrics ?? '');
+        this.lyricIdx = -2;
+      }
+      const t = pos / SR;
+      let now = -1;
+      for (let i = 0; i < this.lyricChordEls.length && this.lyricChordEls[i].t <= t; i++) now = i;
+      if (now !== this.lyricChordNow) {
+        this.lyricChordEls[this.lyricChordNow]?.el.classList.remove('now');
+        this.lyricChordEls[now]?.el.classList.add('now');
+        this.lyricChordNow = now;
+      }
+    }
     const idx = lineAt(this.lrc.lines, pos / SR - (this.scratch.lyricsOffset ?? 0));
     if (idx === this.lyricIdx) return;
     this.lyricIdx = idx;

@@ -11,6 +11,7 @@ import { beatCells, beatPositionAt, displayName, simplifyChord, type BeatCell } 
 import { suggestCapo, type Instrument } from '../analysis/chordShapes.ts';
 import { chordDiagram } from './chordDiagram.ts';
 import { QUALITIES, chordName, chordSheet, detectChords, mergeSame, noteLetter, prefersSharps, type Chord, type Quality } from '../analysis/chords.ts';
+import type { ChordMark } from '../lyrics/lyricChords.ts';
 import { cancelTranscribe, transcribe } from '../analysis/transcribe.ts';
 import { singleLine, type NoteEvent } from '../analysis/basicPitch.ts';
 import { monoOf } from '../analysis/resample.ts';
@@ -944,6 +945,34 @@ export class Transcribe {
   }
 
   // ---------- chords ----------
+  /** Starts detecting the chords if the song has none yet (for the chords over the lyrics). */
+  ensureChords() {
+    const s = this.host.song();
+    if (s && !s.chords && !this.chordStatus.textContent) void this.detectChords();
+  }
+
+  /** The chords for the lyrics: the one sounding at `t0` and every change before `t1`, named as the timeline names them (simple, shifted, capo). */
+  chordMarks(t0: number, t1: number): ChordMark[] {
+    const chords = this.host.song()?.chords;
+    if (!chords?.length) return [];
+    const shift = this.shapeShift();
+    const sharps = this.sharps(-this.capoNow());
+    const out: ChordMark[] = [];
+    for (const c of chords) {
+      if (c.end <= t0 || c.start >= t1 || c.root < 0) continue;
+      out.push({ t: Math.max(c.start, t0), name: displayName(c, shift, sharps, this.simple) });
+    }
+    return out;
+  }
+
+  /** Changes whenever the chords or how they are named change, so the lyrics can redraw their chords. */
+  chordKey(): string {
+    const chords = this.host.song()?.chords;
+    let sum = 0;
+    for (const c of chords ?? []) sum = (sum * 31 + c.root * 17 + QUALITIES.indexOf(c.q) + Math.round(c.start * 10)) % 1000003;
+    return `${chords?.length ?? -1}|${sum}|${this.shapeShift()}|${this.simple}|${this.shapes === 'piano' ? 0 : this.capo}`;
+  }
+
   /** The capo fret in use: none for the piano, which has no capo. */
   private capoNow() {
     return this.shapes === 'piano' ? 0 : this.capo;

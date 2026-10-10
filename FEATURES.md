@@ -64,6 +64,7 @@ are desktop only and are marked **[desktop]**.
   - **Bar-accuracy colours:** each bar number is coloured by how well that bar was last played (green clean to red missed), with the count on hover, saved per song, and **Clear bar colours**. Released in 0.9.3.
 - **Drum notation:** the Drums part takes a drum grid (one row per kit piece such as `HH`, `SD`, `BD`, `CC`; one column per sixteenth; `x` hit, `X` accent, `o` open hi-hat, `g` ghost) and draws it as a percussion staff (hands up, kick down, x heads for hi-hat and cymbals, rests, beams, bar numbers, repeats); follows along like a guitar tab with taps, bar loops, repeats and Ear; has its own Symbols legend. Next release.
 - **Lyrics:** plain, or synced (LRC) with Follow along, click a line to jump, a timing nudge, and Import .lrc. Released.
+- **Chords over the lyrics:** with synced lyrics in Follow along, a **Chords** button writes each chord above the word where it changes, like a chord sheet; the chord sounding now is lit. It uses the same names as the timeline (Simple, pitch shift, capo) and redraws when you correct a chord. Chords are placed by their time within each line (lyrics are timed by line, not by word), so they are close, not exact. Next release.
 - **Float** the Scratchpad as a movable, resizable window. Released.
 
 ## Native audio engine [desktop] (experimental)

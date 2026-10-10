@@ -39,6 +39,7 @@ import { DRUM_VOICES, drumMidi, hitStyle, parseDrums, voiceOfLabel } from '../sr
 import { PART_IDS, defaultTrack, isBuiltinPart, legacyTabPart, newPartId, normaliseScratch, partKind, stringCount } from '../src/lyrics/tabParts.ts';
 import { CHORD_TONES, chordCost, fretShape, pianoKeys, shapeIsRight, suggestCapo } from '../src/analysis/chordShapes.ts';
 import { QUALITIES } from '../src/analysis/chords.ts';
+import { segmentsFor, snapToWord, sungSeconds } from '../src/lyrics/lyricChords.ts';
 import { BarTally, barColour, barCue, barPercent, barTip } from '../src/lyrics/barScores.ts';
 
 let failed = 0;
@@ -1240,6 +1241,21 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('capo: chord time counts, a long chord outweighs a short one', suggestCapo('guitar', [{ root: 7, q: '', dur: 10 }, { root: 6, q: '', dur: 1 }]).capo === 0);
   ok('capo: open chords cost nothing and barre chords cost something', chordCost('guitar', 0, '') === 0 && chordCost('guitar', 5, '') === 1);
   ok('shapes: every quality has a note list', QUALITIES.every((q) => CHORD_TONES[q]?.length >= 2));
+}
+
+
+{
+  // Chords over synced lyrics.
+  const txt = 'hello there my friend';
+  ok('lyric chords: a chord placed partway through snaps to the nearest word start', snapToWord(txt, 3) === 0 && snapToWord(txt, 8) === 6 && snapToWord(txt, 10) === 12 && snapToWord(txt, 0) === 0 && snapToWord(txt, 99) === txt.length);
+  ok('lyric chords: a line after a short gap fills it, after a long gap only the sung part counts', sungSeconds('abcd', 10) === 2 && sungSeconds(txt, 4) === 4 && Math.abs(sungSeconds(txt, 60) - txt.length * 0.15) < 1e-9);
+  const seg = segmentsFor(txt, 10, 14, [{ t: 10, name: 'C' }, { t: 11.2, name: 'G' }]);
+  ok('lyric chords: the chord sounding at the start sits over the first word, the next change over a later word', seg.length === 2 && seg[0].chord === 'C' && seg[0].text.startsWith('hello') && seg[1].chord === 'G' && seg.map((s) => s.text).join('') === txt, JSON.stringify(seg));
+  ok('lyric chords: the pieces always add up to the original text', segmentsFor(txt, 0, 5, [{ t: 0, name: 'A' }, { t: 0.4, name: 'B' }, { t: 2, name: 'C' }, { t: 4, name: 'D' }]).map((s) => s.text).join('') === txt);
+  ok('lyric chords: a chord repeated straight after itself is shown once', segmentsFor(txt, 0, 5, [{ t: 0, name: 'A' }, { t: 1, name: 'A' }]).length === 1);
+  ok('lyric chords: a chord after the next line starts is left for that line', segmentsFor(txt, 0, 3, [{ t: 0, name: 'A' }, { t: 3.5, name: 'B' }]).every((s) => s.chord !== 'B'));
+  ok('lyric chords: two chords landing on one word are shown together', segmentsFor('one', 0, 5, [{ t: 0, name: 'A' }, { t: 0.2, name: 'B' }])[0].chord === 'A B');
+  ok('lyric chords: a line with no words still carries its chords, and no chords leaves the text alone', segmentsFor('', 0, 4, [{ t: 0, name: 'Am' }])[0].chord === 'Am' && segmentsFor(txt, 0, 3, []).length === 1 && segmentsFor(txt, 0, 3, [])[0].chord === undefined);
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');
