@@ -10,7 +10,7 @@ import { extensionFor, mimeFor } from '../encode/meta.ts';
 import { stemColour, MODELS } from '../models.ts';
 import { openSink, safeName, saveFile } from '../platform.ts';
 import { MAX_REC_LATENCY_MS, loadLiveChannel, loadLowLatencyAudio, loadRecLatencyMs, saveLiveChannel, saveLowLatencyAudio, saveRecLatencyMs, type LiveChannel, type Settings } from '../settings.ts';
-import { BarTally, barColour, barTip, type BarScores, type BarVisit } from '../lyrics/barScores.ts';
+import { BarTally, barColour, barCue, barTip, type BarScores, type BarVisit } from '../lyrics/barScores.ts';
 import { initNativeAudio } from './nativeAudio.ts';
 import { parseDrums, type DrumNote } from '../lyrics/drumTab.ts';
 import { drawDrumScore } from './drumStaff.ts';
@@ -1911,9 +1911,17 @@ export class Deck {
       if (sc && sc[1] > 0) {
         rect.style.fill = barColour(sc[0], sc[1]);
         rect.style.fillOpacity = '0.8';
+        // The colour is not the only cue: a clean bar has a plain chip, a part-right one a dashed outline, a mostly-missed one a heavy outline.
+        const cue = barCue(sc[0], sc[1]);
+        rect.style.stroke = cue === 'clean' ? '' : '#222';
+        rect.style.strokeWidth = cue === 'missed' ? '2.5' : cue === 'partial' ? '1.5' : '';
+        rect.style.strokeDasharray = cue === 'partial' ? '3 2' : '';
       } else {
         rect.style.fill = '';
         rect.style.fillOpacity = '';
+        rect.style.stroke = '';
+        rect.style.strokeWidth = '';
+        rect.style.strokeDasharray = '';
       }
       const title = rect.querySelector('title');
       if (title) title.textContent = barTip(bar, sc);

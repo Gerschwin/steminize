@@ -1,6 +1,7 @@
 import { MODELS, neededFiles, stemColour, type ModelId } from '../models.ts';
 import { hasModel } from '../modelstore.ts';
 import { DEFAULTS, saveSettings, type Settings } from '../settings.ts';
+import { resetAppPreferences } from '../prefs.ts';
 import { $, fmtMB, h, pressed } from './dom.ts';
 
 export class SettingsPanel {
@@ -24,6 +25,11 @@ export class SettingsPanel {
       if (v) this.set({ format: v as Settings['format'] });
     });
     $('resetSettings').addEventListener('click', () => this.set({ ...DEFAULTS }));
+    $('resetAppPrefs').addEventListener('click', () => {
+      if (!confirm('Put the theme, panels and live-input and native-audio choices back to how they start? Your songs, setlists and separation settings are not touched. The app will reload.')) return;
+      resetAppPreferences(localStorage);
+      location.reload();
+    });
     this.render();
   }
 

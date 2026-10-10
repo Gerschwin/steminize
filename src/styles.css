@@ -844,3 +844,9 @@ kbd {
 .lane-ctl .lane-tab[hidden] { display: none; }
 .backup-note { margin: 4px 2px 0; }
 .backup-note.stale { color: var(--warn); }
+
+/* Keyboard users can see where they are: every control gets a clear ring when it is reached with the keyboard (not when clicked). */
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

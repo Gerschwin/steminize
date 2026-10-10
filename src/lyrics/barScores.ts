@@ -54,3 +54,9 @@ export function barTip(bar: number, s: [number, number] | undefined): string {
   const base = `Bar ${bar + 1}: click to loop it · Shift-click to extend the loop to here`;
   return s && s[1] > 0 ? `${base}\nLast time: ${s[0]} of ${s[1]} notes (${barPercent(s[0], s[1])}%)` : base;
 }
+
+/** How a bar went, for a cue that does not rely on colour (a colour-blind player cannot tell the red from the green): clean, part right, or mostly missed. */
+export function barCue(hit: number, total: number): 'clean' | 'partial' | 'missed' {
+  const pct = total > 0 ? hit / total : 0;
+  return pct >= 0.85 ? 'clean' : pct >= 0.5 ? 'partial' : 'missed';
+}

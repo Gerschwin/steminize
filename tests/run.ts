@@ -31,11 +31,12 @@ import { placeTake, shiftTake } from '../src/player/placement.ts';
 import { StreamResampler } from '../src/player/resample.ts';
 import { withTimeout } from '../src/engine/timeout.ts';
 import { separationMemory, songSizeWarning } from '../src/engine/sizeHint.ts';
+import { APP_PREFERENCE_KEYS, resetAppPreferences } from '../src/prefs.ts';
 import { backupNote, fmtBytes, spaceNeeded, spaceStatus } from '../src/library/safety.ts';
 import { voiceSlots } from '../src/ui/drumStaff.ts';
 import { DRUM_VOICES, drumMidi, hitStyle, parseDrums, voiceOfLabel } from '../src/lyrics/drumTab.ts';
 import { PART_IDS, defaultTrack, isBuiltinPart, legacyTabPart, newPartId, normaliseScratch, partKind, stringCount } from '../src/lyrics/tabParts.ts';
-import { BarTally, barColour, barPercent, barTip } from '../src/lyrics/barScores.ts';
+import { BarTally, barColour, barCue, barPercent, barTip } from '../src/lyrics/barScores.ts';
 
 let failed = 0;
 const ok = (name: string, cond: boolean, detail = '') => {
@@ -1012,6 +1013,7 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('bars: percent rounds', barPercent(2, 3) === 67 && barPercent(0, 0) === 0);
   ok('bars: all wrong is red, all right is green', barColour(0, 4) === 'hsl(0 70% 52%)' && barColour(4, 4) === 'hsl(120 70% 52%)');
   ok('bars: half right is amber', barColour(2, 4) === 'hsl(60 70% 52%)');
+  ok('bars: a cue that does not need colour: clean, part right, missed', barCue(4, 4) === 'clean' && barCue(17, 20) === 'clean' && barCue(3, 4) === 'partial' && barCue(2, 4) === 'partial' && barCue(1, 4) === 'missed' && barCue(0, 4) === 'missed' && barCue(0, 0) === 'missed');
   ok('bars: the tooltip adds the last result', barTip(4, [3, 4]).endsWith('3 of 4 notes (75%)') && !barTip(4, undefined).includes('Last time'));
 }
 
@@ -1158,6 +1160,24 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('backup: never backed up is a nudge', backupNote(null, now, 3)?.stale === true);
   ok('backup: today, yesterday and recent days are fine', backupNote(now - 1000, now, 3)?.text === 'Backed up today.' && backupNote(now - day, now, 3)?.text === 'Last backed up yesterday.' && backupNote(now - 5 * day, now, 3)?.stale === false);
   ok('backup: a month old is a nudge, with the number of days', backupNote(now - 40 * day, now, 3)?.stale === true && backupNote(now - 40 * day, now, 3)?.text === 'Last backed up 40 days ago.');
+}
+
+// ---- Reset app preferences never touches songs or sets
+{
+  const store = new Map<string, string>([
+    ['steminize.theme', 'light'],
+    ['steminize.drawer', 'live'],
+    ['steminize.setlist.active', 'abc'],
+    ['steminize.lastBackup', '123'],
+    ['steminize.settings', '{"model":"htdemucs"}'],
+    ['something.else', 'x'],
+  ]);
+  const fake = { removeItem: (k: string) => void store.delete(k) };
+  resetAppPreferences(fake);
+  ok('prefs: the remembered look and panels are forgotten', !store.has('steminize.theme') && !store.has('steminize.drawer'));
+  ok('prefs: setlists, the last-backup time, separation settings and other apps\' keys are left alone', store.get('steminize.setlist.active') === 'abc' && store.get('steminize.lastBackup') === '123' && store.get('steminize.settings') === '{"model":"htdemucs"}' && store.get('something.else') === 'x');
+  ok('prefs: nothing that looks like a library or setlist key is in the list', APP_PREFERENCE_KEYS.every((k) => !/setlist|library|backup|settings$/.test(k)));
+  ok('prefs: a store that throws does not break the reset', resetAppPreferences({ removeItem: () => { throw new Error('blocked'); } }) === APP_PREFERENCE_KEYS.length);
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');
