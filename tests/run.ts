@@ -31,6 +31,7 @@ import { placeTake, shiftTake } from '../src/player/placement.ts';
 import { StreamResampler } from '../src/player/resample.ts';
 import { withTimeout } from '../src/engine/timeout.ts';
 import { separationMemory, songSizeWarning } from '../src/engine/sizeHint.ts';
+import { backupNote, fmtBytes, spaceNeeded, spaceStatus } from '../src/library/safety.ts';
 import { voiceSlots } from '../src/ui/drumStaff.ts';
 import { DRUM_VOICES, drumMidi, hitStyle, parseDrums, voiceOfLabel } from '../src/lyrics/drumTab.ts';
 import { PART_IDS, defaultTrack, isBuiltinPart, legacyTabPart, newPartId, normaliseScratch, partKind, stringCount } from '../src/lyrics/tabParts.ts';
@@ -1141,6 +1142,22 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('size: a 25-minute file is warned about, with its length and a way out', !!w && w.includes('25-minute') && w.includes('Compact model') && w.includes('shorter file'));
   ok('size: a smaller machine is warned about a song a big one would not be', songSizeWarning(600, 6, 2) !== null && songSizeWarning(600, 6, 8) === null);
   ok('size: "a lot for this computer" is said only when the memory really is a lot', (songSizeWarning(600, 6, 2) ?? '').includes('a lot for this computer') && (songSizeWarning(16 * 60, 4, 8) ?? '').includes('16-minute') && !(songSizeWarning(16 * 60, 4, 8) ?? '').includes('a lot'));
+}
+
+// ---- library safety: disk space before saving, and the backup reminder
+{
+  const need = spaceNeeded(210, 6);
+  ok('space: a 3.5-minute 6-stem song needs tens of megabytes, not kilobytes or gigabytes', need > 40 * 1024 * 1024 && need < 400 * 1024 * 1024);
+  ok('space: lots of room is fine, and unknown room is not an error', spaceStatus(50 * 1024 ** 3, need) === 'ok' && spaceStatus(null, need) === 'ok');
+  ok('space: room for the song but not much more is "low"', spaceStatus(need + 500 * 1024 * 1024, need) === 'low');
+  ok('space: not enough room means do not start', spaceStatus(need - 1, need) === 'full' && spaceStatus(need + 50 * 1024 * 1024, need) === 'full' && spaceStatus(0, need) === 'full');
+  ok('space: sizes read as MB or GB', fmtBytes(5 * 1024 * 1024) === '5 MB' && fmtBytes(3 * 1024 ** 3) === '3.0 GB' && fmtBytes(10) === '1 MB');
+  const now = Date.UTC(2026, 9, 10);
+  const day = 24 * 60 * 60 * 1000;
+  ok('backup: an empty library needs no reminder', backupNote(null, now, 0) === null);
+  ok('backup: never backed up is a nudge', backupNote(null, now, 3)?.stale === true);
+  ok('backup: today, yesterday and recent days are fine', backupNote(now - 1000, now, 3)?.text === 'Backed up today.' && backupNote(now - day, now, 3)?.text === 'Last backed up yesterday.' && backupNote(now - 5 * day, now, 3)?.stale === false);
+  ok('backup: a month old is a nudge, with the number of days', backupNote(now - 40 * day, now, 3)?.stale === true && backupNote(now - 40 * day, now, 3)?.text === 'Last backed up 40 days ago.');
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

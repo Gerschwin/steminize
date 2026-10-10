@@ -54,6 +54,9 @@ export interface LibMeta {
 export const libraryAvailable = () => isTauri || opfsAvailable();
 const backend = () => (isTauri ? nativeBackend : opfsBackend);
 
+/** Free bytes where songs are stored, or null when unknown. */
+export const freeLibrarySpace = (): Promise<number | null> => (libraryAvailable() ? backend().freeSpace() : Promise.resolve(null));
+
 export async function listSongs(): Promise<LibMeta[]> {
   if (!libraryAvailable()) return [];
   const entries = await backend().list();

@@ -842,3 +842,5 @@ kbd {
 /* The track the open tab is for is outlined in the track list; its own Tab button jumps to the tab. */
 .lane.part-linked .lane-ctl { outline: 2px dashed var(--accent); outline-offset: -2px; }
 .lane-ctl .lane-tab[hidden] { display: none; }
+.backup-note { margin: 4px 2px 0; }
+.backup-note.stale { color: var(--warn); }

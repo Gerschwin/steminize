@@ -14,4 +14,6 @@ export interface LibraryBackend {
   /** Removes one file; not an error if it's already gone. */
   removeFile(id: string, name: string): Promise<void>;
   deleteSong(id: string): Promise<void>;
+  /** Free bytes where songs are stored, or null when that can't be known. */
+  freeSpace(): Promise<number | null>;
 }

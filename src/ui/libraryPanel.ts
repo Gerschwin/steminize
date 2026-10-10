@@ -1,6 +1,7 @@
 import { background as encoder } from '../encode/client.ts';
-import { addTake, deleteSong, exportLibrary, importLibrary, libraryAvailable, listSongs, loadStems, loadTake, removeTake, saveSong, writeMeta, type Analysis, type LibMeta, type TakeGroupMeta } from '../library.ts';
+import { addTake, deleteSong, exportLibrary, freeLibrarySpace, importLibrary, libraryAvailable, listSongs, loadStems, loadTake, removeTake, saveSong, writeMeta, type Analysis, type LibMeta, type TakeGroupMeta } from '../library.ts';
 import { saveFile } from '../platform.ts';
+import { backupNote, fmtBytes, spaceNeeded, spaceStatus } from '../library/safety.ts';
 import type { Deck, DeckState, Result } from './deck.ts';
 import type { KeyCandidate } from '../analysis/key.ts';
 import { $, containScroll, fmtDuration, fmtMB, fmtTime, h, toast } from './dom.ts';
@@ -143,6 +144,16 @@ export function initLibrary(deck: Deck) {
   };
 
   const exportBtn = $<HTMLButtonElement>('libExport');
+  const backupLine = $('libBackupNote');
+  const BACKUP_KEY = 'steminize.lastBackup';
+  const lastBackup = (): number | null => {
+    try {
+      const v = Number(localStorage.getItem(BACKUP_KEY));
+      return Number.isFinite(v) && v > 0 ? v : null;
+    } catch {
+      return null;
+    }
+  };
   const importInput = $<HTMLInputElement>('libImport');
 
   let onChange: () => void = () => {};
@@ -155,6 +166,10 @@ export function initLibrary(deck: Deck) {
       ? `${songs.length} song${songs.length > 1 ? 's' : ''} · ${fmtMB(total)} on this computer`
       : "Separated songs are kept here so you don't have to wait again.";
     exportBtn.disabled = !songs.length;
+    const note = backupNote(lastBackup(), Date.now(), songs.length);
+    backupLine.hidden = !note;
+    backupLine.textContent = note?.text ?? '';
+    backupLine.classList.toggle('stale', !!note?.stale);
     onChange();
   }
 
@@ -165,7 +180,15 @@ export function initLibrary(deck: Deck) {
       const zip = await exportLibrary((done, total) => (exportBtn.textContent = `Zipping… ${done}/${total}`));
       const date = new Date().toISOString().slice(0, 10);
       const saved = await saveFile(`steminize-library-${date}.zip`, zip, 'application/zip');
-      if (saved) toast(`Backed up ${metas.size} song${metas.size > 1 ? 's' : ''}.`);
+      if (saved) {
+        toast(`Backed up ${metas.size} song${metas.size > 1 ? 's' : ''}.`);
+        try {
+          localStorage.setItem(BACKUP_KEY, String(Date.now()));
+        } catch {
+          /* ignore */
+        }
+        render();
+      }
     } catch (e) {
       toast(`Couldn't back up the library: ${(e as Error).message}`, true);
     } finally {
@@ -312,6 +335,15 @@ export function initLibrary(deck: Deck) {
       console.warn('Tempo analysis failed', e);
     }
     if (!autoSave.checked || !libraryAvailable()) return;
+    // Not enough room to keep it: say so and leave the song playable, rather than start a save that would end half-written.
+    const needed = spaceNeeded(r.seconds, r.stems.length);
+    const free = await freeLibrarySpace();
+    const room = spaceStatus(free, needed);
+    if (room === 'full') {
+      toast(`There isn't enough disk space to keep this song in the library (it needs about ${fmtBytes(needed)} and ${fmtBytes(free ?? 0)} is free). It still plays now, but free some space or export its stems before closing it.`, true, 14000);
+      return;
+    }
+    if (room === 'low') toast(`Disk space is getting low: ${fmtBytes(free ?? 0)} free. This song needs about ${fmtBytes(needed)}.`, false, 9000);
     try {
       // Only meaningful for the OPFS backend (asks the browser not to evict the library under storage
       // pressure); navigator.storage doesn't exist at all in WebKitGTK, so this must be optional too.

@@ -144,3 +144,10 @@ mod tests {
         assert!(safe_component("/etc/passwd", "id").is_err());
     }
 }
+
+/// Free space, in bytes, on the disk the library lives on (so a song isn't half-saved to a full disk).
+#[tauri::command]
+pub fn lib_free_space(app: AppHandle) -> Result<u64, String> {
+    let root = lib_root(&app)?;
+    fs4::available_space(&root).map_err(|e| e.to_string())
+}

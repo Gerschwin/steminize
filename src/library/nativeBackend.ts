@@ -44,4 +44,13 @@ export const nativeBackend: LibraryBackend = {
     const invoke = await inv();
     await invoke('lib_delete', { id });
   },
+
+  async freeSpace() {
+    const invoke = await inv();
+    try {
+      return await invoke<number>('lib_free_space');
+    } catch {
+      return null;
+    }
+  },
 };

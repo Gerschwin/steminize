@@ -60,4 +60,13 @@ export const opfsBackend: LibraryBackend = {
   async deleteSong(id) {
     await (await libRoot()).removeEntry(id, { recursive: true });
   },
+
+  async freeSpace() {
+    try {
+      const e = await navigator.storage?.estimate?.();
+      return e?.quota !== undefined && e.usage !== undefined ? Math.max(0, e.quota - e.usage) : null;
+    } catch {
+      return null;
+    }
+  },
 };
