@@ -32,7 +32,7 @@ import { StreamResampler } from '../src/player/resample.ts';
 import { withTimeout } from '../src/engine/timeout.ts';
 import { voiceSlots } from '../src/ui/drumStaff.ts';
 import { DRUM_VOICES, drumMidi, hitStyle, parseDrums, voiceOfLabel } from '../src/lyrics/drumTab.ts';
-import { PART_IDS, defaultTrack, isBuiltinPart, legacyTabPart, newPartId, partKind, stringCount } from '../src/lyrics/tabParts.ts';
+import { PART_IDS, defaultTrack, isBuiltinPart, legacyTabPart, newPartId, normaliseScratch, partKind, stringCount } from '../src/lyrics/tabParts.ts';
 import { BarTally, barColour, barPercent, barTip } from '../src/lyrics/barScores.ts';
 
 let failed = 0;
@@ -1107,6 +1107,29 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
     if (at !== len) always = false;
   }
   ok('drum staff: whatever the pattern, notes and rests run on from the start and fill the bar exactly', always);
+}
+
+// ---- opening songs saved by older versions: the scratchpad is brought up to date without losing text
+{
+  const six = 'e|-0-|\nB|-0-|\nG|-0-|\nD|-0-|\nA|-0-|\nE|-0-|';
+  const four = 'G|-0-|\nD|-0-|\nA|-0-|\nE|-0-|';
+  const old = normaliseScratch({ lyrics: 'la', tab: six, notes: 'n' } as any);
+  ok('migrate: a version-1 save (one six-string tab) opens on Guitar with its text and other fields intact', old.tab === six && old.tabPart === undefined && (old as any).lyrics === 'la' && (old as any).notes === 'n');
+  ok('migrate: an old four-string tab opens on Bass', normaliseScratch({ tab: four } as any).tabPart === 'bass');
+  const withDrums = normaliseScratch({ tab: six, drums: 'BD|o---|' } as any);
+  ok('migrate: the old Drum tab box becomes the Drums part and the old field goes', withDrums.tabParts?.drums?.tab === 'BD|o---|' && (withDrums as any).drums === undefined && withDrums.tab === six);
+  const drumsOpen = normaliseScratch({ tab: 'BD|o---|', tabPart: 'drums', drums: '' } as any);
+  ok('migrate: a save with the drums open keeps them open and invents nothing', drumsOpen.tabPart === 'drums' && drumsOpen.tabParts === undefined);
+  ok('migrate: a legacy drum grid never overwrites a drums tab already saved in its part', normaliseScratch({ tab: six, drums: 'old', tabParts: { drums: { tab: 'new' } } } as any).tabParts?.drums?.tab === 'new');
+  ok('migrate: an open part that was deleted falls back to Guitar', normaliseScratch({ tab: six, tabPart: 'part3', extraParts: [{ id: 'part1' }] } as any).tabPart === undefined);
+  ok('migrate: an open added part that still exists stays open', normaliseScratch({ tab: six, tabPart: 'part1', extraParts: [{ id: 'part1' }] } as any).tabPart === 'part1');
+  const input = { tab: six, drums: 'x', tabParts: { bass: { tab: four } } } as any;
+  const snapshot = JSON.stringify(input);
+  normaliseScratch(input);
+  ok('migrate: the saved object itself is not changed', JSON.stringify(input) === snapshot);
+  ok('migrate: an empty or missing scratchpad is fine', normaliseScratch({} as any).tabPart === undefined && Object.keys(normaliseScratch({} as any)).length === 0);
+  const again = normaliseScratch(normaliseScratch({ tab: four, drums: 'BD|o---|' } as any));
+  ok('migrate: doing it twice changes nothing more', again.tabPart === 'bass' && again.tabParts?.drums?.tab === 'BD|o---|');
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

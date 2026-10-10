@@ -56,3 +56,32 @@ export function stringCount(text: string): number {
 export function legacyTabPart(text: string | undefined): TabPartId {
   return text && stringCount(text) === 4 ? 'bass' : 'guitar';
 }
+
+/** The parts of a saved scratchpad this needs to read; any other field is passed through untouched. */
+interface SavedScratch {
+  tab?: string;
+  drums?: string;
+  tabPart?: string;
+  tabParts?: Record<string, { tab?: string; [k: string]: unknown }>;
+  extraParts?: { id: string }[];
+}
+
+/**
+ * Brings a scratchpad saved by any earlier version up to the current layout, so opening an old song never loses its text:
+ *  - a single tab from before parts existed belongs to Guitar, or to Bass when it has four strings;
+ *  - a drum grid saved in the old separate Drum tab box becomes the Drums part's tab;
+ *  - an open part that no longer exists (an added part since deleted) falls back to Guitar.
+ * Returns a new object; the input is not changed.
+ */
+export function normaliseScratch<T extends SavedScratch>(s: T): T {
+  const out: T = { ...s };
+  if (s.tabParts) out.tabParts = structuredClone(s.tabParts);
+  const part = s.tabPart ?? legacyTabPart(s.tab);
+  const known = isBuiltinPart(part) || !!s.extraParts?.some((p) => p.id === part);
+  if (known && part !== 'guitar') out.tabPart = part;
+  else delete out.tabPart;
+  if (s.drums?.trim() && out.tabPart !== 'drums' && !out.tabParts?.drums?.tab) out.tabParts = { ...out.tabParts, drums: { tab: s.drums } };
+  delete out.drums;
+  if (out.tabParts && !Object.keys(out.tabParts).length) delete out.tabParts;
+  return out;
+}

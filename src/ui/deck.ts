@@ -15,7 +15,7 @@ import { initNativeAudio } from './nativeAudio.ts';
 import { parseDrums, type DrumNote } from '../lyrics/drumTab.ts';
 import { drawDrumScore } from './drumStaff.ts';
 import { createDropdown, type Dropdown } from './dropdown.ts';
-import { DEFAULT_PART_NAMES, PART_IDS, TAB_FIELDS, defaultTrack, isBuiltinPart, legacyTabPart, newPartId, type ExtraPart, type PartId, type TabPartId } from '../lyrics/tabParts.ts';
+import { DEFAULT_PART_NAMES, PART_IDS, TAB_FIELDS, defaultTrack, isBuiltinPart, newPartId, normaliseScratch, type ExtraPart, type PartId, type TabPartId } from '../lyrics/tabParts.ts';
 import { placeTake, shiftTake } from '../player/placement.ts';
 import { lineAt, parseLrc, type Lrc } from '../lyrics/lrc.ts';
 import {
@@ -2294,7 +2294,10 @@ export class Deck {
     };
   }
 
-  private applyScratch(s?: ScratchState) {
+  private applyScratch(saved?: ScratchState) {
+    // Whatever version saved this song, bring it up to the current layout first (see normaliseScratch: old single tabs, the old
+    // drum box, a deleted part).
+    const s = saved ? normaliseScratch(saved) : saved;
     this.scratch = { lyrics: s?.lyrics ?? '', tab: s?.tab ?? '', notes: s?.notes ?? '' };
     if (s?.lyricsFollow) this.scratch.lyricsFollow = true;
     if (s?.lyricsOffset) this.scratch.lyricsOffset = s.lyricsOffset;
@@ -2305,16 +2308,9 @@ export class Deck {
     if (s?.tabEar) this.scratch.tabEar = true;
     this.resetTrainerTally(); // (before the scores below are restored: it commits whatever bar the last song left half played)
     if (s?.tabBarScores && Object.keys(s.tabBarScores).length) this.scratch.tabBarScores = s.tabBarScores;
-    // Which part the saved tab belongs to. A song saved before parts existed has just one tab: a four-string one is a bass
-    // line, anything else guitar.
-    const part = s?.tabPart ?? legacyTabPart(s?.tab);
-    if (part !== 'guitar') this.scratch.tabPart = part;
+    if (s?.tabPart) this.scratch.tabPart = s.tabPart;
     if (s?.tabParts && Object.keys(s.tabParts).length) this.scratch.tabParts = structuredClone(s.tabParts);
-    // A drum grid saved before the drums had a part of their own lives in `drums`: it becomes the drums part's tab.
-    if (s?.drums?.trim() && s.tabPart !== 'drums' && !this.scratch.tabParts?.drums?.tab) this.scratch.tabParts = { ...this.scratch.tabParts, drums: { tab: s.drums } };
     if (s?.extraParts?.length) this.scratch.extraParts = s.extraParts.map((p) => ({ ...p }));
-    // (A saved open part that no longer exists, an added part deleted since, falls back to guitar.)
-    if (this.scratch.tabPart && !isBuiltinPart(this.scratch.tabPart) && !this.scratch.extraParts?.some((p) => p.id === this.scratch.tabPart)) delete this.scratch.tabPart;
     if (s?.partNames && Object.keys(s.partNames).length) this.scratch.partNames = { ...s.partNames };
     if (s?.partTracks && Object.keys(s.partTracks).length) this.scratch.partTracks = { ...s.partTracks };
     this.scratchAreas.lyrics.value = this.scratch.lyrics ?? '';
