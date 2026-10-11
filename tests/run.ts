@@ -1,7 +1,7 @@
 // Run with: npm test   (Node 22+, uses --experimental-strip-types)
 // Checks the separation maths with a fake network, and the encoders against ffmpeg.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SEGMENT, SR, countRuns, pickStems, separate, type Member, type Stereo } from '../src/engine/separate.ts';
@@ -1433,6 +1433,18 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('library: an unfinished save is only cleaned up when meta is definitely missing and everything is over a day old', canCleanIncompleteSong('missing', now - 2 * INCOMPLETE_GRACE_MS, now) === true);
   ok('library: a save in progress (recent files) is never cleaned up', canCleanIncompleteSong('missing', now - 1000, now) === false && canCleanIncompleteSong('missing', now - INCOMPLETE_GRACE_MS / 2, now) === false);
   ok('library: an unreadable meta file, or unknown file times, never lead to deleting a song', canCleanIncompleteSong('unreadable', now - 5 * INCOMPLETE_GRACE_MS, now) === false && canCleanIncompleteSong('missing', null, now) === false);
+}
+
+
+{
+  // The getting-started page on the website: complete and not broken.
+  const pageUrl = new URL('../public/guide/index.html', import.meta.url);
+  const html = readFileSync(pageUrl, 'utf8');
+  const imgs = [...html.matchAll(/<img\b[^>]*>/g)].map((m) => m[0]);
+  ok('guide page: every image has a description and a file that exists', imgs.length >= 5 && imgs.every((i) => /\balt="/.test(i)) && imgs.filter((i) => /src="img\//.test(i)).every((i) => existsSync(new URL(`../public/guide/${/src="([^"]+)"/.exec(i)![1]}`, import.meta.url))));
+  ok('guide page: one main heading, a language, a viewport and a skip link', (html.match(/<h1\b/g) || []).length === 1 && /<html lang="en">/.test(html) && /name="viewport"/.test(html) && /class="skip"/.test(html));
+  ok('guide page: links to the app, the downloads, the FAQ and the privacy statement', ['href="../"', '/releases', 'FAQ.md', 'PRIVACY.md'].every((s) => html.includes(s)));
+  ok('guide page: says what the app is honestly (free, pre-release, chord detection is a draft, installers unsigned)', /pre-release/i.test(html) && /first draft/i.test(html) && /not code-signed/i.test(html) && /MIT/.test(html));
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

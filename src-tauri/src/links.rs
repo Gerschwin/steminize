@@ -3,7 +3,7 @@
 // dead in the desktop app. The webview asks through this command instead, and only https links to
 // the sites the app itself links to are honoured, so a page can't use it to launch anything else.
 
-const ALLOWED_HOSTS: &[&str] = &["github.com", "huggingface.co", "onnxruntime.ai", "tauri.app", "genius.com", "www.paypal.com"];
+const ALLOWED_HOSTS: &[&str] = &["github.com", "huggingface.co", "onnxruntime.ai", "tauri.app", "genius.com", "www.paypal.com", "gerschwin.github.io"];
 
 fn allowed(url: &str) -> bool {
     let Some(rest) = url.strip_prefix("https://") else { return false };

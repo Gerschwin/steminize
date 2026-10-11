@@ -186,6 +186,7 @@ The float64 conversion is done by `src/engine/fixfloat64.ts`, which rewrites tho
 
 ## More documents
 
+- **[Getting-started guide](https://gerschwin.github.io/steminize/guide/)** (a short tour with screenshots; the page is `public/guide/index.html`).
 - [DATA_FORMAT.md](DATA_FORMAT.md): what the app saves (songs, takes, setlists, backups) and the rules that keep old songs opening.
 - [UPDATER.md](UPDATER.md): how in-app updates work and the update-signing key.
 - [FAQ.md](FAQ.md): installing, slow separation, recording delay and other common questions.

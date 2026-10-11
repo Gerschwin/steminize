@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Steminize: a practice studio for musicians</title>
+<meta name="description" content="Split any song into stems on your own computer, then loop it, slow it down, change the key, mute your part and play along. Free and open source; nothing is uploaded." />
+<link rel="icon" href="../icon.svg" type="image/svg+xml" />
+<style>
+  :root {
+    --bg: #0b0b10; --panel: #14141b; --line: #2a2a34; --text: #f2f2f6; --muted: #a2a2b0;
+    --accent: #f0a838; --on-accent: #15110a; --link: #ffc266; --radius: 14px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f5f6fa; --panel: #ffffff; --line: #dfe2ea; --text: #151821; --muted: #566074; --accent: #c97a1a; --on-accent: #15110a; --link: #8f520a; }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+  a { color: var(--link); }
+  a:focus-visible, .btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+  .skip { position: absolute; left: -999px; top: 8px; background: var(--accent); color: var(--on-accent); padding: 8px 14px; border-radius: 8px; z-index: 10; }
+  .skip:focus { left: 8px; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 20px; }
+  header.top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 0; flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 19px; color: inherit; text-decoration: none; }
+  .brand img { width: 30px; height: 30px; }
+  nav { display: flex; flex-wrap: wrap; gap: 4px 18px; }
+  nav a { color: var(--muted); text-decoration: none; font-size: 15px; }
+  nav a:hover { color: var(--text); text-decoration: underline; }
+  .hero { padding: 36px 0 20px; }
+  h1 { font-size: clamp(30px, 5vw, 46px); line-height: 1.12; letter-spacing: -0.02em; margin: 0 0 14px; }
+  .lead { font-size: 19px; color: var(--muted); max-width: 46em; margin: 0 0 24px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 10px; }
+  .btn { display: inline-block; padding: 12px 20px; border-radius: 10px; font-weight: 650; text-decoration: none; border: 1px solid var(--line); color: var(--text); background: var(--panel); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  .btn:hover { filter: brightness(1.08); }
+  .fine { color: var(--muted); font-size: 14px; margin: 6px 0 0; }
+  figure { margin: 26px 0; }
+  figure img { display: block; width: 100%; height: auto; border-radius: var(--radius); border: 1px solid var(--line); }
+  figcaption { color: var(--muted); font-size: 14px; margin-top: 8px; }
+  section { padding: 30px 0; border-top: 1px solid var(--line); }
+  h2 { font-size: 27px; letter-spacing: -0.01em; margin: 0 0 14px; }
+  h3 { font-size: 18px; margin: 0 0 6px; }
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; }
+  ol.steps { padding-left: 22px; display: grid; gap: 12px; }
+  ol.steps li::marker { color: var(--accent); font-weight: 700; }
+  table { border-collapse: collapse; width: 100%; font-size: 15px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  .two { display: grid; gap: 22px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); align-items: start; }
+  code { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; font-size: 14px; }
+  footer { border-top: 1px solid var(--line); padding: 26px 0 40px; color: var(--muted); font-size: 14px; }
+  footer a { margin-right: 16px; }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="./"><img src="../icon.svg" alt="" width="30" height="30" /> Steminize</a>
+    <nav aria-label="Page sections">
+      <a href="#features">What it does</a>
+      <a href="#start">Getting started</a>
+      <a href="#download">Download</a>
+      <a href="#questions">Questions</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero" style="border-top:0">
+      <h1>Practise any song, your way.</h1>
+      <p class="lead">Steminize splits a song into its parts (vocals, drums, bass, guitar and more) on your own computer. Then you loop the tricky bit, slow it down, change the key, mute the part you play, and play along. Nothing is ever uploaded.</p>
+      <div class="actions">
+        <a class="btn primary" href="../">Open the web app</a>
+        <a class="btn" href="#download">Get the desktop app</a>
+      </div>
+      <p class="fine">Free and open source (MIT). Works offline once the splitting model has downloaded. Currently a pre-release, so expect rough edges.</p>
+      <figure>
+        <img src="img/player.webp" width="1400" height="860" alt="The Steminize player showing a song with four tracks, a loop, tempo and pitch controls, a chord timeline with the current chord G and a guitar fingering diagram for G and the next chord C." />
+        <figcaption>An example song (made-up audio): tracks you can mute and solo, a loop, and the chord timeline with guitar diagrams for the chord now and the next one.</figcaption>
+      </figure>
+    </section>
+
+    <section id="features">
+      <h2>What it does</h2>
+      <div class="grid">
+        <div class="card"><h3>Split a song into stems</h3><p>Meta's Demucs model runs on your device (using your graphics card where it can). Choose a 4-stem or 6-stem split, or open tracks you already have.</p></div>
+        <div class="card"><h3>Loop, slow down, change key</h3><p>Loop any section, slow it to 50% without changing pitch, or shift the key up and down. A count-in, a click and a speed trainer that only speeds up when you are playing it right.</p></div>
+        <div class="card"><h3>Mute your part and play along</h3><p>Mute or solo any track, set levels and EQ, and play your own instrument over the rest through your audio interface.</p></div>
+        <div class="card"><h3>Record yourself</h3><p>Record takes over the song, compare them, and keep the best. The desktop app has an experimental low-delay audio engine for playing along.</p></div>
+        <div class="card"><h3>See the chords</h3><p>A scrolling chord timeline, guitar, ukulele and piano diagrams, a capo setting, and chords written above the lyrics. Chord detection is a first draft (roughly 60 to 75% right), so you can correct any chord by ear.</p></div>
+        <div class="card"><h3>Tab and drum notation</h3><p>Paste or type tab, tap it in time, and it scrolls with the music. Drum grids become a percussion staff. A trainer listens as you play and marks each note right or wrong.</p></div>
+      </div>
+      <figure>
+        <img src="img/lyrics.webp" width="1400" height="860" alt="The Scratchpad showing synced lyrics with the chord names written above the words where the chords change." />
+        <figcaption>Synced lyrics with the detected chords above the words. The chord sounding now is highlighted as the song plays.</figcaption>
+      </figure>
+    </section>
+
+    <section id="start">
+      <h2>Getting started</h2>
+      <div class="two">
+        <ol class="steps">
+          <li><b>Open the app</b> in your browser, or install the desktop app. You will see a welcome panel with a <b>Choose a song…</b> button.</li>
+          <li><b>Choose a song</b> from your computer (MP3, WAV, FLAC, M4A, OGG). The first time, Steminize downloads the splitting model once (about 140 MB for the default). After that it works offline.</li>
+          <li><b>Wait for it to split.</b> A graphics card makes this much faster. On a plain processor a song can take a few times its own length. Try one song first.</li>
+          <li><b>Practise.</b> Mute the part you play, drag across the waveform with Shift to loop a section, and use the tempo and pitch sliders. Press <b>?</b> in the app for the keyboard shortcuts.</li>
+        </ol>
+        <figure style="margin-top:0">
+          <img src="img/welcome.webp" width="1400" height="860" alt="The Steminize welcome panel with buttons to choose a song or open tracks you already have, and a note about the one-off model download." />
+          <figcaption>The welcome panel you see on first start.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="download">
+      <h2>Web app or desktop app</h2>
+      <table>
+        <thead><tr><th></th><th>Web app</th><th>Desktop app</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Where</th><td>This site, in a recent browser. It can be installed as an app from the browser menu.</td><td>Windows, macOS and Linux installers from the <a href="https://github.com/Gerschwin/steminize/releases">releases page</a>.</td></tr>
+          <tr><th scope="row">Splitting</th><td>Yes (uses your graphics card through the browser where it can).</td><td>Yes.</td></tr>
+          <tr><th scope="row">Native audio (lower delay)</th><td>No.</td><td>Yes, experimental, off by default.</td></tr>
+          <tr><th scope="row">From YouTube</th><td>No.</td><td>Optional, off until you turn it on, for audio you have the right to use.</td></tr>
+          <tr><th scope="row">Save stems into a folder, very large files</th><td>As a ZIP; limited by the browser.</td><td>Yes.</td></tr>
+          <tr><th scope="row">Updates</th><td>Automatic when you reload.</td><td>Check for updates in About, then Install and restart (Linux AppImage, Windows, macOS).</td></tr>
+        </tbody>
+      </table>
+      <p class="fine"><b>Installer warnings.</b> The installers are not code-signed yet. Windows may say "Windows protected your PC": click <b>More info</b>, then <b>Run anyway</b>. macOS may say it cannot verify the developer: use <b>System Settings → Privacy &amp; Security → Open Anyway</b>. The <a href="https://github.com/Gerschwin/steminize/blob/main/FAQ.md">FAQ</a> has the steps.</p>
+      <figure>
+        <img src="img/light.webp" width="1400" height="860" alt="The player in the light theme." />
+        <figcaption>There is a light theme too, and a Text size setting in the desktop app.</figcaption>
+      </figure>
+    </section>
+
+    <section id="questions">
+      <h2>Questions you may have</h2>
+      <div class="grid">
+        <div class="card"><h3>Is it free?</h3><p>Yes, free and open source under the MIT licence, with nothing held back. If it helps you, an optional donation keeps it maintained (see the Support link in the app's About box or on GitHub).</p></div>
+        <div class="card"><h3>Is my music uploaded?</h3><p>No. Splitting, analysis and your library all stay on your device. The only things fetched from the internet are the splitting model (once, from Hugging Face) and, only if you turn them on, the From YouTube tool and update checks. <a href="https://github.com/Gerschwin/steminize/blob/main/PRIVACY.md">Privacy statement</a>.</p></div>
+        <div class="card"><h3>How good is the splitting?</h3><p>It is the well-known Demucs model, which is good but not perfect: expect some bleed between parts, and the piano and guitar stems of the 6-stem model are the roughest.</p></div>
+        <div class="card"><h3>Something broke</h3><p>Please tell me. In the app, About → <b>Copy diagnostic info</b>, then open an issue on <a href="https://github.com/Gerschwin/steminize/issues/new/choose">GitHub</a>. The <a href="https://github.com/Gerschwin/steminize/blob/main/FAQ.md">FAQ</a> covers the common ones.</p></div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>
+      <a href="../">Open the web app</a>
+      <a href="https://github.com/Gerschwin/steminize">Source code</a>
+      <a href="https://github.com/Gerschwin/steminize/releases">Downloads</a>
+      <a href="https://github.com/Gerschwin/steminize/blob/main/FAQ.md">FAQ</a>
+      <a href="https://github.com/Gerschwin/steminize/blob/main/PRIVACY.md">Privacy</a>
+      <a href="https://github.com/Gerschwin/steminize/blob/main/LICENCES.md">Licences</a>
+    </p>
+    <p>Steminize is built on Meta's Demucs (MIT), with ONNX exports by StemSplit, ONNX Runtime Web, Spotify's Basic Pitch and other open-source work: see the Licences page.</p>
+  </footer>
+</div>
+</body>
+</html>

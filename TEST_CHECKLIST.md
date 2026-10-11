@@ -74,6 +74,9 @@ E|-0---0---0---0---|
 - [ ] Make a new folder inside `library/` containing only a `.flac` file (no meta.json): it is not deleted straight away (it could be a save in progress). A folder like that that is more than a day old is cleaned up at the next start.
 - [ ] Back up the library, delete a song, restore the backup: the song comes back with its settings. A backup from the web app restores on the desktop app and the other way round.
 
+## 0g. Website guide (NEW)
+- [ ] `/guide/` on the website opens, looks right in the dark and light system settings and on a phone, every screenshot loads, and **Open the web app** goes to the app. About → **Getting started guide** opens it (in the desktop app it opens in your browser).
+
 ## 1. Install, launch and About
 
 - [ ] The installer for your platform installs and the app opens (note the OS and version).

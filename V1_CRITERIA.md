@@ -41,7 +41,7 @@ needed for 1.0.
 
 ### 6. Help and a front door
 - [x] README with features, install steps and honest limitations.
-- [x] An FAQ (`FAQ.md`, including the unsigned-installer steps and how to report a bug). Still to do: a simple website page with screenshots and a getting-started guide.
+- [x] An FAQ (`FAQ.md`, including the unsigned-installer steps and how to report a bug). A getting-started page with screenshots is at `/guide/` on the website (`public/guide/index.html`), linked from About; it goes live when `native-audio` is merged into `main`.
 - [x] Bug-report and suggestion templates on GitHub that ask for the Copy diagnostic info text.
 - [x] Release notes on every release (the changelog).
 
