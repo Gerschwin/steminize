@@ -50,6 +50,12 @@ E|-0---0---0---0---|
 - [ ] "The first time" names the current model and its size (change the model under Models or Settings and it updates). Once the model is downloaded it says it is already on this computer.
 - [ ] The Chord timeline and Chords lanes carry a small "draft" tag with a tooltip about accuracy.
 
+## 0c. Model download stop and resume (NEW)
+- [ ] In **Models**, start a download that is not on this computer, then press **Stop**: it says it stopped, and the row shows how much is kept (for example "45 MB of 166 MB kept") with **Resume** and **Discard**. **Resume** carries on from that point (the percentage does not start from 0) and ends as Downloaded.
+- [ ] Cancel a song while it says it is downloading the model: the download stops. Add the song again: the download carries on rather than starting over.
+- [ ] Switch the network off during a download: it fails with a message saying what arrived is kept; switch it on and press Resume.
+- [ ] **Discard** throws the part away; **Delete** on a finished model also leaves no part behind (check the storage figure at the bottom of Models goes down).
+
 ## 1. Install, launch and About
 
 - [ ] The installer for your platform installs and the app opens (note the OS and version).

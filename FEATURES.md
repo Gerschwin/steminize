@@ -11,6 +11,7 @@ are desktop only and are marked **[desktop]**.
 - **Batch queue:** drop in several songs; each shows progress and time left. Released.
 - **Open multitrack:** open separate track files or a whole folder and each becomes a lane, with all the same tools (a shared folder makes this a simple way for a band to share parts). Released.
 - **From YouTube [desktop]:** search and download audio into the queue (fetches yt-dlp on first use). Released. The Windows black command window no longer appears: released in 0.9.3.
+- **Model downloads carry on where they stopped:** a lost connection or a Stop keeps what arrived; the next try asks only for the rest. Models shows how much is kept, with Resume and Discard. Next release.
 - **Runs offline** once a model has downloaded; no audio is ever uploaded. WebGPU acceleration where available, otherwise multi-threaded CPU. Released.
 - **If the graphics card never loads the model**, it falls back to the CPU after 60 seconds, says so, and remembers; "Loading model…" counts the seconds. Released in 0.9.3.
 

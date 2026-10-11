@@ -833,7 +833,7 @@ kbd {
 .yt-meta { min-width: 0; }
 .yt-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .m-browse:hover { text-decoration: underline; }
-.m-file { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 4px 0; font-size: 13px; }
+.m-file { display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px; align-items: center; padding: 4px 0; font-size: 13px; }
 .m-file code { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .m-file .st { font-size: 12px; color: var(--muted); }
 .m-file .st.have { color: var(--ok); }

@@ -41,6 +41,7 @@ import { CHORD_TONES, chordCost, fretShape, pianoKeys, shapeIsRight, suggestCapo
 import { QUALITIES } from '../src/analysis/chords.ts';
 import { segmentsFor, snapToWord, sungSeconds } from '../src/lyrics/lyricChords.ts';
 import { modelNote } from '../src/models.ts';
+import { downloadResumable, keptBytes, parseContentRange, type PartStore } from '../src/modelDownload.ts';
 import { BarTally, barColour, barCue, barPercent, barTip } from '../src/lyrics/barScores.ts';
 
 let failed = 0;
@@ -1265,6 +1266,73 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   const fresh = modelNote('HT Demucs 6-stem', 136 * 1048576, false);
   ok('welcome: a first-time user is told the size, that it is one-off, and that it then works offline', /136 MB/.test(fresh) && /one-off/.test(fresh) && /offline/.test(fresh) && fresh.includes('HT Demucs 6-stem'));
   ok('welcome: a part-finished download says the rest will be fetched once', /Part of/.test(modelNote('X', 1048576, 'partly')));
+}
+
+
+{
+  // Resumable model downloads, against a fake server that honours (or ignores) Range requests.
+  const MB = 1024 * 1024;
+  const file = new Uint8Array(5 * MB).map((_, i) => (i * 31 + (i >> 8)) & 255);
+  const store = (): PartStore & { data: Blob[] } => {
+    const data: Blob[] = [];
+    return { data, sizes: async () => data.map((b) => b.size), put: async (i, b) => void (data[i] = b), blobs: async () => [...data], clear: async () => void (data.length = 0) };
+  };
+  const server = (opts: { range?: boolean; breakAt?: number; badRange?: boolean } = {}) => {
+    const calls: (string | undefined)[] = [];
+    const fn = (async (_url: string, init?: RequestInit) => {
+      const range = (init?.headers as Record<string, string> | undefined)?.Range;
+      calls.push(range);
+      const from = range ? Number(/bytes=(\d+)-/.exec(range)![1]) : 0;
+      const honour = opts.range !== false && range;
+      const start = honour ? from : 0;
+      const body = file.slice(start);
+      let sent = 0;
+      const stream = new ReadableStream<Uint8Array>({
+        pull(ctl) {
+          if (sent >= body.length) return ctl.close();
+          const n = Math.min(256 * 1024, body.length - sent);
+          if (opts.breakAt != null && start + sent >= opts.breakAt) return ctl.error(new Error('connection lost'));
+          ctl.enqueue(body.slice(sent, sent + n));
+          sent += n;
+        },
+      });
+      const headers: Record<string, string> = { 'content-length': String(body.length) };
+      if (honour) headers['content-range'] = opts.badRange ? `bytes 0-${file.length - 1}/${file.length}` : `bytes ${start}-${file.length - 1}/${file.length}`;
+      return new Response(stream, { status: honour ? 206 : 200, headers });
+    }) as unknown as typeof fetch;
+    return { fn, calls };
+  };
+  const same = async (b: Blob) => { const x = new Uint8Array(await b.arrayBuffer()); return x.length === file.length && x.every((v, i) => v === file[i]); };
+  const prog: number[] = [];
+
+  const s1 = store();
+  const whole = await downloadResumable({ url: 'u', parts: s1, expected: file.length, onProgress: (l) => prog.push(l), fetchFn: server().fn, partBytes: MB });
+  ok('download: a plain download returns the whole file and reports progress up to its size', (await same(whole)) && prog[prog.length - 1] === file.length && s1.data.length >= 4);
+
+  const s2 = store();
+  let err = '';
+  try { await downloadResumable({ url: 'u', parts: s2, expected: file.length, onProgress: () => {}, fetchFn: server({ breakAt: 2 * MB }).fn, partBytes: MB }); } catch (e) { err = (e as Error).message; }
+  const kept = await keptBytes(s2);
+  ok('download: a dropped connection keeps what arrived', err === 'connection lost' && kept >= 2 * MB && kept < file.length, `${err} ${kept}`);
+
+  const srv = server();
+  const prog2: number[] = [];
+  const done = await downloadResumable({ url: 'u', parts: s2, expected: file.length, onProgress: (l) => prog2.push(l), fetchFn: srv.fn, partBytes: MB });
+  ok('download: the next try asks only for the rest and gets the same file', srv.calls[0] === `bytes=${kept}-` && (await same(done)));
+  ok('download: progress carries on from where it stopped, not from zero', prog2[0] > kept && prog2[prog2.length - 1] === file.length);
+
+  const s3 = store();
+  try { await downloadResumable({ url: 'u', parts: s3, expected: file.length, onProgress: () => {}, fetchFn: server({ breakAt: 2 * MB }).fn, partBytes: MB }); } catch { /* expected */ }
+  const noRange = await downloadResumable({ url: 'u', parts: s3, expected: file.length, onProgress: () => {}, fetchFn: server({ range: false }).fn, partBytes: MB });
+  ok('download: a server that ignores Range gives the whole file again, not a mixed-up one', await same(noRange));
+
+  const s4 = store();
+  try { await downloadResumable({ url: 'u', parts: s4, expected: file.length, onProgress: () => {}, fetchFn: server({ breakAt: 2 * MB }).fn, partBytes: MB }); } catch { /* expected */ }
+  const badSrv = server({ badRange: true });
+  const fixed = await downloadResumable({ url: 'u', parts: s4, expected: file.length, onProgress: () => {}, fetchFn: badSrv.fn, partBytes: MB });
+  ok('download: an answer that does not start where asked makes it start again from the beginning', (await same(fixed)) && badSrv.calls.length === 2 && badSrv.calls[1] === undefined);
+
+  ok('download: parseContentRange reads a range and refuses nonsense', parseContentRange('bytes 100-199/1000')?.total === 1000 && parseContentRange('bytes */1000') === null && parseContentRange(null) === null);
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

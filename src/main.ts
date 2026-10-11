@@ -6,7 +6,7 @@ import { isTauri, pickFolderFiles } from './platform.ts';
 import { loadSettings, type Settings } from './settings.ts';
 import { Deck, type Result } from './ui/deck.ts';
 import { $, fmtDuration, fmtEta, fmtTime, h, openDialog, toast } from './ui/dom.ts';
-import { ensureDownloaded, initModelsDialog, onModelsChanged } from './ui/modelsDialog.ts';
+import { cancelDownloads, ensureDownloaded, initModelsDialog, onModelsChanged } from './ui/modelsDialog.ts';
 import { initWelcome } from './ui/welcome.ts';
 import { SettingsPanel } from './ui/settingsPanel.ts';
 import { initLibrary } from './ui/libraryPanel.ts';
@@ -222,6 +222,8 @@ function openTrack(t: Track) {
 function removeTrack(t: Track) {
   if (['downloading', 'decoding', 'separating'].includes(t.status)) {
     engine.cancel(t.id);
+    // A download in progress stops too (what has arrived is kept for next time), unless another song in the queue is waiting on it.
+    if (t.status === 'downloading' && !tracks.some((o) => o !== t && o.status === 'downloading')) cancelDownloads(neededFiles(t.settings.model, t.settings.precision, t.settings.twoStems, t.settings.skipStems));
     t.status = 'cancelled';
     t.text = 'Cancelling…';
     renderTrack(t);

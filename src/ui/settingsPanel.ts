@@ -1,5 +1,5 @@
 import { MODELS, neededFiles, stemColour, type ModelId } from '../models.ts';
-import { hasModel } from '../modelstore.ts';
+import { hasModel, partialBytes } from '../modelstore.ts';
 import { DEFAULTS, saveSettings, type Settings } from '../settings.ts';
 import { resetAppPreferences } from '../prefs.ts';
 import { $, fmtMB, h, pressed } from './dom.ts';
@@ -54,9 +54,9 @@ export class SettingsPanel {
       ...Object.values(MODELS).map((m) => {
         const size = m.files[s.precision].reduce((a, f) => a + f.bytes, 0);
         const meta = h('span', { class: 'meta' }, fmtMB(size));
-        Promise.all(m.files[s.precision].map(hasModel)).then((have) => {
-          if (have.every(Boolean)) meta.replaceChildren(h('span', { class: 'have' }, 'Downloaded'));
-          else if (have.some(Boolean)) meta.textContent = 'Partly downloaded';
+        Promise.all(m.files[s.precision].map(async (f) => ({ have: await hasModel(f), kept: await partialBytes(f) }))).then((st) => {
+          if (st.every((x) => x.have)) meta.replaceChildren(h('span', { class: 'have' }, 'Downloaded'));
+          else if (st.some((x) => x.have || x.kept > 0)) meta.textContent = 'Partly downloaded';
         });
         const b = h('button', { class: 'model-card', type: 'button' }, h('b', {}, m.label), meta, h('p', {}, m.blurb));
         pressed(b, m.id === s.model);
@@ -107,7 +107,7 @@ export class SettingsPanel {
     // Cost estimate
     const files = neededFiles(s.model, s.precision, s.twoStems, s.skipStems);
     const passes = files.length * s.shifts * (1 + (s.overlap - 0.25) * 1.2);
-    const missing = (await Promise.all(files.map(async (f) => ((await hasModel(f)) ? 0 : f.bytes)))).reduce((a, b) => a + b, 0);
+    const missing = (await Promise.all(files.map(async (f) => ((await hasModel(f)) ? 0 : Math.max(0, f.bytes - (await partialBytes(f))))))).reduce((a, b) => a + b, 0);
     const parts = [passes <= 1.05 ? 'Fastest setting.' : `About ${passes.toFixed(1)}× the time of the default.`];
     if (s.model === 'htdemucs_ft' && files.length < 4) parts.push(`Only runs the ${files.length} specialist model${files.length > 1 ? 's' : ''} needed.`);
     if (s.model === 'htdemucs_ft' && s.twoStems) parts.push('"Everything else" = original minus the stem.');
