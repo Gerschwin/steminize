@@ -4,7 +4,8 @@ import licenceSteminize from '../../LICENSE?raw';
 import licenceBasicPitch from '../analysis/models/BASIC-PITCH-LICENSE?raw';
 import noticeBasicPitch from '../analysis/models/BASIC-PITCH-NOTICE?raw';
 import { isTauri } from '../platform.ts';
-import { pickUpdate, type ReleaseInfo } from '../version.ts';
+import { installUpdate, prepareUpdate, updateSupported } from '../updater.ts';
+import { pickUpdate, updateEndpoint, type ReleaseInfo } from '../version.ts';
 import { collectDiagnostics } from './diagnostics.ts';
 import { $, openDialog, toast } from './dom.ts';
 
@@ -16,8 +17,10 @@ async function checkForUpdates() {
   const btn = $<HTMLButtonElement>('updateBtn');
   const status = $('updateStatus');
   const link = $<HTMLAnchorElement>('updateLink');
+  const install = $<HTMLButtonElement>('updateInstallBtn');
   btn.disabled = true;
   link.hidden = true;
+  install.hidden = true;
   status.textContent = 'Checking…';
   try {
     const res = await fetch(RELEASES_API, { headers: { Accept: 'application/vnd.github+json' } });
@@ -33,6 +36,12 @@ async function checkForUpdates() {
         // Only ever link to this project's own releases, whatever the response says.
         link.href = rel.html_url?.startsWith(`${RELEASES_URL}/`) ? rel.html_url : RELEASES_URL;
         link.hidden = false;
+        // Where the install can do it by itself (not a .deb or .rpm), offer to install and restart; the link stays as the way out.
+        const endpoint = updateEndpoint(tag);
+        if (endpoint && (await updateSupported())) {
+          install.hidden = false;
+          install.onclick = () => void installFromGithub(tag, endpoint, install, status);
+        }
       } else if (!releases.some((r) => !r.draft)) {
         status.textContent = 'No published release found yet.';
       } else {
@@ -41,6 +50,29 @@ async function checkForUpdates() {
     }
   } catch {
     status.textContent = "Couldn't reach GitHub. Check your connection.";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/** Fetches, checks and installs a release's update, then the app restarts. Any failure leaves the manual download link to use. */
+async function installFromGithub(tag: string, endpoint: string, btn: HTMLButtonElement, status: HTMLElement) {
+  if (!confirm(`Install ${tag} now? Steminize will download it, install it and restart. Your library and settings are kept. Save or stop anything you are in the middle of first (a recording, a separation).`)) return;
+  btn.disabled = true;
+  status.textContent = `Preparing ${tag}…`;
+  try {
+    const version = await prepareUpdate(endpoint);
+    if (!version) {
+      status.textContent = `${tag} has no update this app can install. Use the link to download it.`;
+      return;
+    }
+    status.textContent = `Downloading ${tag}…`;
+    await installUpdate((got, total) => {
+      status.textContent = total > 0 ? `Downloading ${tag}: ${Math.min(100, Math.round((100 * got) / total))}%` : `Downloading ${tag}…`;
+    });
+    status.textContent = 'Installing… Steminize will restart.';
+  } catch (e) {
+    status.textContent = `Couldn't install ${tag} automatically (${(e as Error).message ?? e}). Use the link to download it.`;
   } finally {
     btn.disabled = false;
   }
@@ -68,7 +100,7 @@ export function initAbout() {
   $('licBasicPitch').textContent = `${noticeBasicPitch.trim()}\n\n${licenceBasicPitch.trim()}`;
   $('aboutBtn').onclick = () => openDialog($<HTMLDialogElement>('aboutDlg'));
 
-  // Updates: the desktop app is installed by hand, so it can't update itself. (The web app updates on reload.)
+  // Updates: Check for updates asks GitHub; where the install can replace itself it also offers Install and restart. (The web app updates on reload.)
   if (isTauri) {
     $('aboutUpdate').hidden = false;
     $('updateBtn').onclick = () => void checkForUpdates();

@@ -12,6 +12,9 @@ else (make it executable, then run it).
 
 **MP3 or M4A files won't open on Linux.** Install the GStreamer libav plug-in: `sudo apt install gstreamer1.0-libav` (the AppImage already includes it).
 
+## Updating
+**How do I update?** In the desktop app press the ⓘ button, then **Check for updates**. On Windows, macOS and the Linux AppImage an **Install and restart** button appears: it downloads the update, checks it is genuine, installs it and restarts, keeping your library and settings. On a Linux `.deb` or `.rpm` install, use the download link and install the new package (your package manager owns those). The web app updates itself when you reload the page.
+
 ## Separating songs
 **What is downloaded, and how big is it?** The first time you pick a model, one file (about 140–660 MB depending on the model and precision) is downloaded
 once and kept; after that the app works with no internet. Your songs are never uploaded.

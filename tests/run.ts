@@ -21,7 +21,7 @@ import { BP_PITCHES, BP_WINDOW, bpNotes, bpUnwrap, bpWindows, singleLine } from 
 import { decimate2 } from '../src/analysis/resample.ts';
 import { writeMidi } from '../src/encode/midi.ts';
 import { centsFrom, detectPitch, freqToNote } from '../src/analysis/pitch.ts';
-import { isNewer, parseVersion, pickUpdate } from '../src/version.ts';
+import { isNewer, parseVersion, pickUpdate, updateEndpoint } from '../src/version.ts';
 import { lineAt, parseLrc } from '../src/lyrics/lrc.ts';
 import { splitLength, staffX, vexKey } from '../src/ui/staff.ts';
 import { acceptedMidis, timeAtCoord, fromUnrolled, repeatPlan, toUnrolled, addAnchor, charOffsetAt, coordAtBpm, coordToPlace, coordToStripX, findNoteAt, noteCols, noteGroupAt, parseScore, parseTab, setRhythmLetter, stripLayout, isLockedAt, moveAnchor, offsetToCoord, removeAnchor, rowCol, tabBlocks, tabPositionAt, toggleAnchorLock, type TabAnchor, type TabNote } from '../src/lyrics/tabSync.ts';
@@ -1379,6 +1379,12 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('text size: the choice is remembered, and normal leaves nothing stored', got === 1.5 && !mem.has(ZOOM_KEY) && loadZoom(store) === 1);
   ok('text size: unreadable storage means normal', loadZoom({ getItem: () => { throw new Error('blocked'); } }) === 1);
   ok('text size: labels read well, and Reset app preferences puts it back to normal', zoomLabel(1) === 'Normal' && zoomLabel(1.25) === '125%' && (APP_PREFERENCE_KEYS as readonly string[]).includes(ZOOM_KEY));
+}
+
+
+{
+  ok('updater: a plain version tag gets its release address', updateEndpoint('v0.9.5') === 'https://github.com/Gerschwin/steminize/releases/download/v0.9.5/latest.json' && updateEndpoint('v1.0.0') === 'https://github.com/Gerschwin/steminize/releases/download/v1.0.0/latest.json');
+  ok('updater: anything that is not a plain version tag gets none', [null, '', '0.9.5', 'v0.9', 'v0.9.5-beta', 'v0.9.5/../x', 'untagged-123', 'v0.9.5 ', 'vx.y.z'].every((t) => updateEndpoint(t as string) === null));
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

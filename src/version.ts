@@ -14,6 +14,12 @@ export function isNewer(latest: string, current: string): boolean {
   return false;
 }
 
+/** The address of a release's update description (latest.json), for the in-app updater, or null if the tag isn't a plain version tag
+ * like v0.9.5. The app only ever builds this from a release tag it was given by GitHub's list, and the Rust side checks it again. */
+export function updateEndpoint(tag: string): string | null {
+  return /^v\d+\.\d+\.\d+$/.test(tag) ? `https://github.com/Gerschwin/steminize/releases/download/${tag}/latest.json` : null;
+}
+
 export interface ReleaseInfo {
   tag_name?: string;
   html_url?: string;

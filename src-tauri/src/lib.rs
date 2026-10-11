@@ -8,6 +8,7 @@ mod links;
 mod native_audio;
 mod native_input;
 mod native_playback;
+mod updater;
 mod ytdlp;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -63,7 +64,9 @@ pub fn run() {
         })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .invoke_handler(tauri::generate_handler![ytdlp::ytdlp_search, ytdlp::ytdlp_download, ytdlp::ytdlp_read, ytdlp::ytdlp_cleanup, links::open_link,
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updater::Pending::default())
+        .invoke_handler(tauri::generate_handler![ytdlp::ytdlp_search, ytdlp::ytdlp_download, ytdlp::ytdlp_read, ytdlp::ytdlp_cleanup, links::open_link, updater::update_supported, updater::update_check, updater::update_install,
             library::lib_list, library::lib_write_meta, library::lib_write_file, library::lib_read_file,
             library::lib_list_files, library::lib_remove_file, library::lib_delete, library::lib_free_space,
             native_audio::native_audio_devices, native_audio::native_monitor_start, native_audio::native_monitor_stop, native_audio::native_monitor_stats, native_audio::native_loopback,

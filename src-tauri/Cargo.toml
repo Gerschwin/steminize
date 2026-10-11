@@ -16,6 +16,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
+tauri-plugin-updater = "2"
 # For the "From YouTube" import: fetches a standalone yt-dlp binary on first use and shells
 # out to it (search + audio-only download). No ffmpeg needed since we never re-encode/mux.
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }

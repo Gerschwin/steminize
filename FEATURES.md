@@ -78,7 +78,7 @@ are desktop only and are marked **[desktop]**.
 
 ## The app itself
 - **Desktop app** for Windows (`.exe`, `.msi`), macOS (`.dmg`) and Linux (`.deb`, `.rpm`, AppImage), built by CI; the web app installs on desktop and phone. Released.
-- **About:** version, what uses the network, credits and licences, a Support link, **Check for updates** [desktop], and **Copy diagnostic info** for bug reports. Released.
+- **About:** version, what uses the network, credits and licences, a Support link, **Check for updates** [desktop], and **Copy diagnostic info** for bug reports. Released. **In-app update** [desktop]: where the install can replace itself (Windows, macOS, the Linux AppImage), an **Install and restart** button downloads the update, checks its signature against the key built into the app, installs it and restarts; .deb and .rpm installs get the download link. Built, not yet in a release; it needs the signing secrets set (see UPDATER.md) and two published releases to try for real.
 - **Support:** a PayPal link in About and the README, and a Sponsor button on the repository. Released.
 - **Appearance:** dark theme by default, a light theme, remembered. No flash of the wrong theme at start, and the desktop window starts dark. Released in 0.9.4.
 - **No stray text selection** and no ghost image when dragging controls or resizing a track. Released in 0.9.4.

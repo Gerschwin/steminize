@@ -19,7 +19,7 @@ needed for 1.0.
 ### 2. Installers that don't scare people
 - [x] Windows code signing: **deferred, decided 2026-10-11** (free for now, unsure how much it will be used). 1.0 ships unsigned; the warning and the click-through are explained in the FAQ, the README and the release notes. Revisit when there is evidence of use (options: SignPath Foundation's free open-source signing, or a paid certificate / Azure Trusted Signing).
 - [x] macOS signing and notarisation: **deferred, decided 2026-10-11**, same reasoning (the Apple Developer Program is about $99 a year). Unsigned 1.0 with the Open Anyway / `xattr` steps in the FAQ. This is the heavier friction of the two, so it is the first to sign if use justifies it.
-- [ ] In-app update that downloads and installs, not only "a newer version exists" (Tauri updater with signed update files). (Claude)
+- [ ] In-app update that downloads and installs: **built 2026-10-11** (Install and restart in About; signed update files; see `UPDATER.md`). A local AppImage build produced the signed update file. Still to do before this can be ticked: Neil sets the repository secrets `TAURI_SIGNING_PRIVATE_KEY` (and backs the key up), then two published releases are needed to try an update for real.
 
 ### 3. A good first run
 - [x] A short welcome (the panel shown when no song is open): what the app is for, three ways to start, what the first split downloads (model name and size, whether it is already here), and that nothing is uploaded. A "Try a sample song" button is built in and hidden until a sample exists.
