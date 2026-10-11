@@ -17,8 +17,8 @@ needed for 1.0.
 - [ ] Native audio on real hardware: playback and recording on Linux with an interface (playback tried; recording not yet), and a first try on Windows and macOS. Either proven, or kept labelled "experimental" with the normal engine as the default. (Both)
 
 ### 2. Installers that don't scare people
-- [ ] Windows code signing, so there is no "Windows protected your PC" warning. Costs money each year. (Neil to decide, Claude to wire into the build)
-- [ ] macOS signing and notarisation, so there is no "can't verify the developer" block. Needs an Apple developer account. (Neil to decide, Claude to wire into the build)
+- [x] Windows code signing: **deferred, decided 2026-10-11** (free for now, unsure how much it will be used). 1.0 ships unsigned; the warning and the click-through are explained in the FAQ, the README and the release notes. Revisit when there is evidence of use (options: SignPath Foundation's free open-source signing, or a paid certificate / Azure Trusted Signing).
+- [x] macOS signing and notarisation: **deferred, decided 2026-10-11**, same reasoning (the Apple Developer Program is about $99 a year). Unsigned 1.0 with the Open Anyway / `xattr` steps in the FAQ. This is the heavier friction of the two, so it is the first to sign if use justifies it.
 - [ ] In-app update that downloads and installs, not only "a newer version exists" (Tauri updater with signed update files). (Claude)
 
 ### 3. A good first run
@@ -63,7 +63,7 @@ needed for 1.0.
 - [x] Dark theme by default with no flash at start; installers for Windows, macOS and Linux built by CI.
 
 ## Decisions waiting for Neil
-1. **Code signing:** buy and set up Windows and Apple signing, or release 1.0 unsigned with clear instructions? (Money, and the first impression.)
+1. ~~Code signing~~ **Decided 2026-10-11: release unsigned for now**, with clear instructions; revisit once there is evidence of use.
 2. ~~From YouTube: keep, make optional, or remove?~~ **Decided 2026-10-11: opt-in with a notice.**
 3. **Native audio at 1.0:** on by default, off by default, or labelled experimental?
 4. ~~Free, paid or pay-what-you-want?~~ **Decided 2026-10-11: free (MIT) with optional donations.** The website page should say so plainly.
@@ -71,4 +71,4 @@ needed for 1.0.
 6. **When is it "ready"?** Suggested rule: every Must have ticked, plus two weeks of testers with no new serious bug.
 
 ## Suggested path
-0.9.4 (parts, drums, chord view, theme fix) → test round on all three platforms → fix → 0.10.0 (welcome screen, sample song, in-app update, data-format tests) → signing → release candidate → 1.0.
+0.9.4 (parts, drums, chord view, theme fix) → test round on all three platforms → fix → 0.10.0 (welcome screen, sample song, in-app update, data-format tests) → (signing only if use justifies it) → release candidate → 1.0.
