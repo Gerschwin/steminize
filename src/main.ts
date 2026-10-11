@@ -8,6 +8,8 @@ import { Deck, type Result } from './ui/deck.ts';
 import { $, fmtDuration, fmtEta, fmtTime, h, openDialog, toast } from './ui/dom.ts';
 import { cancelDownloads, ensureDownloaded, initModelsDialog, onModelsChanged } from './ui/modelsDialog.ts';
 import { initWelcome } from './ui/welcome.ts';
+import { NATIVE_INFO, NATIVE_TIP, NATIVE_TIP_KEY, NATIVE_WELCOME, nativeTipVisible } from './nativeHint.ts';
+import { nativeIsOn, revealNativeAudio } from './ui/nativeAudio.ts';
 import { YOUTUBE_NOTICE, YOUTUBE_REMINDER, setYoutubeEnabled, youtubeEnabled } from './youtubeOptIn.ts';
 import { SettingsPanel } from './ui/settingsPanel.ts';
 import { initLibrary } from './ui/libraryPanel.ts';
@@ -498,6 +500,27 @@ if (isTauri) {
     setYoutubeEnabled(localStorage, ytOpt.checked);
     ytBtn.hidden = !ytOpt.checked;
   };
+  // Native audio is experimental and off by default: say that it exists, in the Live input drawer, in Settings and on the welcome panel.
+  const tip = $('nativeTip');
+  $('nativeTipText').textContent = NATIVE_TIP;
+  tip.hidden = !nativeTipVisible(localStorage, true, nativeIsOn());
+  $('nativeTipShow').onclick = () => void revealNativeAudio();
+  $('nativeTipDismiss').onclick = () => {
+    try {
+      localStorage.setItem(NATIVE_TIP_KEY, '1');
+    } catch {
+      /* storage unavailable: it shows again next time */
+    }
+    tip.hidden = true;
+  };
+  $('nativeInfoCard').hidden = false;
+  $('nativeInfoText').textContent = NATIVE_INFO;
+  $('nativeInfoShow').onclick = () => {
+    if (!revealNativeAudio()) toast("Open a song first: Native audio is in its Live input drawer.");
+  };
+  const wn = $('welcomeNative');
+  wn.hidden = false;
+  wn.textContent = NATIVE_WELCOME;
 }
 
 // ---------------------------------------------------------------- file input & drag/drop

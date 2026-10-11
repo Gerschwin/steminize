@@ -56,6 +56,12 @@ E|-0---0---0---0---|
 - [ ] Switch the network off during a download: it fails with a message saying what arrived is kept; switch it on and press Resume.
 - [ ] **Discard** throws the part away; **Delete** on a finished model also leaves no part behind (check the storage figure at the bottom of Models goes down).
 
+## 0d. Native audio is easy to find (NEW) [desktop]
+- [ ] On a fresh install (or after **Reset app preferences**) the welcome panel has a line about Native audio (experimental). Settings has a **Native audio** card; **Show me where** with no song open says to open a song first; with a song open it opens the Live input drawer, scrolls to the Native audio row and outlines it for a few seconds.
+- [ ] Opening a song's **Live input** drawer shows a tip at the top: "New and experimental…". **Show me** does the same as above; **Got it** hides it for good (until Reset app preferences). The tip does not show once native playback is switched on.
+- [ ] Native audio is **off** on a fresh install: Use native playback is unticked, and songs play through the normal engine.
+- [ ] None of this appears in the web app.
+
 ## 1. Install, launch and About
 
 - [ ] The installer for your platform installs and the app opens (note the OS and version).

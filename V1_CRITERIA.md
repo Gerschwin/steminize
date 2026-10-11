@@ -14,7 +14,7 @@ needed for 1.0.
 - [ ] macOS: the same, on an Intel and an Apple-chip Mac if possible. Never tried yet. (Both)
 - [ ] Linux: `.deb`, `.rpm` and AppImage each install and run on a real machine. The AppImage was checked in a virtual display; the others by the maintainer. (Both)
 - [ ] `TEST_CHECKLIST.md` run in full, and every failure fixed or written down as a known limit. (Both)
-- [ ] Native audio on real hardware: playback and recording on Linux with an interface (playback tried; recording not yet), and a first try on Windows and macOS. Either proven, or kept labelled "experimental" with the normal engine as the default. (Both)
+- [ ] (Decided: stays off by default and labelled experimental until this is done.) Native audio on real hardware: playback and recording on Linux with an interface (playback tried; recording not yet), and a first try on Windows and macOS. Either proven, or kept labelled "experimental" with the normal engine as the default. (Both)
 
 ### 2. Installers that don't scare people
 - [x] Windows code signing: **deferred, decided 2026-10-11** (free for now, unsure how much it will be used). 1.0 ships unsigned; the warning and the click-through are explained in the FAQ, the README and the release notes. Revisit when there is evidence of use (options: SignPath Foundation's free open-source signing, or a paid certificate / Azure Trusted Signing).
@@ -65,7 +65,7 @@ needed for 1.0.
 ## Decisions waiting for Neil
 1. ~~Code signing~~ **Decided 2026-10-11: release unsigned for now**, with clear instructions; revisit once there is evidence of use.
 2. ~~From YouTube: keep, make optional, or remove?~~ **Decided 2026-10-11: opt-in with a notice.**
-3. **Native audio at 1.0:** on by default, off by default, or labelled experimental?
+3. ~~Native audio at 1.0~~ **Decided 2026-10-11: off by default until fully tested, but easy to find and known to exist** (a tip in the Live input drawer, a Settings card with a Show me where button, a line on the welcome panel; all desktop only). Turn it on by default only once it has been proven on real Windows, macOS and Linux hardware.
 4. ~~Free, paid or pay-what-you-want?~~ **Decided 2026-10-11: free (MIT) with optional donations.** The website page should say so plainly.
 5. **Sample song:** which royalty-free song to bundle?
 6. **When is it "ready"?** Suggested rule: every Must have ticked, plus two weeks of testers with no new serious bug.

@@ -18,6 +18,7 @@ export const APP_PREFERENCE_KEYS = [
   'steminize.nativePlayback',
   'steminize.gpuFailed',
   'steminize.youtube',
+  'steminize.nativeTipSeen',
 ] as const;
 
 interface KeyStore {

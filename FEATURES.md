@@ -68,6 +68,7 @@ are desktop only and are marked **[desktop]**.
 - **Float** the Scratchpad as a movable, resizable window. Released.
 
 ## Native audio engine [desktop] (experimental)
+- **Off by default, but not hidden:** a tip in the Live input drawer says it exists (with **Show me** and **Got it**), the desktop Settings has a Native audio card with **Show me where**, and the welcome panel mentions it. Next release.
 - **Direct sound-card playback** of songs saved in the library through a Rust engine with a buffer size you choose: mixer, EQ, tempo and pitch, loops, count-in, click and the speed trainer. Released in 0.9.2.
 - **Native live input and recording** in the same engine, so a take lines up with the song to about a millisecond with no manual alignment; native monitor, level, tuner and trainer; its own latency value, set by Measure or the Loopback test. Released in 0.9.2.
 - **Native audio panel:** devices with plain-words routing and a recommended choice, buffer size and sample rate, a quick native monitor, and a loopback round-trip test. Released.

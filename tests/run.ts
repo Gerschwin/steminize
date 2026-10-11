@@ -41,6 +41,7 @@ import { CHORD_TONES, chordCost, fretShape, pianoKeys, shapeIsRight, suggestCapo
 import { QUALITIES } from '../src/analysis/chords.ts';
 import { segmentsFor, snapToWord, sungSeconds } from '../src/lyrics/lyricChords.ts';
 import { modelNote } from '../src/models.ts';
+import { NATIVE_INFO, NATIVE_TIP, NATIVE_TIP_KEY, NATIVE_WELCOME, nativeTipVisible } from '../src/nativeHint.ts';
 import { YOUTUBE_KEY, YOUTUBE_NOTICE, YOUTUBE_REMINDER, setYoutubeEnabled, youtubeEnabled } from '../src/youtubeOptIn.ts';
 import { downloadResumable, keptBytes, parseContentRange, type PartStore } from '../src/modelDownload.ts';
 import { BarTally, barColour, barCue, barPercent, barTip } from '../src/lyrics/barScores.ts';
@@ -1348,6 +1349,20 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('youtube: storage that fails means off, not a crash', youtubeEnabled({ getItem: () => { throw new Error('blocked'); } }) === false);
   ok('youtube: the notice says to use only audio you own or may use, that it may break YouTube terms, and who is responsible', /own/.test(YOUTUBE_NOTICE) && /royalty-free/.test(YOUTUBE_NOTICE) && /terms of service/.test(YOUTUBE_NOTICE) && /responsible/.test(YOUTUBE_NOTICE) && /responsible/.test(YOUTUBE_REMINDER));
   ok('youtube: Reset app preferences puts it back to off', (APP_PREFERENCE_KEYS as readonly string[]).includes(YOUTUBE_KEY));
+}
+
+
+{
+  const mem = new Map<string, string>();
+  const store = { getItem: (k: string) => mem.get(k) ?? null };
+  ok('native tip: shown on the desktop app until dismissed', nativeTipVisible(store, true, false) === true);
+  mem.set(NATIVE_TIP_KEY, '1');
+  ok('native tip: gone once dismissed', nativeTipVisible(store, true, false) === false);
+  mem.delete(NATIVE_TIP_KEY);
+  ok('native tip: not in the browser, and not once native audio is on', nativeTipVisible(store, false, false) === false && nativeTipVisible(store, true, true) === false);
+  ok('native tip: unreadable storage shows it rather than hiding the feature', nativeTipVisible({ getItem: () => { throw new Error('blocked'); } }, true, false) === true);
+  ok('native tip: the words say it is experimental and off by default', /experimental/i.test(NATIVE_TIP) && /off by default/i.test(NATIVE_TIP) && /off by default/i.test(NATIVE_INFO) && /experimental/i.test(NATIVE_WELCOME) && /Live input/.test(NATIVE_INFO));
+  ok('native tip: Reset app preferences brings the tip back', (APP_PREFERENCE_KEYS as readonly string[]).includes(NATIVE_TIP_KEY));
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

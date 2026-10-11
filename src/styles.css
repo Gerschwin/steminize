@@ -878,3 +878,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .cs-capo { align-self: center; max-width: 220px; font-size: 12px; opacity: .7; }
 .cs-none { font-size: 12px; opacity: .5; padding: 14px 0; }
 .chord-svg { display: block; }
+
+/* Native audio: easy to find while it is experimental and off by default */
+.native-tip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; background: color-mix(in srgb, var(--accent) 12%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); border-radius: 9px; padding: 8px 10px; margin-bottom: 8px; font-size: 13px; }
+.native-tip[hidden] { display: none; }
+.native-tip span { flex: 1 1 320px; }
+.tool.native-audio.attention { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 9px; animation: na-attn 1s ease-in-out 3; }
+@keyframes na-attn { 50% { outline-color: transparent; } }

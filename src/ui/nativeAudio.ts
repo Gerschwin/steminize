@@ -52,6 +52,22 @@ const loadSaved = (): Saved | null => {
   }
 };
 
+/** Opens the Live input drawer at the Native audio row and draws the eye to it. Returns false if no song is open (the drawer isn't there yet). */
+export function revealNativeAudio(): boolean {
+  const box = document.getElementById('nativeAudioBox');
+  const deck = document.getElementById('deck');
+  const tab = document.getElementById('liveTab');
+  if (!box || !deck || deck.hidden || !tab) return false;
+  if (tab.getAttribute('aria-expanded') !== 'true') tab.click();
+  box.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  box.classList.add('attention');
+  setTimeout(() => box.classList.remove('attention'), 3000);
+  return true;
+}
+
+/** True if the user has switched native playback on (it is remembered between runs). */
+export const nativeIsOn = () => !!loadSaved()?.on;
+
 export function initNativeAudio(player: Player) {
   const box = document.getElementById('nativeAudioBox');
   if (!isTauri || !box) return;

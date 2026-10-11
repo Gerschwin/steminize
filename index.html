@@ -206,6 +206,13 @@
           <label class="switch" title="Shows the From YouTube… button next to Open multitrack"><input type="checkbox" id="youtubeOpt" /> Show the From YouTube… button</label>
           <p class="muted small" id="youtubeNotice"></p>
         </section>
+        <section class="card settings" id="nativeInfoCard" hidden>
+          <div class="card-head">
+            <h2>Native audio</h2>
+            <button class="btn tiny ghost" id="nativeInfoShow" type="button" title="Open a song's Live input drawer at the Native audio row">Show me where</button>
+          </div>
+          <p class="muted small" id="nativeInfoText"></p>
+        </section>
         <section class="card settings" id="appPrefs">
           <div class="card-head">
             <h2>App preferences</h2>
@@ -226,6 +233,7 @@
             <button class="btn ghost" id="welcomeTracks" type="button" title="Open separate audio files (one per instrument) as one song, with no splitting">Open tracks I already have…</button>
           </div>
           <p class="muted small">Or drop songs on the left. You can queue several.</p>
+          <p class="muted small" id="welcomeNative" hidden></p>
           <h2 class="welcome-sub">The first time</h2>
           <p id="welcomeModel" class="welcome-model"></p>
           <p class="muted small">Speed depends on your computer: a recent graphics card is much faster than the processor alone. Try one song first to see how long yours takes. Nothing is ever uploaded.</p>
@@ -385,6 +393,11 @@
                 </div>
               </div>
               <div class="dpane" data-pane="live" hidden>
+                <div class="native-tip" id="nativeTip" hidden>
+                  <span id="nativeTipText"></span>
+                  <button class="btn tiny" type="button" id="nativeTipShow">Show me</button>
+                  <button class="btn tiny ghost" type="button" id="nativeTipDismiss">Got it</button>
+                </div>
                 <div class="tool live">
                   <button class="btn tiny toggle" id="liveBtn" type="button" aria-pressed="false" title="Play a real instrument or mic live alongside the tracks">Monitor</button>
                   <select id="liveDevice" title="Input device" hidden></select>
