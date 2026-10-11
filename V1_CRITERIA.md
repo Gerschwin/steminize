@@ -50,7 +50,7 @@ needed for 1.0.
 - [ ] Accessibility basics: done so far: a visible keyboard focus ring everywhere, and bar-accuracy colours also shown by an outline (dashed or heavy). Still to do: a keyboard walk-through of the main controls, a contrast check, and a larger-text option. (Claude)
 - [ ] Desktop-only features say so in the interface (native audio, From YouTube) instead of just being absent in the browser. (Claude)
 - [x] Settings: a Reset for app preferences that never touches songs or setlists (separation settings already had one).
-- [ ] Merge `native-audio` into `main` (this redeploys the website). Only after the checklist run. (Neil to say go, Claude to do)
+- [x] Merged `native-audio` into `main` on 2026-10-11 (Neil said go; a fast-forward, 179 commits), which redeployed the web app at https://gerschwin.github.io/steminize/. From now on `main` is what the public sees: keep working on `native-audio` and merge deliberately.
 
 ## Already in place for 1.0
 - [x] Stem separation (three models, all the Demucs options), batch queue, open multitrack, From YouTube (desktop), offline use, GPU or CPU.
