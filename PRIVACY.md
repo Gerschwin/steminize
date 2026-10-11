@@ -12,7 +12,7 @@ never uploaded. There is no account, no tracking, no analytics and no advertisin
 ## When the app uses the internet
 Only in these cases, each started by something you do:
 1. **First use of a separation model:** it is downloaded from Hugging Face and kept on the device. After that no connection is needed.
-2. **Desktop app, From YouTube…:** the first time, it downloads the yt-dlp tool from GitHub; then it fetches the audio you picked from YouTube.
+2. **Desktop app, From YouTube… (off until you turn it on in Settings):** the first time, it downloads the yt-dlp tool from GitHub; then it fetches the audio you picked from YouTube.
 3. **Desktop app, Check for updates:** asks GitHub for the latest release number, and only when you press the button.
 4. **Links you click** (Search lyrics, Support, the project page) open in your own browser, on those sites' terms.
 5. **The web app itself** is loaded from GitHub Pages when you open it (and cached so it works offline).

@@ -8,6 +8,7 @@ import { Deck, type Result } from './ui/deck.ts';
 import { $, fmtDuration, fmtEta, fmtTime, h, openDialog, toast } from './ui/dom.ts';
 import { cancelDownloads, ensureDownloaded, initModelsDialog, onModelsChanged } from './ui/modelsDialog.ts';
 import { initWelcome } from './ui/welcome.ts';
+import { YOUTUBE_NOTICE, YOUTUBE_REMINDER, setYoutubeEnabled, youtubeEnabled } from './youtubeOptIn.ts';
 import { SettingsPanel } from './ui/settingsPanel.ts';
 import { initLibrary } from './ui/libraryPanel.ts';
 import { initSetlists } from './ui/setlistPanel.ts';
@@ -483,9 +484,20 @@ if (isTauri) {
   // Downloading needs yt-dlp shelled out from the native side; there's no browser-only
   // equivalent, so this stays desktop-only.
   const yt = initYoutubeDialog((file) => addFiles([file]));
+  // Off until the user turns it on in Settings, after reading the notice (see src/youtubeOptIn.ts).
   const ytBtn = $('ytBtn');
-  ytBtn.hidden = false;
+  const ytOpt = $<HTMLInputElement>('youtubeOpt');
+  ytBtn.hidden = !youtubeEnabled(localStorage);
   ytBtn.onclick = () => yt.open();
+  $('youtubeCard').hidden = false;
+  $('youtubeNotice').textContent = YOUTUBE_NOTICE;
+  $('ytReminder').textContent = YOUTUBE_REMINDER;
+  ytOpt.checked = !ytBtn.hidden;
+  ytOpt.onchange = () => {
+    if (ytOpt.checked && !confirm(`${YOUTUBE_NOTICE}\n\nTurn on From YouTube?`)) ytOpt.checked = false;
+    setYoutubeEnabled(localStorage, ytOpt.checked);
+    ytBtn.hidden = !ytOpt.checked;
+  };
 }
 
 // ---------------------------------------------------------------- file input & drag/drop

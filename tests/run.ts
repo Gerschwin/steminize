@@ -41,6 +41,7 @@ import { CHORD_TONES, chordCost, fretShape, pianoKeys, shapeIsRight, suggestCapo
 import { QUALITIES } from '../src/analysis/chords.ts';
 import { segmentsFor, snapToWord, sungSeconds } from '../src/lyrics/lyricChords.ts';
 import { modelNote } from '../src/models.ts';
+import { YOUTUBE_KEY, YOUTUBE_NOTICE, YOUTUBE_REMINDER, setYoutubeEnabled, youtubeEnabled } from '../src/youtubeOptIn.ts';
 import { downloadResumable, keptBytes, parseContentRange, type PartStore } from '../src/modelDownload.ts';
 import { BarTally, barColour, barCue, barPercent, barTip } from '../src/lyrics/barScores.ts';
 
@@ -1333,6 +1334,20 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('download: an answer that does not start where asked makes it start again from the beginning', (await same(fixed)) && badSrv.calls.length === 2 && badSrv.calls[1] === undefined);
 
   ok('download: parseContentRange reads a range and refuses nonsense', parseContentRange('bytes 100-199/1000')?.total === 1000 && parseContentRange('bytes */1000') === null && parseContentRange(null) === null);
+}
+
+
+{
+  const mem = new Map<string, string>();
+  const store = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v), removeItem: (k: string) => void mem.delete(k) };
+  ok('youtube: it starts off', youtubeEnabled(store) === false);
+  setYoutubeEnabled(store, true);
+  const on = youtubeEnabled(store);
+  setYoutubeEnabled(store, false);
+  ok('youtube: turning it on is remembered, turning it off forgets it', on === true && youtubeEnabled(store) === false && !mem.has(YOUTUBE_KEY));
+  ok('youtube: storage that fails means off, not a crash', youtubeEnabled({ getItem: () => { throw new Error('blocked'); } }) === false);
+  ok('youtube: the notice says to use only audio you own or may use, that it may break YouTube terms, and who is responsible', /own/.test(YOUTUBE_NOTICE) && /royalty-free/.test(YOUTUBE_NOTICE) && /terms of service/.test(YOUTUBE_NOTICE) && /responsible/.test(YOUTUBE_NOTICE) && /responsible/.test(YOUTUBE_REMINDER));
+  ok('youtube: Reset app preferences puts it back to off', (APP_PREFERENCE_KEYS as readonly string[]).includes(YOUTUBE_KEY));
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

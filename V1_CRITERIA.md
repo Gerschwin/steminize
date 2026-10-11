@@ -34,7 +34,7 @@ needed for 1.0.
 
 ### 5. Legal and licensing
 - [x] A full dependency licence report (`LICENCES.md`, regenerate with `node scripts/licence-report.mjs`). Findings: two LGPL web libraries (soundtouchjs, lamejs) that matter only for a closed-source version, a few unmodified MPL Rust crates, and one dev-only build tool. Still to do for Neil: read it before deciding on a paid version.
-- [ ] Decision on **From YouTube**: remove, make opt-in, or keep, given the platform-terms risk. (Neil)
+- [x] **From YouTube** decision: **opt-in, decided 2026-10-11.** Off by default, switched on under Settings → From YouTube after a notice (only download audio you own, that is royalty-free or Creative Commons, or that you have the right to use; it can break YouTube's terms; you are responsible). yt-dlp is still fetched at runtime, never bundled. Still to do: don't promote it on the website.
 - [x] Decision on the licence and any paid version: **decided 2026-10-11, free and open source (MIT) with optional donations** (donationware). Nothing is held back behind a payment, which matches the README, About and the Sponsor button as they already are.
 - [x] About shows what uses the network, credits and licences; nothing is uploaded.
 - [x] A privacy statement (`PRIVACY.md`, matching the About dialog).
@@ -64,7 +64,7 @@ needed for 1.0.
 
 ## Decisions waiting for Neil
 1. **Code signing:** buy and set up Windows and Apple signing, or release 1.0 unsigned with clear instructions? (Money, and the first impression.)
-2. **From YouTube:** keep, make optional, or remove for the public release?
+2. ~~From YouTube: keep, make optional, or remove?~~ **Decided 2026-10-11: opt-in with a notice.**
 3. **Native audio at 1.0:** on by default, off by default, or labelled experimental?
 4. ~~Free, paid or pay-what-you-want?~~ **Decided 2026-10-11: free (MIT) with optional donations.** The website page should say so plainly.
 5. **Sample song:** which royalty-free song to bundle?

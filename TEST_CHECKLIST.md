@@ -79,7 +79,8 @@ E|-0---0---0---0---|
 - [ ] Two-stem (karaoke) mode gives vocals + "everything else".
 - [ ] **Open multitrack…**: choose several audio files: each becomes a lane, no separation, all the player tools work.
 - [ ] **Open folder…** [desktop or Chromium]: a whole folder opens as lanes.
-- [ ] **From YouTube…** [desktop]: search, pick a result, it downloads into the queue (first use fetches yt-dlp). Cancel and error cases are handled.
+- [ ] **From YouTube is off by default** [desktop]: a fresh install shows no From YouTube… button. **Settings → From YouTube** has a switch and the notice; ticking it asks you to confirm the notice, and only then does the button appear next to Open folder…. Untick it and the button goes. The choice survives a restart; **Reset app preferences** turns it off again. The web app has no such card.
+- [ ] **From YouTube…** [desktop] (once switched on): search, pick a result, it downloads into the queue (first use fetches yt-dlp). Cancel and error cases are handled.
 - [ ] A song that is too short, silent, or an unsupported file gives a clear message, not a hang.
 
 ## 3. Library and backup [web, desktop]

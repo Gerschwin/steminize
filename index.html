@@ -199,6 +199,13 @@
           </details>
           <p class="estimate" id="estimate"></p>
         </section>
+        <section class="card settings" id="youtubeCard" hidden>
+          <div class="card-head">
+            <h2>From YouTube</h2>
+          </div>
+          <label class="switch" title="Shows the From YouTube… button next to Open multitrack"><input type="checkbox" id="youtubeOpt" /> Show the From YouTube… button</label>
+          <p class="muted small" id="youtubeNotice"></p>
+        </section>
         <section class="card settings" id="appPrefs">
           <div class="card-head">
             <h2>App preferences</h2>
@@ -605,7 +612,7 @@
         <input type="text" id="ytArtist" placeholder="Artist" autocomplete="off" />
         <button class="btn tiny primary" type="submit">Search</button>
       </form>
-      <p class="muted small">Downloads run locally via yt-dlp, straight into the import queue. You're responsible for having the right to use anything you download.</p>
+      <p class="muted small" id="ytReminder">Downloads run locally via yt-dlp, straight into the import queue.</p>
       <p class="muted small" id="ytStatus"></p>
       <div class="yt-results" id="ytResults"></div>
     </dialog>
@@ -644,7 +651,7 @@
         <div class="m-group-head"><h3>What uses the network</h3></div>
         <ul class="about-list small muted">
           <li>The first time you choose a separation model it is downloaded from Hugging Face, then kept on this device so it works offline.</li>
-          <li>Desktop app only: <b>From YouTube…</b> downloads the yt-dlp tool from GitHub the first time you use it, then fetches the audio you pick from YouTube.</li>
+          <li>Desktop app only, and off unless you turn it on in Settings: <b>From YouTube…</b> downloads the yt-dlp tool from GitHub the first time you use it, then fetches the audio you pick from YouTube.</li>
           <li>Desktop app only: <b>Check for updates</b> asks GitHub for the latest release number, and only when you press it.</li>
           <li>Nothing else is sent anywhere. There is no account, tracking or analytics.</li>
         </ul>

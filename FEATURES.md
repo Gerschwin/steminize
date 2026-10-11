@@ -10,7 +10,7 @@ are desktop only and are marked **[desktop]**.
 - **Demucs options:** two-stem (karaoke) mode, shifts, overlap, clip mode; output as WAV (16, 24 or 32-bit float), FLAC (16 or 24) or MP3 (128–320 kbps). Released.
 - **Batch queue:** drop in several songs; each shows progress and time left. Released.
 - **Open multitrack:** open separate track files or a whole folder and each becomes a lane, with all the same tools (a shared folder makes this a simple way for a band to share parts). Released.
-- **From YouTube [desktop]:** search and download audio into the queue (fetches yt-dlp on first use). Released. The Windows black command window no longer appears: released in 0.9.3.
+- **From YouTube [desktop], opt-in:** search and download audio into the queue (fetches yt-dlp on first use). Off until you turn it on under Settings → From YouTube, after a notice about only downloading audio you own, that is royalty-free or Creative Commons, or that you have the right to use. The opt-in is new in 0.9.4; the feature itself was released earlier. The Windows black command window no longer appears: released in 0.9.3.
 - **Model downloads carry on where they stopped:** a lost connection or a Stop keeps what arrived; the next try asks only for the rest. Models shows how much is kept, with Resume and Discard. Next release.
 - **Runs offline** once a model has downloaded; no audio is ever uploaded. WebGPU acceleration where available, otherwise multi-threaded CPU. Released.
 - **If the graphics card never loads the model**, it falls back to the CPU after 60 seconds, says so, and remembers; "Loading model…" counts the seconds. Released in 0.9.3.

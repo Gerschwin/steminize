@@ -17,6 +17,7 @@ export const APP_PREFERENCE_KEYS = [
   'steminize.nativeRecLatencyMs',
   'steminize.nativePlayback',
   'steminize.gpuFailed',
+  'steminize.youtube',
 ] as const;
 
 interface KeyStore {
