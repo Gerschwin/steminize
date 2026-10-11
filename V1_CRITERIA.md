@@ -35,7 +35,7 @@ needed for 1.0.
 ### 5. Legal and licensing
 - [x] A full dependency licence report (`LICENCES.md`, regenerate with `node scripts/licence-report.mjs`). Findings: two LGPL web libraries (soundtouchjs, lamejs) that matter only for a closed-source version, a few unmodified MPL Rust crates, and one dev-only build tool. Still to do for Neil: read it before deciding on a paid version.
 - [ ] Decision on **From YouTube**: remove, make opt-in, or keep, given the platform-terms risk. (Neil)
-- [ ] Decision on the licence and any paid version before 1.0 (see the paid-version note in `BACKLOG.md`). Published code stays MIT either way. (Neil)
+- [x] Decision on the licence and any paid version: **decided 2026-10-11, free and open source (MIT) with optional donations** (donationware). Nothing is held back behind a payment, which matches the README, About and the Sponsor button as they already are.
 - [x] About shows what uses the network, credits and licences; nothing is uploaded.
 - [x] A privacy statement (`PRIVACY.md`, matching the About dialog).
 
@@ -66,7 +66,7 @@ needed for 1.0.
 1. **Code signing:** buy and set up Windows and Apple signing, or release 1.0 unsigned with clear instructions? (Money, and the first impression.)
 2. **From YouTube:** keep, make optional, or remove for the public release?
 3. **Native audio at 1.0:** on by default, off by default, or labelled experimental?
-4. **Free, paid or pay-what-you-want?** Decide before 1.0 so the licence and the website are right.
+4. ~~Free, paid or pay-what-you-want?~~ **Decided 2026-10-11: free (MIT) with optional donations.** The website page should say so plainly.
 5. **Sample song:** which royalty-free song to bundle?
 6. **When is it "ready"?** Suggested rule: every Must have ticked, plus two weeks of testers with no new serious bug.
 
