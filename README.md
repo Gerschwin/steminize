@@ -185,6 +185,9 @@ The float64 conversion is done by `src/engine/fixfloat64.ts`, which rewrites tho
 - **Shifts** use random offsets, as in Demucs, so two runs with shifts > 1 differ very slightly.
 
 ## More documents
+
+- [DATA_FORMAT.md](DATA_FORMAT.md): what the app saves (songs, takes, setlists, backups) and the rules that keep old songs opening.
+- [UPDATER.md](UPDATER.md): how in-app updates work and the update-signing key.
 - [FAQ.md](FAQ.md): installing, slow separation, recording delay and other common questions.
 - [PRIVACY.md](PRIVACY.md): what stays on your computer and when the app uses the internet.
 - [FEATURES.md](FEATURES.md): everything the app does.

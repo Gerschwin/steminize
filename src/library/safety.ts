@@ -32,3 +32,16 @@ export function backupNote(last: number | null, now: number, songs: number): { t
   if (days === 1) return { text: 'Last backed up yesterday.', stale: false };
   return { text: `Last backed up ${days} days ago.`, stale: days >= 30 };
 }
+
+/** How long a song folder with no meta.json must have sat untouched before it is treated as an abandoned half-save and cleaned up. */
+export const INCOMPLETE_GRACE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Whether a song folder may be deleted because it has no usable meta.json. A save writes the stems first and meta.json last, so a
+ * folder without one is normally an interrupted save, but it could also be a save happening right now (another window listing the
+ * library), or a meta.json that is only unreadable for a moment (an antivirus scan, a locked file). So it is only ever cleaned up when
+ * the file is definitely missing AND everything in the folder is more than a day old. Anything else is left alone.
+ */
+export function canCleanIncompleteSong(reason: 'missing' | 'unreadable', newestFileMs: number | null, now: number): boolean {
+  return reason === 'missing' && newestFileMs != null && now - newestFileMs > INCOMPLETE_GRACE_MS;
+}

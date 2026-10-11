@@ -1,0 +1,179 @@
+{
+ "title": "A multitrack song with takes and tab taps",
+ "seconds": 27.341972789115648,
+ "created": 1790594394706,
+ "settings": {
+  "model": "htdemucs_6s",
+  "precision": "compact",
+  "twoStems": "",
+  "skipStems": [],
+  "shifts": 1,
+  "overlap": 0.25,
+  "device": "auto",
+  "format": "wav",
+  "wavDepth": "16",
+  "flacDepth": "16",
+  "mp3Bitrate": 320,
+  "clip": "rescale"
+ },
+ "kind": "multitrack",
+ "analysis": {
+  "bpm": 130,
+  "beats": [
+   0.23,
+   0.69,
+   1.15,
+   1.61,
+   2.07,
+   2.53,
+   2.99,
+   3.46,
+   3.92,
+   4.38,
+   4.84,
+   5.3,
+   5.77,
+   6.23,
+   6.69,
+   7.15
+  ],
+  "downbeat": 3,
+  "key": {
+   "tonic": 3,
+   "mode": "major",
+   "confidence": 0.071
+  }
+ },
+ "state": {
+  "lanes": [
+   {
+    "vol": 1,
+    "pan": 0,
+    "mute": true,
+    "solo": false
+   },
+   {
+    "vol": 1,
+    "pan": 0,
+    "mute": true,
+    "solo": false
+   },
+   {
+    "vol": 1,
+    "pan": 0,
+    "mute": true,
+    "solo": false,
+    "height": 58
+   },
+   {
+    "vol": 1,
+    "pan": 0,
+    "mute": true,
+    "solo": false
+   },
+   {
+    "vol": 1,
+    "pan": 0,
+    "mute": false,
+    "solo": false,
+    "height": 142
+   }
+  ],
+  "loop": {
+   "on": false,
+   "a": 0,
+   "b": 0
+  },
+  "tempo": 1,
+  "pitch": 0,
+  "practice": {
+   "gap": 0,
+   "countIn": false,
+   "click": true,
+   "clickVol": 0.65,
+   "perBar": 4,
+   "barShift": 0,
+   "snap": "off",
+   "trainer": {
+    "on": false,
+    "from": 0.7,
+    "to": 1,
+    "step": 0.05,
+    "every": 1,
+    "gate": 0
+   }
+  },
+  "markers": [],
+  "tx": {
+   "notes": false,
+   "chords": false,
+   "source": "*",
+   "chordList": null
+  },
+  "scratch": {
+   "lyrics": "",
+   "tab": "e|--0--3--|\nB|--1--0--|\nG|--0--0--|\nD|--2--0--|\nA|--3--2--|\nE|-----3--|\n",
+   "drums": "",
+   "notes": "",
+   "tabAnchors": [
+    {
+     "charOffset": 257,
+     "time": 20.60374149659864
+    }
+   ],
+   "tabFollow": true
+  },
+  "practiceSeconds": 291.10295999999846,
+  "lastPracticed": 1791071344244
+ },
+ "id": "fixture-era2-multitrack-takes-tabanchors",
+ "bytes": 2738656,
+ "stems": [
+  {
+   "name": "Australia Demo",
+   "scale": 1
+  }
+ ],
+ "takeGroups": [
+  {
+   "id": "504qinx9",
+   "takes": [
+    {
+     "id": "take-1",
+     "scale": 1
+    }
+   ],
+   "activeTake": "take-1"
+  },
+  {
+   "id": "wwblymph",
+   "takes": [
+    {
+     "id": "take-1",
+     "scale": 1
+    }
+   ],
+   "activeTake": "take-1"
+  },
+  {
+   "id": "ldmxkzeb",
+   "takes": [
+    {
+     "id": "take-1",
+     "scale": 1
+    }
+   ],
+   "activeTake": "take-1"
+  },
+  {
+   "id": "nv1bdgg5",
+   "takes": [
+    {
+     "id": "take-1",
+     "scale": 1
+    }
+   ],
+   "activeTake": "take-1"
+  }
+ ]
+}

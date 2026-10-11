@@ -1,0 +1,158 @@
+{
+ "title": "A separated song, early layout",
+ "seconds": 214.45950113378686,
+ "took": 1026.7060000000001,
+ "created": 1791267228703,
+ "settings": {
+  "model": "htdemucs_6s",
+  "precision": "compact",
+  "twoStems": "",
+  "skipStems": [],
+  "shifts": 1,
+  "overlap": 0.25,
+  "device": "auto",
+  "format": "wav",
+  "wavDepth": "16",
+  "flacDepth": "16",
+  "mp3Bitrate": 320,
+  "clip": "rescale"
+ },
+ "analysis": {
+  "bpm": 127.1,
+  "beats": [
+   0.01,
+   0.48,
+   0.95,
+   1.42,
+   1.89,
+   2.36,
+   2.83,
+   3.3,
+   3.76,
+   4.23,
+   4.7,
+   5.17,
+   5.64,
+   6.11,
+   6.58,
+   7.04
+  ],
+  "downbeat": 0,
+  "key": {
+   "tonic": 11,
+   "mode": "minor",
+   "confidence": 0.005
+  }
+ },
+ "state": {
+  "lanes": [
+   {
+    "vol": 1,
+    "pan": 0,
+    "mute": false,
+    "solo": true
+   },
+   {
+    "vol": 1,
+    "pan": 0,
+    "mute": false,
+    "solo": false
+   },
+   {
+    "vol": 1,
+    "pan": 0,
+    "mute": false,
+    "solo": false
+   },
+   {
+    "vol": 1,
+    "pan": 0,
+    "mute": false,
+    "solo": true
+   },
+   {
+    "vol": 1,
+    "pan": 0,
+    "mute": false,
+    "solo": true
+   },
+   {
+    "vol": 1,
+    "pan": 0,
+    "mute": false,
+    "solo": false
+   }
+  ],
+  "loop": {
+   "on": false,
+   "a": 0,
+   "b": 0
+  },
+  "tempo": 1,
+  "pitch": 0,
+  "practice": {
+   "gap": 0,
+   "countIn": false,
+   "click": false,
+   "clickVol": 0.5,
+   "perBar": 4,
+   "barShift": 0,
+   "snap": "bar",
+   "trainer": {
+    "on": false,
+    "from": 0.7,
+    "to": 1,
+    "step": 0.05,
+    "every": 1,
+    "gate": 0
+   }
+  },
+  "markers": [],
+  "tx": {
+   "notes": false,
+   "chords": false,
+   "strip": false,
+   "simple": false,
+   "stripZoom": 1,
+   "shapes": "",
+   "capo": 0,
+   "source": "*",
+   "chordList": null
+  },
+  "scratch": {
+   "lyrics": "",
+   "tab": "",
+   "notes": ""
+  },
+  "practiceSeconds": 392.01500000004955,
+  "lastPracticed": 1791729267102
+ },
+ "id": "fixture-era1-separated-single-tab",
+ "bytes": 74543926,
+ "stems": [
+  {
+   "name": "drums",
+   "scale": 0.8827995634997009
+  },
+  {
+   "name": "bass",
+   "scale": 1
+  },
+  {
+   "name": "other",
+   "scale": 1
+  },
+  {
+   "name": "vocals",
+   "scale": 0.8595805635664726
+  },
+  {
+   "name": "guitar",
+   "scale": 0.9969706675828722
+  },
+  {
+   "name": "piano",
+   "scale": 1
+  }
+ ]
+}

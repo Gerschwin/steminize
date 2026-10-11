@@ -1,7 +1,7 @@
 // Run with: npm test   (Node 22+, uses --experimental-strip-types)
 // Checks the separation maths with a fake network, and the encoders against ffmpeg.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SEGMENT, SR, countRuns, pickStems, separate, type Member, type Stereo } from '../src/engine/separate.ts';
@@ -33,7 +33,8 @@ import { withTimeout } from '../src/engine/timeout.ts';
 import { separationMemory, songSizeWarning } from '../src/engine/sizeHint.ts';
 import { beatCells, beatPositionAt, displayName, simplifyChord, timeAtBeat } from '../src/analysis/chordStrip.ts';
 import { APP_PREFERENCE_KEYS, resetAppPreferences } from '../src/prefs.ts';
-import { backupNote, fmtBytes, spaceNeeded, spaceStatus } from '../src/library/safety.ts';
+import { INCOMPLETE_GRACE_MS, backupNote, canCleanIncompleteSong, fmtBytes, spaceNeeded, spaceStatus } from '../src/library/safety.ts';
+import { parseMeta } from '../src/library/meta.ts';
 import { voiceSlots } from '../src/ui/drumStaff.ts';
 import { DRUM_VOICES, drumMidi, hitStyle, parseDrums, voiceOfLabel } from '../src/lyrics/drumTab.ts';
 import { PART_IDS, defaultTrack, isBuiltinPart, legacyTabPart, newPartId, normaliseScratch, partKind, stringCount } from '../src/lyrics/tabParts.ts';
@@ -1385,6 +1386,53 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
 {
   ok('updater: a plain version tag gets its release address', updateEndpoint('v0.9.5') === 'https://github.com/Gerschwin/steminize/releases/download/v0.9.5/latest.json' && updateEndpoint('v1.0.0') === 'https://github.com/Gerschwin/steminize/releases/download/v1.0.0/latest.json');
   ok('updater: anything that is not a plain version tag gets none', [null, '', '0.9.5', 'v0.9', 'v0.9.5-beta', 'v0.9.5/../x', 'untagged-123', 'v0.9.5 ', 'vx.y.z'].every((t) => updateEndpoint(t as string) === null));
+}
+
+
+{
+  // Saved songs from every era still open, and damaged ones never take the library down with them.
+  const dir = new URL('./fixtures/library/', import.meta.url);
+  const files = readdirSync(dir).filter((f) => f.endsWith('.json')).sort();
+  ok('library: there is a saved-song fixture for each era', files.length >= 4, files.join(','));
+  const parsed = new Map<string, ReturnType<typeof parseMeta>>();
+  for (const f of files) {
+    const raw = readFileSync(new URL(f, dir), 'utf8');
+    const m = parseMeta(`song-${f}`, raw);
+    parsed.set(f, m);
+    ok(`library: ${f} opens`, !!m && m.id === `song-${f}` && m.stems.length > 0 && typeof m.title === 'string' && m.seconds > 0);
+    if (!m) continue;
+    const j = JSON.parse(raw);
+    ok(`library: ${f} keeps its saved player state exactly as it was`, JSON.stringify(m.state) === JSON.stringify(j.state));
+    ok(`library: ${f} reads the same the second time (nothing changes by being opened and saved)`, JSON.stringify(parseMeta(m.id, JSON.stringify(m))) === JSON.stringify(m));
+    const sc = (m.state as { scratch?: Record<string, unknown> } | undefined)?.scratch;
+    if (sc) {
+      const n = normaliseScratch(sc as Parameters<typeof normaliseScratch>[0]);
+      const again = normaliseScratch(n);
+      ok(`library: ${f} scratchpad brought up to date is stable`, JSON.stringify(again) === JSON.stringify(n));
+      const text = (v: unknown) => (typeof v === 'string' ? v : '');
+      const all = JSON.stringify(n);
+      ok(`library: ${f} scratchpad loses no text (lyrics, notes, tab, drum grid)`, [sc.lyrics, sc.notes, sc.tab, sc.drums].every((s) => !text(s) || all.includes(JSON.stringify(text(s)).slice(1, -1))));
+    }
+  }
+  const era1 = parsed.get('era1-separated-single-tab.json');
+  ok('library: an early separated song (no kind, no take groups) reads as separated with no takes', !!era1 && era1.kind === undefined && era1.takeGroups === undefined && era1.stems.every((s) => s.scale > 0));
+  const era2 = parsed.get('era2-multitrack-takes-tabanchors.json');
+  ok('library: a multitrack song with takes keeps its take groups and their active take', !!era2 && era2.kind === 'multitrack' && (era2.takeGroups?.length ?? 0) > 0);
+  const era4 = parsed.get('era4-parts-chords-0.9.4.json');
+  const sc4 = (era4?.state as { scratch?: { tabParts?: Record<string, unknown>; extraParts?: unknown[]; partNames?: Record<string, string> } } | undefined)?.scratch;
+  ok('library: a 0.9.4 song keeps its parts, renames and chord view settings', !!sc4 && Object.keys(sc4.tabParts ?? {}).length === 3 && (sc4.extraParts?.length ?? 0) === 1 && sc4.partNames?.guitar === 'Lead' && (era4!.state as { tx: { capo: number } }).tx.capo === 3);
+
+  const base = JSON.parse(readFileSync(new URL('era4-parts-chords-0.9.4.json', dir), 'utf8'));
+  ok('library: a field from a newer version is kept, not thrown away', (parseMeta('x', JSON.stringify({ ...base, shinyNewField: { a: 1 } })) as unknown as { shinyNewField: unknown }).shinyNewField !== undefined);
+  ok('library: the folder name is the song id, whatever the file says', parseMeta('real-id', JSON.stringify({ ...base, id: 'something-else' }))?.id === 'real-id');
+  ok('library: a file that is not JSON, not an object, or has no stems is skipped, not an error', parseMeta('x', '{not json') === null && parseMeta('x', '[]') === null && parseMeta('x', '"hi"') === null && parseMeta('x', JSON.stringify({ ...base, stems: [] })) === null && parseMeta('x', '') === null);
+  const odd = parseMeta('x', JSON.stringify({ ...base, title: 5, seconds: 'long', bytes: null, settings: 3, analysis: { bpm: 'fast' }, takeGroups: 'none', stems: [{ name: 'a', scale: -1 }, 7, { name: '' }], kind: 'weird', state: 'broken' }));
+  ok('library: wrong-typed fields are repaired or dropped and the song still opens', !!odd && odd.title === 'Untitled' && odd.seconds === 0 && odd.bytes === 0 && odd.settings.model === 'htdemucs_6s' && odd.analysis === undefined && odd.takeGroups === undefined && odd.stems.length === 1 && odd.stems[0].scale === 1 && odd.kind === undefined && odd.state === undefined);
+
+  const now = 10 * INCOMPLETE_GRACE_MS;
+  ok('library: an unfinished save is only cleaned up when meta is definitely missing and everything is over a day old', canCleanIncompleteSong('missing', now - 2 * INCOMPLETE_GRACE_MS, now) === true);
+  ok('library: a save in progress (recent files) is never cleaned up', canCleanIncompleteSong('missing', now - 1000, now) === false && canCleanIncompleteSong('missing', now - INCOMPLETE_GRACE_MS / 2, now) === false);
+  ok('library: an unreadable meta file, or unknown file times, never lead to deleting a song', canCleanIncompleteSong('unreadable', now - 5 * INCOMPLETE_GRACE_MS, now) === false && canCleanIncompleteSong('missing', null, now) === false);
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

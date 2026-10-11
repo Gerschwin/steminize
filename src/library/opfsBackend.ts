@@ -4,6 +4,7 @@
 // supports (see the comment on writeFile in encode/worker.ts).
 import { background as encoder } from '../encode/client.ts';
 import type { LibraryBackend } from './backend.ts';
+import { canCleanIncompleteSong } from './safety.ts';
 
 export const opfsAvailable = () => typeof navigator !== 'undefined' && !!navigator.storage?.getDirectory;
 
@@ -22,12 +23,28 @@ export const opfsBackend: LibraryBackend = {
     const out: { id: string; meta: string }[] = [];
     for await (const [name, handle] of (lib as any).entries() as AsyncIterable<[string, FileSystemHandle]>) {
       if (handle.kind !== 'directory') continue;
+      const dir = handle as FileSystemDirectoryHandle;
       try {
-        const f = await (await (handle as FileSystemDirectoryHandle).getFileHandle('meta.json')).getFile();
+        const f = await (await dir.getFileHandle('meta.json')).getFile();
         out.push({ id: name, meta: await f.text() });
-      } catch {
-        // No meta.json: an interrupted save (see the ordering note on writeMeta). Clean it up.
-        await lib.removeEntry(name, { recursive: true }).catch(() => {});
+      } catch (e) {
+        // No meta.json: normally an interrupted save (see the ordering note on writeMeta), but never delete on a hunch. It is only
+        // cleaned up when the file is definitely missing and the folder has sat untouched for a day; an unreadable file, or a save in
+        // progress right now, is left alone (and simply not listed).
+        const missing = (e as DOMException)?.name === 'NotFoundError';
+        let newest: number | null = null;
+        if (missing) {
+          try {
+            for await (const [, h] of (dir as any).entries() as AsyncIterable<[string, FileSystemHandle]>) {
+              if (h.kind !== 'file') continue;
+              const t = (await (h as FileSystemFileHandle).getFile()).lastModified;
+              newest = newest == null ? t : Math.max(newest, t);
+            }
+          } catch {
+            newest = null;
+          }
+        }
+        if (canCleanIncompleteSong(missing ? 'missing' : 'unreadable', newest, Date.now())) await lib.removeEntry(name, { recursive: true }).catch(() => {});
       }
     }
     return out;

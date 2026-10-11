@@ -28,7 +28,7 @@ needed for 1.0.
 - [x] The model download explains itself (the welcome panel and Models say the size, that it is one-off and works offline afterwards), can be stopped (Stop in Models, or cancelling the song in the queue) and carries on from where it got to (Resume in Models, or just separate again).
 
 ### 4. Data safety
-- [x] Older saved songs are brought up to date by one tested function (`normaliseScratch`), covering the single-tab, old drum box and deleted-part cases. Still to do: a frozen written-down format description and tests with real saved files from each release.
+- [x] Older saved songs are brought up to date by one tested function (`normaliseScratch`), covering the single-tab, old drum box and deleted-part cases. A written-down format description (`DATA_FORMAT.md`) and tests that open saved songs from every era (`tests/fixtures/library/`, sanitised copies of real saved songs) were added 2026-10-11.
 - [x] A disk-space check before saving a song, and a "last backed up" reminder under the Library.
 - [x] Back up and restore the whole library as one zip.
 

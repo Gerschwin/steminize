@@ -1,0 +1,192 @@
+{
+ "id": "fixture-era4",
+ "title": "A song saved by 0.9.4",
+ "seconds": 180.5,
+ "created": 1791700000000,
+ "settings": {
+  "model": "htdemucs_6s",
+  "precision": "compact",
+  "twoStems": "",
+  "skipStems": [],
+  "shifts": 1,
+  "overlap": 0.25,
+  "device": "auto",
+  "format": "flac",
+  "wavDepth": "16",
+  "flacDepth": "24",
+  "mp3Bitrate": 320,
+  "clip": "rescale"
+ },
+ "kind": "separated",
+ "stems": [
+  {
+   "name": "drums",
+   "scale": 1
+  },
+  {
+   "name": "bass",
+   "scale": 1
+  },
+  {
+   "name": "other",
+   "scale": 0.8
+  },
+  {
+   "name": "vocals",
+   "scale": 1
+  },
+  {
+   "name": "guitar",
+   "scale": 1
+  },
+  {
+   "name": "piano",
+   "scale": 1
+  }
+ ],
+ "bytes": 52428800,
+ "analysis": {
+  "bpm": 120,
+  "beats": [
+   0.5,
+   1,
+   1.5,
+   2,
+   2.5,
+   3,
+   3.5,
+   4
+  ],
+  "downbeat": 0,
+  "key": {
+   "tonic": 7,
+   "mode": "major",
+   "score": 0.8
+  }
+ },
+ "takeGroups": [
+  {
+   "id": "abc123",
+   "takes": [
+    {
+     "id": "take-1",
+     "scale": 1,
+     "note": "first try"
+    },
+    {
+     "id": "take-2",
+     "scale": 1
+    }
+   ],
+   "activeTake": "take-2"
+  }
+ ],
+ "state": {
+  "lanes": [
+   {
+    "vol": 1,
+    "pan": 0,
+    "mute": false,
+    "solo": false
+   },
+   {
+    "vol": 0.8,
+    "pan": -0.3,
+    "mute": true,
+    "solo": false,
+    "label": "Bass"
+   }
+  ],
+  "loop": {
+   "on": true,
+   "a": 441000,
+   "b": 882000
+  },
+  "tempo": 0.9,
+  "pitch": -2,
+  "practice": {
+   "countIn": true,
+   "click": false,
+   "gap": 0
+  },
+  "markers": [
+   {
+    "name": "Intro",
+    "pos": 0
+   },
+   {
+    "name": "Verse",
+    "pos": 441000
+   }
+  ],
+  "practiceSeconds": 3600,
+  "lastPracticed": 1791700000000,
+  "tx": {
+   "notes": false,
+   "chords": true,
+   "strip": true,
+   "simple": true,
+   "stripZoom": 1.25,
+   "shapes": "guitar",
+   "capo": 3,
+   "source": "__hear__",
+   "chordList": [
+    {
+     "start": 0,
+     "end": 2,
+     "root": 7,
+     "q": ""
+    },
+    {
+     "start": 2,
+     "end": 4,
+     "root": 0,
+     "q": ""
+    }
+   ]
+  },
+  "scratch": {
+   "lyrics": "[00:00.00]First lyric line\n[00:04.00]Second lyric line\n[00:08.00]Third lyric line\n",
+   "lyricsFollow": true,
+   "lyricsOffset": 0.4,
+   "lyricsChords": true,
+   "notes": "A note.",
+   "tab": "e|--0--3--|\nB|--1--0--|\nG|--0--0--|\nD|--2--0--|\nA|--3--2--|\nE|-----3--|\n",
+   "tabAnchors": [
+    {
+     "charOffset": 0,
+     "time": 1.5
+    }
+   ],
+   "tabFollow": true,
+   "tabPart": "guitar",
+   "tabParts": {
+    "bass": {
+     "tab": "G|--0--3--|\nD|--2--0--|\nA|--3--2--|\nE|-----3--|\n"
+    },
+    "drums": {
+     "tab": "HH|x-x-x-x-|\nSD|----o---|\nBD|o-------|\n"
+    },
+    "p1": {
+     "tab": "e|--5--7--|\n"
+    }
+   },
+   "extraParts": [
+    {
+     "id": "p1",
+     "name": "Second guitar"
+    }
+   ],
+   "partNames": {
+    "guitar": "Lead",
+    "bass": "Bass",
+    "drums": "Kit"
+   },
+   "partTracks": {
+    "guitar": "guitar",
+    "bass": "bass",
+    "drums": "drums"
+   }
+  }
+ }
+}

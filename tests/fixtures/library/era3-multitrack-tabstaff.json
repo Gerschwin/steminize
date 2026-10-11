@@ -1,0 +1,141 @@
+{
+ "title": "A multitrack song with a staff under the tab",
+ "seconds": 22.799999999999997,
+ "created": 1790603522272,
+ "settings": {
+  "model": "htdemucs_6s",
+  "precision": "compact",
+  "twoStems": "",
+  "skipStems": [],
+  "shifts": 1,
+  "overlap": 0.25,
+  "device": "auto",
+  "format": "wav",
+  "wavDepth": "16",
+  "flacDepth": "16",
+  "mp3Bitrate": 320,
+  "clip": "rescale"
+ },
+ "kind": "multitrack",
+ "analysis": {
+  "bpm": 100.1,
+  "beats": [
+   0.29,
+   0.89,
+   1.49,
+   2.09,
+   2.69,
+   3.29,
+   3.89,
+   4.49,
+   5.09,
+   5.69,
+   6.29,
+   6.89,
+   7.49,
+   8.09,
+   8.69,
+   9.29
+  ],
+  "downbeat": 3,
+  "key": {
+   "tonic": 9,
+   "mode": "minor",
+   "confidence": 0.6
+  }
+ },
+ "state": {
+  "lanes": [
+   {
+    "vol": 1,
+    "pan": 0,
+    "mute": false,
+    "solo": false,
+    "label": "Guitar"
+   },
+   {
+    "vol": 1,
+    "pan": 0,
+    "mute": false,
+    "solo": false
+   },
+   {
+    "vol": 1,
+    "pan": 0,
+    "mute": false,
+    "solo": false
+   }
+  ],
+  "loop": {
+   "on": false,
+   "a": 0,
+   "b": 0
+  },
+  "tempo": 0.75,
+  "pitch": 0,
+  "practice": {
+   "gap": 0,
+   "countIn": false,
+   "click": false,
+   "clickVol": 0.5,
+   "perBar": 4,
+   "barShift": 0,
+   "snap": "bar",
+   "trainer": {
+    "on": false,
+    "from": 0.7,
+    "to": 1,
+    "step": 0.05,
+    "every": 1,
+    "gate": 0
+   }
+  },
+  "markers": [],
+  "tx": {
+   "notes": false,
+   "chords": false,
+   "source": "*",
+   "chordList": null
+  },
+  "scratch": {
+   "lyrics": "",
+   "tab": "e|--0--3--|\nB|--1--0--|\nG|--0--0--|\nD|--2--0--|\nA|--3--2--|\nE|-----3--|\n",
+   "drums": "",
+   "notes": "",
+   "tabAnchors": [
+    {
+     "charOffset": 138,
+     "time": 20.228231292517005
+    },
+    {
+     "charOffset": 286,
+     "time": 2.4007936507936507
+    },
+    {
+     "charOffset": 303,
+     "time": 4.799024943310657
+    }
+   ],
+   "tabFollow": true,
+   "tabStaff": true
+  },
+  "practiceSeconds": 696.0904800000053,
+  "lastPracticed": 1790799346742
+ },
+ "id": "fixture-era3-multitrack-tabstaff",
+ "bytes": 1775743,
+ "stems": [
+  {
+   "name": "Guitar",
+   "scale": 1
+  },
+  {
+   "name": "Bass",
+   "scale": 1
+  },
+  {
+   "name": "Drums",
+   "scale": 1
+  }
+ ]
+}

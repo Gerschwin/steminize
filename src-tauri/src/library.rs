@@ -37,15 +37,29 @@ pub struct SongEntry {
     meta: String,
 }
 
-/// Every song's meta.json, with its id (the folder name). A folder without one is an interrupted
-/// save from a previous run (see saveSong in library.ts: stem files are written before meta.json,
-/// specifically so an incomplete save can be recognised this way) and is cleaned up here, the same
-/// as the OPFS backend does when it finds one.
-#[tauri::command]
-pub fn lib_list(app: AppHandle) -> Result<Vec<SongEntry>, String> {
-    let root = lib_root(&app)?;
+/// How long a folder with no meta.json must have sat untouched before it counts as an abandoned half-save.
+const INCOMPLETE_GRACE: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+
+/// The newest modification time of anything directly in a folder (or of the folder itself if it is empty).
+fn newest_mtime(dir: &std::path::Path) -> Option<std::time::SystemTime> {
+    let mut newest = std::fs::metadata(dir).ok()?.modified().ok();
+    for entry in std::fs::read_dir(dir).ok()?.flatten() {
+        if let Ok(t) = entry.metadata().and_then(|m| m.modified()) {
+            newest = Some(newest.map_or(t, |n| n.max(t)));
+        }
+    }
+    newest
+}
+
+/// Every song's meta.json, with its id (the folder name). A save writes the stem files first and meta.json
+/// last (see saveSong in library.ts), so a folder without one is normally an interrupted save. But it could
+/// also be a save happening right now, or a meta.json that is only unreadable for a moment (an antivirus
+/// scan, a locked file), so nothing is ever deleted on a hunch: a folder is cleaned up only when meta.json
+/// is definitely missing AND nothing in the folder has changed for a day. Anything else is left alone and
+/// simply not listed.
+fn list_songs(root: &std::path::Path, now: std::time::SystemTime) -> Result<Vec<SongEntry>, String> {
     let mut out = Vec::new();
-    for entry in std::fs::read_dir(&root).map_err(|e| e.to_string())? {
+    for entry in std::fs::read_dir(root).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         if !entry.file_type().map_err(|e| e.to_string())?.is_dir() {
             continue;
@@ -53,12 +67,21 @@ pub fn lib_list(app: AppHandle) -> Result<Vec<SongEntry>, String> {
         let id = entry.file_name().to_string_lossy().into_owned();
         match std::fs::read_to_string(entry.path().join("meta.json")) {
             Ok(meta) => out.push(SongEntry { id, meta }),
-            Err(_) => {
-                let _ = std::fs::remove_dir_all(entry.path());
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                let stale = newest_mtime(&entry.path()).is_some_and(|t| now.duration_since(t).is_ok_and(|age| age > INCOMPLETE_GRACE));
+                if stale {
+                    let _ = std::fs::remove_dir_all(entry.path());
+                }
             }
+            Err(_) => {} // unreadable for some other reason: leave it alone
         }
     }
     Ok(out)
+}
+
+#[tauri::command]
+pub fn lib_list(app: AppHandle) -> Result<Vec<SongEntry>, String> {
+    list_songs(&lib_root(&app)?, std::time::SystemTime::now())
 }
 
 #[tauri::command]
@@ -129,7 +152,8 @@ pub fn lib_delete(app: AppHandle, id: String) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::safe_component;
+    use super::{list_songs, safe_component};
+    use std::time::{Duration, SystemTime};
 
     #[test]
     fn rejects_anything_that_could_leave_the_library_folder() {
@@ -142,6 +166,59 @@ mod tests {
         assert!(safe_component("a/b", "name").is_err());
         assert!(safe_component("a\\b", "name").is_err());
         assert!(safe_component("/etc/passwd", "id").is_err());
+    }
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("steminize-test-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn lists_songs_that_have_a_meta_file_and_never_touches_them() {
+        let root = scratch("lists");
+        std::fs::create_dir_all(root.join("a")).unwrap();
+        std::fs::write(root.join("a/meta.json"), "{\"title\":\"A\"}").unwrap();
+        std::fs::write(root.join("a/Bass.flac"), "x").unwrap();
+        let songs = list_songs(&root, SystemTime::now() + Duration::from_secs(10 * 24 * 3600)).unwrap();
+        assert_eq!(songs.len(), 1);
+        assert!(root.join("a/Bass.flac").exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_fresh_folder_without_meta_is_kept_because_a_save_may_be_in_progress() {
+        let root = scratch("fresh");
+        std::fs::create_dir_all(root.join("saving")).unwrap();
+        std::fs::write(root.join("saving/Bass.flac"), "x").unwrap();
+        let songs = list_songs(&root, SystemTime::now()).unwrap();
+        assert!(songs.is_empty(), "it is not listed");
+        assert!(root.join("saving/Bass.flac").exists(), "but its files are not deleted");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_old_folder_without_meta_is_cleaned_up() {
+        let root = scratch("stale");
+        std::fs::create_dir_all(root.join("old")).unwrap();
+        std::fs::write(root.join("old/Bass.flac"), "x").unwrap();
+        let later = SystemTime::now() + Duration::from_secs(3 * 24 * 3600);
+        list_songs(&root, later).unwrap();
+        assert!(!root.join("old").exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_unreadable_meta_file_never_deletes_the_song() {
+        let root = scratch("unreadable");
+        std::fs::create_dir_all(root.join("s/meta.json")).unwrap(); // a directory where the file should be: reading it fails, but not as NotFound
+        std::fs::write(root.join("s/Bass.flac"), "x").unwrap();
+        let later = SystemTime::now() + Duration::from_secs(30 * 24 * 3600);
+        let songs = list_songs(&root, later).unwrap();
+        assert!(songs.is_empty());
+        assert!(root.join("s/Bass.flac").exists(), "an unreadable meta must not cost the user the stems");
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
 

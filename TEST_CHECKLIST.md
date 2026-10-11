@@ -68,6 +68,12 @@ E|-0---0---0---0---|
 - [ ] [desktop] **Settings → Text size**: choose 150% and 200%; everything scales and nothing is cut off, the transport and tempo rows wrap onto a second row. Ctrl and + / − / 0 do the same; the choice survives a restart; **Reset app preferences** sets it back to Normal. [web] the card explains using the browser's zoom, and a Desktop app card lists what only the desktop app has.
 - [ ] With a screen reader (NVDA on Windows, VoiceOver on macOS, Orca on Linux): sliders say "Tempo, 100%", the waveforms are described, dialogs announce their titles. Note anything unreadable.
 
+## 0f. Saved songs stay safe (NEW)
+- [ ] Open a song saved by an **older** version (keep one from 0.9.0 or 0.9.3 around): it opens with its mixer, loop, lyrics, tab and drum grid intact; save it, close it, open it again: nothing changed.
+- [ ] Damage test (use a copy of the library folder): make one song's `meta.json` empty or garbage. The library still lists every other song, and the damaged song's audio files are still on disk (it is skipped, not deleted).
+- [ ] Make a new folder inside `library/` containing only a `.flac` file (no meta.json): it is not deleted straight away (it could be a save in progress). A folder like that that is more than a day old is cleaned up at the next start.
+- [ ] Back up the library, delete a song, restore the backup: the song comes back with its settings. A backup from the web app restores on the desktop app and the other way round.
+
 ## 1. Install, launch and About
 
 - [ ] The installer for your platform installs and the app opens (note the OS and version).

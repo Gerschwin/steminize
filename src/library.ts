@@ -6,6 +6,7 @@
 
 import { background as encoder } from './encode/client.ts';
 import type { Stereo } from './engine/separate.ts';
+import { parseMeta } from './library/meta.ts';
 import { nativeBackend } from './library/nativeBackend.ts';
 import { opfsAvailable, opfsBackend } from './library/opfsBackend.ts';
 import { isTauri } from './platform.ts';
@@ -60,7 +61,14 @@ export const freeLibrarySpace = (): Promise<number | null> => (libraryAvailable(
 export async function listSongs(): Promise<LibMeta[]> {
   if (!libraryAvailable()) return [];
   const entries = await backend().list();
-  return entries.map(({ id, meta }) => ({ ...JSON.parse(meta), id })).sort((a, b) => b.created - a.created);
+  // One damaged meta.json skips that one song (its files stay where they are); it never stops the whole library from listing.
+  const songs: LibMeta[] = [];
+  for (const { id, meta } of entries) {
+    const m = parseMeta(id, meta);
+    if (m) songs.push(m);
+    else console.warn(`Steminize: skipped song ${id}: its meta.json could not be read`);
+  }
+  return songs.sort((a, b) => b.created - a.created);
 }
 
 /** Track names become file names in the library, so keep them safe and unique. */
