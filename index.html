@@ -206,6 +206,19 @@
           <label class="switch" title="Shows the From YouTube… button next to Open multitrack"><input type="checkbox" id="youtubeOpt" /> Show the From YouTube… button</label>
           <p class="muted small" id="youtubeNotice"></p>
         </section>
+        <section class="card settings" id="sizeCard">
+          <div class="card-head">
+            <h2>Text size</h2>
+            <select id="zoomSel" aria-label="Interface size" hidden></select>
+          </div>
+          <p class="muted small" id="sizeNote"></p>
+        </section>
+        <section class="card settings" id="desktopCard" hidden>
+          <div class="card-head">
+            <h2>Desktop app</h2>
+          </div>
+          <p class="muted small">The desktop app (Windows, macOS, Linux) does everything this page does and adds: <b>Native audio</b> (experimental, lower delay when you play along or record), <b>From YouTube</b> (optional, off until you turn it on), saving stems straight into a folder, and working with files too big for a browser tab. <a href="https://github.com/Gerschwin/steminize/releases" target="_blank" rel="noopener noreferrer">Get the desktop app</a>.</p>
+        </section>
         <section class="card settings" id="nativeInfoCard" hidden>
           <div class="card-head">
             <h2>Native audio</h2>
@@ -263,7 +276,7 @@
             <div class="transport">
               <div class="ov-col">
                 <div class="overview" id="overviewWrap">
-                  <canvas id="overview"></canvas>
+                  <canvas id="overview" role="img" aria-label="Song overview waveform. Click or drag to move around the song; the keyboard shortcuts are under the ? button."></canvas>
                   <div class="zoom">
                     <button class="btn tiny ghost" id="zoomOut" title="Zoom out (−)">−</button>
                     <button class="btn tiny ghost" id="zoomIn" title="Zoom in (+). Or scroll over the waveform">+</button>
@@ -317,17 +330,17 @@
             <div class="tools-sliders">
               <div class="tool">
                 <label>Tempo <output id="tempoOut">100%</output></label>
-                <input type="range" id="tempo" min="0.5" max="1.5" step="0.01" value="1" />
+                <input type="range" id="tempo" aria-label="Tempo" min="0.5" max="1.5" step="0.01" value="1" />
                 <button class="btn tiny ghost" data-reset="tempo">Reset</button>
               </div>
               <div class="tool">
                 <label>Pitch <output id="pitchOut">0 st</output></label>
-                <input type="range" id="pitch" min="-12" max="12" step="1" value="0" />
+                <input type="range" id="pitch" aria-label="Pitch in semitones" min="-12" max="12" step="1" value="0" />
                 <button class="btn tiny ghost" data-reset="pitch">Reset</button>
               </div>
               <div class="tool">
                 <label>Volume</label>
-                <input type="range" id="volume" min="0" max="1" step="0.01" value="0.9" />
+                <input type="range" id="volume" aria-label="Volume" min="0" max="1" step="0.01" value="0.9" />
                 <button class="btn tiny ghost toggle" id="panToggle" aria-pressed="false" title="Show left–right pan sliders on each track">Pan</button>
               </div>
             </div>
@@ -452,7 +465,7 @@
                   </select>
                   <label class="mini" title="Play saved songs through the native engine on the chosen output instead of the webview. Reopen the song after switching it on; songs not saved to the library still play in the webview."><input type="checkbox" id="naPlayback" /> Use native playback</label>
                   <button class="btn tiny ghost" id="naRefresh" type="button" title="List the devices again">Refresh</button>
-                  <button class="btn tiny toggle" id="naMonitor" type="button">Native monitor</button>
+                  <button class="btn tiny toggle" id="naMonitor" type="button" aria-pressed="false">Native monitor</button>
                   <button class="btn tiny ghost" id="naLoopback" type="button" title="Plays clicks out of the chosen output and listens for them on the chosen input: patch the output to the input with a cable (gain low) and read the round trip">Loopback test</button>
                   <span class="muted small" id="naStatus"></span>
                   <span class="muted small na-route" id="naRoute"></span>
@@ -551,7 +564,7 @@
                     <p>tap the first hit to time it, then play: the staff slides past the marker · click a bar number to loop that bar · <b>Ear</b> hides the staff while it plays</p>
                   </div>
                 </div>
-                <textarea class="scratch-area" id="scratchLyrics" placeholder="Lyrics… or paste synced lyrics in LRC format ([mm:ss.xx] words) to follow along" spellcheck="true"></textarea>
+                <textarea class="scratch-area" id="scratchLyrics" aria-label="Lyrics" placeholder="Lyrics… or paste synced lyrics in LRC format ([mm:ss.xx] words) to follow along" spellcheck="true"></textarea>
                 <div class="lyrics-follow" id="lyricsFollow" hidden aria-live="off"></div>
                 <textarea class="scratch-area mono" id="scratchTab" placeholder="e|--------------------|&#10;B|--------------------|&#10;G|--------------------|&#10;D|--------------------|&#10;A|--------------------|&#10;E|--------------------|" spellcheck="false" wrap="off" hidden></textarea>
                 <div class="tab-timeline" id="tabTimeline">
@@ -602,9 +615,9 @@
       </section>
     </main>
 
-    <dialog id="modelsDlg">
+    <dialog id="modelsDlg" aria-labelledby="modelsTitle">
       <form method="dialog" class="dlg-head">
-        <h2>Models</h2>
+        <h2 id="modelsTitle">Models</h2>
         <button class="btn tiny ghost" aria-label="Close">Close</button>
       </form>
       <p class="muted small">Models are stored in this browser/app and reused offline. If downloads are blocked on your network, fetch the files from Hugging Face yourself and import them here (the file names must match).</p>
@@ -615,9 +628,9 @@
       </div>
     </dialog>
 
-    <dialog id="ytDlg">
+    <dialog id="ytDlg" aria-labelledby="ytTitle">
       <form method="dialog" class="dlg-head">
-        <h2>From YouTube</h2>
+        <h2 id="ytTitle">From YouTube</h2>
         <button class="btn tiny ghost" aria-label="Close">Close</button>
       </form>
       <form id="ytSearchForm" class="yt-search">
@@ -701,9 +714,9 @@
       </div>
     </dialog>
 
-    <dialog id="helpDlg">
+    <dialog id="helpDlg" aria-labelledby="helpTitle">
       <form method="dialog" class="dlg-head">
-        <h2>Keyboard shortcuts</h2>
+        <h2 id="helpTitle">Keyboard shortcuts</h2>
         <button class="btn tiny ghost" aria-label="Close">Close</button>
       </form>
       <p class="muted small">Ignored while typing in a text field. A song needs to be open for most of these.</p>

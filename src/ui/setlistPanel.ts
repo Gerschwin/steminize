@@ -6,7 +6,7 @@ import { SR } from '../engine/separate.ts';
 import type { LibMeta } from '../library.ts';
 import { GAPS, loadSetlists, moveItem, newSetlist, nextSong, prevSong, pruneSongs, saveSetlists, totalSeconds, uniqueName, type Setlist } from '../setlists.ts';
 import type { Deck, DeckState } from './deck.ts';
-import { $, containScroll, fmtTime, h, toast } from './dom.ts';
+import { $, activatable, containScroll, fmtTime, h, toast } from './dom.ts';
 import { createDropdown } from './dropdown.ts';
 import type { initLibrary } from './libraryPanel.ts';
 
@@ -129,7 +129,7 @@ export function initSetlists(deck: Deck, library: Library) {
         render();
       }),
     );
-    const li = h('li', { class: `track done sl-row${deck.current?.libId === id ? ' active' : ''}`, title: 'Open and play' }, h('div', { class: 't-name' }, `${i + 1}. ${m.title}`), controls, h('div', { class: 't-sub' }, summary(m)));
+    const li = h('li', { class: `track done sl-row${deck.current?.libId === id ? ' active' : ''}`, title: 'Open and play' }, activatable(h('div', { class: 't-name' }, `${i + 1}. ${m.title}`), `Open and play ${m.title}`), controls, h('div', { class: 't-sub' }, summary(m)));
     li.onclick = () => void openAt(i, true);
     return li;
   }

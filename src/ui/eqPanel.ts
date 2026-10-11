@@ -30,7 +30,7 @@ export interface EqPanel {
 export function eqPanel(colour: string, onChange: (e: EqParams) => void, onCommit?: (before: EqParams, after: EqParams) => void): EqPanel {
   let eq: EqParams = { ...FLAT };
   let commitBase: EqParams = { ...eq };
-  const curve = h('canvas', { class: 'eq-curve' });
+  const curve = h('canvas', { class: 'eq-curve', role: 'img', 'aria-label': 'Equaliser curve for this track' });
 
   const chip = (name: string, hint: string, value: EqParams) => {
     const b = h('button', { class: 'eq-chip', type: 'button', title: hint }, name);

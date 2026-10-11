@@ -41,6 +41,7 @@ import { CHORD_TONES, chordCost, fretShape, pianoKeys, shapeIsRight, suggestCapo
 import { QUALITIES } from '../src/analysis/chords.ts';
 import { segmentsFor, snapToWord, sungSeconds } from '../src/lyrics/lyricChords.ts';
 import { modelNote } from '../src/models.ts';
+import { ZOOM_KEY, ZOOM_STEPS, loadZoom, nearestZoom, saveZoom, stepZoom, zoomLabel } from '../src/textSize.ts';
 import { NATIVE_INFO, NATIVE_TIP, NATIVE_TIP_KEY, NATIVE_WELCOME, nativeTipVisible } from '../src/nativeHint.ts';
 import { YOUTUBE_KEY, YOUTUBE_NOTICE, YOUTUBE_REMINDER, setYoutubeEnabled, youtubeEnabled } from '../src/youtubeOptIn.ts';
 import { downloadResumable, keptBytes, parseContentRange, type PartStore } from '../src/modelDownload.ts';
@@ -1363,6 +1364,21 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('native tip: unreadable storage shows it rather than hiding the feature', nativeTipVisible({ getItem: () => { throw new Error('blocked'); } }, true, false) === true);
   ok('native tip: the words say it is experimental and off by default', /experimental/i.test(NATIVE_TIP) && /off by default/i.test(NATIVE_TIP) && /off by default/i.test(NATIVE_INFO) && /experimental/i.test(NATIVE_WELCOME) && /Live input/.test(NATIVE_INFO));
   ok('native tip: Reset app preferences brings the tip back', (APP_PREFERENCE_KEYS as readonly string[]).includes(NATIVE_TIP_KEY));
+}
+
+
+{
+  ok('text size: the steps start at normal and grow', ZOOM_STEPS[0] === 1 && ZOOM_STEPS.every((z, i) => i === 0 || z > ZOOM_STEPS[i - 1]) && ZOOM_STEPS[ZOOM_STEPS.length - 1] >= 1.75);
+  ok('text size: a step up and down moves one place and stops at the ends', stepZoom(1, 1) === ZOOM_STEPS[1] && stepZoom(ZOOM_STEPS[1], -1) === 1 && stepZoom(1, -1) === 1 && stepZoom(ZOOM_STEPS[ZOOM_STEPS.length - 1], 1) === ZOOM_STEPS[ZOOM_STEPS.length - 1]);
+  ok('text size: an odd value lands on the nearest real step, nonsense on normal', nearestZoom(1.2) === 1.25 && nearestZoom(NaN) === 1 && nearestZoom(99) === 2 && nearestZoom(0.1) === 1);
+  const mem = new Map<string, string>();
+  const store = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v), removeItem: (k: string) => void mem.delete(k) };
+  saveZoom(store, 1.5);
+  const got = loadZoom(store);
+  saveZoom(store, 1);
+  ok('text size: the choice is remembered, and normal leaves nothing stored', got === 1.5 && !mem.has(ZOOM_KEY) && loadZoom(store) === 1);
+  ok('text size: unreadable storage means normal', loadZoom({ getItem: () => { throw new Error('blocked'); } }) === 1);
+  ok('text size: labels read well, and Reset app preferences puts it back to normal', zoomLabel(1) === 'Normal' && zoomLabel(1.25) === '125%' && (APP_PREFERENCE_KEYS as readonly string[]).includes(ZOOM_KEY));
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

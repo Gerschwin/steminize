@@ -62,6 +62,12 @@ E|-0---0---0---0---|
 - [ ] Native audio is **off** on a fresh install: Use native playback is unticked, and songs play through the normal engine.
 - [ ] None of this appears in the web app.
 
+## 0e. Accessibility (NEW)
+- [ ] Tab through the whole window: the order is sensible, nothing is skipped or trapped, and every stop shows a clear focus ring (check both themes). Library, queue and setlist songs can be focused and opened with Enter or Space; F2 renames a library song; lyric lines open with Enter.
+- [ ] Contrast: white-on-amber is gone (buttons such as **Choose a song…** and **Save all stems** and the selected **Songs** tab have dark text). In the light theme, green / amber / red status words are readable (the On-device chip, "Not backed up yet", the library's green summary line).
+- [ ] [desktop] **Settings → Text size**: choose 150% and 200%; everything scales and nothing is cut off, the transport and tempo rows wrap onto a second row. Ctrl and + / − / 0 do the same; the choice survives a restart; **Reset app preferences** sets it back to Normal. [web] the card explains using the browser's zoom, and a Desktop app card lists what only the desktop app has.
+- [ ] With a screen reader (NVDA on Windows, VoiceOver on macOS, Orca on Linux): sliders say "Tempo, 100%", the waveforms are described, dialogs announce their titles. Note anything unreadable.
+
 ## 1. Install, launch and About
 
 - [ ] The installer for your platform installs and the app opens (note the OS and version).

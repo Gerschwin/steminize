@@ -190,6 +190,7 @@ export function initNativeAudio(player: Player) {
       if (monitoring) {
         await call('native_monitor_stop');
         monitoring = false;
+        monBtn.setAttribute('aria-pressed', 'false');
         monBtn.textContent = 'Native monitor';
         clearInterval(statsTimer);
         status.textContent = 'Stopped.';
@@ -198,6 +199,7 @@ export function initNativeAudio(player: Player) {
         const summary = await call<string>('native_monitor_start', { ...args(), gain: 1 });
         monitoring = true;
         monitorSummary = summary;
+        monBtn.setAttribute('aria-pressed', 'true');
         monBtn.textContent = 'Stop native monitor';
         status.textContent = `Monitoring natively: ${summary}`;
         clearInterval(statsTimer);
@@ -216,6 +218,7 @@ export function initNativeAudio(player: Player) {
       await call('native_monitor_stop');
       monitoring = false;
       clearInterval(statsTimer);
+      monBtn.setAttribute('aria-pressed', 'false');
       monBtn.textContent = 'Native monitor';
     }
     loopBtn.disabled = monBtn.disabled = true;

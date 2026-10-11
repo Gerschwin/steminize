@@ -92,7 +92,7 @@ are desktop only and are marked **[desktop]**.
 - **Older saved songs** are brought up to date by one tested function, so an update never loses a scratchpad.
 - **Unsaved songs** tell you they use the normal engine when native audio is on.
 - **Reset app preferences** (Settings): puts the theme, panels, live-input and native-audio choices back to how they start, without touching songs, setlists or separation settings.
-- **Accessibility:** a visible keyboard focus ring on every control; bar-accuracy colours also shown by an outline.
+- **Accessibility:** a visible keyboard focus ring on every control; bar-accuracy colours also shown by an outline. New in 0.9.4+ (next release): every control and canvas has a name; library, queue, setlist and lyric rows work with Enter / Space; contrast fixed in both themes (dark text on amber buttons, darker status colours in the light theme); a **Text size** setting in the desktop app (and Ctrl +/−/0) and layout that wraps at large sizes; a Desktop app note in the browser's Settings. Not yet tried with a screen reader.
 - **Documents:** `FAQ.md`, `PRIVACY.md`, `LICENCES.md` (dependency licences), bug-report and suggestion forms on GitHub.
 
 ## Known limits

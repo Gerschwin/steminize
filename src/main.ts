@@ -5,11 +5,12 @@ import { MODELS, neededFiles } from './models.ts';
 import { isTauri, pickFolderFiles } from './platform.ts';
 import { loadSettings, type Settings } from './settings.ts';
 import { Deck, type Result } from './ui/deck.ts';
-import { $, fmtDuration, fmtEta, fmtTime, h, openDialog, toast } from './ui/dom.ts';
+import { $, activatable, fmtDuration, fmtEta, fmtTime, h, openDialog, toast } from './ui/dom.ts';
 import { cancelDownloads, ensureDownloaded, initModelsDialog, onModelsChanged } from './ui/modelsDialog.ts';
 import { initWelcome } from './ui/welcome.ts';
 import { NATIVE_INFO, NATIVE_TIP, NATIVE_TIP_KEY, NATIVE_WELCOME, nativeTipVisible } from './nativeHint.ts';
 import { nativeIsOn, revealNativeAudio } from './ui/nativeAudio.ts';
+import { ZOOM_STEPS, loadZoom, saveZoom, stepZoom, zoomLabel } from './textSize.ts';
 import { YOUTUBE_NOTICE, YOUTUBE_REMINDER, setYoutubeEnabled, youtubeEnabled } from './youtubeOptIn.ts';
 import { SettingsPanel } from './ui/settingsPanel.ts';
 import { initLibrary } from './ui/libraryPanel.ts';
@@ -180,8 +181,10 @@ function renderTrack(t: Track) {
     removeTrack(t);
   };
   const bar = h('div', { class: `bar${running && t.frac < 0 ? ' indet' : ''}` }, h('i', { style: `width:${Math.max(0, t.frac) * 100}%` }));
+  const nameEl = h('div', { class: 't-name', title: t.file.name }, t.file.name);
+  if (t.result) activatable(nameEl, `Open ${t.file.name}`);
   t.el.replaceChildren(
-    h('div', { class: 't-name', title: t.file.name }, t.file.name),
+    nameEl,
     x,
     h('div', { class: 't-sub' }, subText(t)),
     t.status === 'done' ? '' : h('div', { class: 't-set' }, summary(t.settings)),
@@ -521,6 +524,47 @@ if (isTauri) {
   const wn = $('welcomeNative');
   wn.hidden = false;
   wn.textContent = NATIVE_WELCOME;
+}
+
+// In a browser, say what only the desktop app has, instead of leaving those features silently absent.
+$('desktopCard').hidden = isTauri;
+
+// ---------------------------------------------------------------- text size
+// The desktop app scales the whole page (a real webview zoom, so clicks and drawing stay lined up); in a browser, the browser's own zoom does it.
+{
+  const sel = $<HTMLSelectElement>('zoomSel');
+  const note = $('sizeNote');
+  if (!isTauri) {
+    note.textContent = "To make everything larger, use your browser's zoom: Ctrl and + (Cmd and + on a Mac), and Ctrl and 0 to go back to normal.";
+  } else {
+    let zoom = loadZoom(localStorage);
+    sel.hidden = false;
+    sel.replaceChildren(...ZOOM_STEPS.map((z) => h('option', { value: String(z) }, zoomLabel(z))));
+    note.textContent = 'Makes everything larger, not just the text. You can also press Ctrl and + / − (Cmd on a Mac), and Ctrl 0 to go back to normal.';
+    const apply = async (z: number) => {
+      zoom = z;
+      sel.value = String(z);
+      saveZoom(localStorage, z);
+      try {
+        const { getCurrentWebview } = await import('@tauri-apps/api/webview');
+        await getCurrentWebview().setZoom(z);
+      } catch (e) {
+        toast(`Couldn't change the size: ${(e as Error).message ?? e}`, true);
+      }
+    };
+    sel.value = String(zoom);
+    if (zoom !== 1) void apply(zoom);
+    sel.onchange = () => void apply(Number(sel.value));
+    window.addEventListener('keydown', (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const k = e.key;
+      if (k === '=' || k === '+') void apply(stepZoom(zoom, 1));
+      else if (k === '-' || k === '_') void apply(stepZoom(zoom, -1));
+      else if (k === '0') void apply(1);
+      else return;
+      e.preventDefault();
+    });
+  }
 }
 
 // ---------------------------------------------------------------- file input & drag/drop

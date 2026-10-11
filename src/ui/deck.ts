@@ -52,7 +52,7 @@ import {
 import { FLAT, isFlat, sameEq, type EqParams } from '../player/eq.ts';
 import { eqPanel, type EqPanel } from './eqPanel.ts';
 import { drawStaff, drawTabScore, noteAt, staffU, staffX, type StaffLayout, type TabScoreLayout } from './staff.ts';
-import { $, fitCanvas, fmtDuration, fmtTime, h, pressed, toast } from './dom.ts';
+import { $, activatable, fitCanvas, fmtDuration, fmtTime, h, pressed, toast } from './dom.ts';
 import { Transcribe, type TxHost, type TxState } from './transcribePanel.ts';
 import type { Chord } from '../analysis/chords.ts';
 import type { NoteEvent } from '../analysis/basicPitch.ts';
@@ -646,7 +646,7 @@ export class Deck {
   /** Builds one track's DOM and wiring (mute/solo/EQ/vol/pan/rename/resize/zoom/export) and appends it to #lanes. Shared by the initial song-open loop and by a finished live recording, which adds itself as a lane the same way. */
   private buildLane(s: { name: string; data: Stereo }, i: number, colourOverride?: string): Lane {
     const colour = colourOverride ?? stemColour(s.name, i);
-    const canvas = h('canvas');
+    const canvas = h('canvas', { role: 'img', 'aria-label': `${laneLabel({ name: s.name })} waveform` });
     const mute = h('button', { class: 'ms m', type: 'button', title: `Mute (${i + 1})` }, 'M');
     const solo = h('button', { class: 'ms s', type: 'button', title: 'Solo' }, 'S');
     const eqBtn = h('button', { class: 'ms eq', type: 'button', title: 'EQ: presets, low/high cut and a focus band' }, 'EQ');
@@ -2375,7 +2375,7 @@ export class Deck {
     const lines = this.lrc?.lines ?? [];
     const off = this.scratch.lyricsOffset ?? 0;
     for (const [i, line] of lines.entries()) {
-      const el = h('div', { class: 'lyric-line' });
+      const el = activatable(h('div', { class: 'lyric-line' }), line.text ? `Jump to: ${line.text}` : 'Jump to this line');
       if (withChords) {
         const next = lines.find((l) => l.t > line.t)?.t;
         const t0 = line.t + off;
@@ -3429,6 +3429,7 @@ export class Deck {
       const badgeText = nameBtn.querySelector('.take-badge')?.textContent ?? '';
       nameBtn.replaceChildren(laneLabel(lane), h('span', { class: 'take-badge muted' }, badgeText));
       dl.title = `Save ${laneLabel(lane)}`;
+      lane.canvas.setAttribute('aria-label', `${laneLabel(lane)} waveform`);
       input.replaceWith(nameBtn);
       if (save) {
         this.refreshTunerSources();
@@ -3498,6 +3499,9 @@ export class Deck {
     $<HTMLInputElement>('pitch').value = String(this.pitch);
     $('tempoOut').textContent = `${Math.round(this.tempo * 100)}%`;
     $('pitchOut').textContent = `${this.pitch > 0 ? '+' : ''}${this.pitch} st`;
+    // Say "100%" and "+2 st", not the bare numbers, to a screen reader.
+    $('tempo').setAttribute('aria-valuetext', $('tempoOut').textContent!);
+    $('pitch').setAttribute('aria-valuetext', $('pitchOut').textContent!);
     this.updateBpmInfo();
   }
 

@@ -187,7 +187,7 @@ export class Transcribe {
 
   constructor(private host: TxHost) {
     // ---- chord timeline lane
-    this.stripCanvas = h('canvas');
+    this.stripCanvas = h('canvas', { role: 'img', 'aria-label': 'Chord timeline: the chords in time with the music. Click a beat to jump to it.' });
     const simpleBox = h('input', { type: 'checkbox' }) as HTMLInputElement;
     simpleBox.onchange = () => {
       this.simple = simpleBox.checked;
@@ -243,7 +243,7 @@ export class Transcribe {
     );
 
     // ---- chords lane
-    this.chordCanvas = h('canvas');
+    this.chordCanvas = h('canvas', { role: 'img', 'aria-label': 'Chords along the song. Click a chord to correct it.' });
     this.chordNow = h('span', { class: 'x-now' });
     this.chordStatus = h('span', { class: 'muted small x-status' });
     const redo = h('button', { class: 'btn tiny ghost', type: 'button', title: 'Detect the chords again (replaces your edits)' }, 'Redo');
@@ -270,8 +270,10 @@ export class Transcribe {
     chordWave.addEventListener('wheel', (e) => this.host.wheel(e, chordWave), { passive: false });
 
     // ---- notes lane
-    this.noteCanvas = h('canvas');
+    this.noteCanvas = h('canvas', { role: 'img', 'aria-label': 'Notes sounding over time, one row for each note' });
     this.keys = h('canvas', {
+      role: 'img',
+      'aria-label': 'Piano keyboard: click a key to hear it',
       title: "Click a key to hear it, in a tone roughly matching the part you're viewing. Scroll to zoom, Shift+scroll to pan, double-click to reset.",
     });
     this.sourceSel = h('select', { title: 'Which part to show' });

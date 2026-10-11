@@ -4,7 +4,7 @@ import { saveFile } from '../platform.ts';
 import { backupNote, fmtBytes, spaceNeeded, spaceStatus } from '../library/safety.ts';
 import type { Deck, DeckState, Result } from './deck.ts';
 import type { KeyCandidate } from '../analysis/key.ts';
-import { $, containScroll, fmtDuration, fmtMB, fmtTime, h, toast } from './dom.ts';
+import { $, activatable, containScroll, fmtDuration, fmtMB, fmtTime, h, toast } from './dom.ts';
 
 const pref = (k: string, d: string) => {
   try {
@@ -226,7 +226,14 @@ export function initLibrary(deck: Deck) {
     const x = h('button', { class: 't-x', type: 'button', title: 'Delete from library' }, '×');
     // Single click opens, but waits a moment so a double-click (rename) doesn't open it first.
     let openTimer = 0;
-    const nameEl = h('div', { class: 't-name', title: `${m.title}\n(double-click to rename)` }, m.title);
+    const nameEl = h('div', { class: 't-name', title: `${m.title}\n(double-click, or press F2, to rename)` }, m.title);
+    activatable(nameEl, `Open ${m.title}`);
+    nameEl.addEventListener('keydown', (e) => {
+      if (e.key === 'F2' && e.target === nameEl) {
+        e.preventDefault();
+        nameEl.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      }
+    });
     nameEl.ondblclick = (e) => {
       e.stopPropagation();
       clearTimeout(openTimer);

@@ -96,3 +96,21 @@ export function fitCanvas(c: HTMLCanvasElement) {
   }
   return c.getContext('2d')!;
 }
+
+/**
+ * Makes a clickable element reachable and usable from the keyboard: it joins the Tab order, a screen reader announces it as a
+ * button, and Enter or Space does what a click does. For things that are not real buttons, such as a row that opens a song.
+ */
+export function activatable(el: HTMLElement, label?: string) {
+  el.tabIndex = 0;
+  el.setAttribute('role', 'button');
+  if (label) el.setAttribute('aria-label', label);
+  el.addEventListener('keydown', (e) => {
+    if (e.target !== el || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      el.click();
+    }
+  });
+  return el;
+}

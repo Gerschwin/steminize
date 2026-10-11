@@ -47,8 +47,8 @@ needed for 1.0.
 
 ## Should have
 - [x] Unsaved songs in the native engine now say clearly that they use the normal engine.
-- [ ] Accessibility basics: done so far: a visible keyboard focus ring everywhere, and bar-accuracy colours also shown by an outline (dashed or heavy). Still to do: a keyboard walk-through of the main controls, a contrast check, and a larger-text option. (Claude)
-- [ ] Desktop-only features say so in the interface (native audio, From YouTube) instead of just being absent in the browser. (Claude)
+- [x] Accessibility basics (done 2026-10-11, see the Accessibility section of the README): focus ring; names on every control and canvas; keyboard access to library, queue, setlist and lyric rows; an automatic contrast check in both themes with the failures fixed; a Text size setting (desktop) and a layout that wraps at large sizes; keyboard walk-through of the main window. Still worth doing with real people: a screen-reader pass (NVDA / VoiceOver / Orca). (Claude)
+- [x] Desktop-only features say so in the interface: the browser's Settings has a Desktop app card listing native audio, From YouTube, saving into a folder and big files, with a link to the releases page.
 - [x] Settings: a Reset for app preferences that never touches songs or setlists (separation settings already had one).
 - [x] Merged `native-audio` into `main` on 2026-10-11 (Neil said go; a fast-forward, 179 commits), which redeployed the web app at https://gerschwin.github.io/steminize/. From now on `main` is what the public sees: keep working on `native-audio` and merge deliberately.
 

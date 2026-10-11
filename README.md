@@ -191,6 +191,15 @@ The float64 conversion is done by `src/engine/fixfloat64.ts`, which rewrites tho
 - [LICENCES.md](LICENCES.md): every dependency and its licence (regenerate with `node scripts/licence-report.mjs`).
 - [TEST_CHECKLIST.md](TEST_CHECKLIST.md) and [V1_CRITERIA.md](V1_CRITERIA.md): testing, and what 1.0 needs.
 
+## Accessibility
+
+What has been done, and what has not:
+- **Keyboard:** every button, slider and menu is reachable with Tab in a sensible order, with a visible focus ring. Library songs, queue songs, setlist rows and synced lyric lines can be opened with Enter or Space (F2 renames a library song). The transport, loops, tempo and pitch have keyboard shortcuts (the **?** button lists them).
+- **Names:** controls, sliders and dialogs have accessible names; tempo and pitch read out as "100%" and "+2 st"; the waveform and chord canvases carry a description.
+- **Contrast:** checked automatically in the dark and light themes. Text meets 4.5:1 (3:1 for large text); disabled controls are exempt. Primary buttons use dark text on amber.
+- **Text size:** in the desktop app, Settings has a **Text size** setting (Normal up to 200%), and Ctrl and + / − / 0 work too; in a browser use the browser's own zoom. The layout wraps instead of clipping at large sizes.
+- **Not done:** the waveforms, the chord timeline and the tab are still driven by mouse or touch (the keyboard shortcuts cover playing, seeking and looping, but not editing a tab by keyboard alone). It has not been tried with a real screen reader (NVDA, VoiceOver, Orca) yet.
+
 ## Support
 
 Steminize is free and open source, and nothing is held back behind a payment. If it's useful to you, an optional contribution helps keep it maintained: [contribute via PayPal](https://www.paypal.com/ncp/payment/FZTNXUUZ3QWH6).
