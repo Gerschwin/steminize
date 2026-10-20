@@ -29,6 +29,7 @@ import { moveItem, nextSong, parseSetlists, prevSong, pruneSongs, totalSeconds, 
 import { detectLatency } from '../src/player/latency.ts';
 import { placeTake, shiftTake } from '../src/player/placement.ts';
 import { StreamResampler } from '../src/player/resample.ts';
+import { Stretch } from '../src/player/stretch.ts';
 import { withTimeout } from '../src/engine/timeout.ts';
 import { separationMemory, songSizeWarning } from '../src/engine/sizeHint.ts';
 import { beatCells, beatPositionAt, displayName, simplifyChord, timeAtBeat } from '../src/analysis/chordStrip.ts';
@@ -159,15 +160,24 @@ for (const [len, overlap, shifts] of [
 {
   const a = signal(SR * 3, 11);
   const b = signal(SR * 3, 12);
-  const m = renderMix([a, b], [1, 0.5], 0, SR * 3, 1, 0);
+  const m = await renderMix([a, b], [1, 0.5], 0, SR * 3, 1, 0);
   ok('mix at 100% is an exact weighted sum', maxErr(m[0], (i) => a[0][i] + 0.5 * b[0][i]) < 1e-6);
-  const slow = renderMix([a, b], [1, 1], 0, SR * 2, 0.5, 0);
+  const slow = await renderMix([a, b], [1, 1], 0, SR * 2, 0.5, 0);
   const rms = Math.sqrt(slow[0].reduce((s, v) => s + v * v, 0) / slow[0].length);
   ok('50% tempo doubles length and has audio', slow[0].length === SR * 4 && rms > 0.05, `rms ${rms.toFixed(3)}`);
-  const frac = renderMix([a], [1], 1000.4, 50000.7, 1, 0);
+  const frac = await renderMix([a], [1], 1000.4, 50000.7, 1, 0);
   ok('fractional positions still render audio', frac[0][10] === a[0][1010]);
-  const shifted = renderMix([a], [1], 0, SR * 2, 1, 3);
+  const shifted = await renderMix([a], [1], 0, SR * 2, 1, 3);
   ok('pitch shift keeps length', shifted[0].length === SR * 2);
+  const sine = new Float32Array(SR * 2).map((_, i) => 0.5 * Math.sin((2 * Math.PI * 440 * i) / SR));
+  const transposed = await renderMix([[sine, sine]], [1], 0, sine.length, 0.8, 12);
+  const crossings = (x: Float32Array) => {
+    let count = 0;
+    for (let i = SR / 2 + 1; i < SR * 3 / 2; i++) if (x[i - 1] <= 0 && x[i] > 0) count++;
+    return count;
+  };
+  ok('tempo and octave shift are independent', transposed[0].length === SR * 2.5 && Math.abs(crossings(transposed[0]) - 880) < 4,
+    `${transposed[0].length} frames, ${crossings(transposed[0])} Hz`);
   const src = new MixSource([a], [1], SR * 3);
   src.loopOn = true;
   src.loopStart = 1000;
@@ -181,11 +191,11 @@ for (const [len, overlap, shifts] of [
 // ---- 5b. pan
 {
   const a = signal(20_000, 21);
-  const c = renderMix([a], [1], 0, 20_000, 1, 0, [0]);
+  const c = await renderMix([a], [1], 0, 20_000, 1, 0, [0]);
   ok('pan centre keeps original stereo', maxErr(c[0], (i) => a[0][i]) === 0 && maxErr(c[1], (i) => a[1][i]) === 0);
-  const L = renderMix([a], [0.5], 0, 20_000, 1, 0, [-1]);
+  const L = await renderMix([a], [0.5], 0, 20_000, 1, 0, [-1]);
   ok('pan hard left: silent right, mono sum left', L[1].every((v) => Math.abs(v) < 1e-7) && maxErr(L[0], (i) => 0.5 * Math.SQRT2 * (a[0][i] + a[1][i]) / 2) < 1e-6);
-  const R = renderMix([a], [1], 0, 20_000, 1, 0, [1]);
+  const R = await renderMix([a], [1], 0, 20_000, 1, 0, [1]);
   ok('pan hard right: silent left', R[0].every((v) => Math.abs(v) < 1e-7));
   const [p, q, r2, t] = panMatrix(0.5);
   ok('pan half right leans right', r2 + t > p + q, [p, q, r2, t].map((x) => x.toFixed(3)).join(' '));
@@ -199,20 +209,20 @@ for (const [len, overlap, shifts] of [
     return [l, l.slice()];
   };
   const rms = (x: Float32Array) => Math.sqrt(x.subarray(SR).reduce((a, v) => a + v * v, 0) / (n - SR)); // skip settling
-  const gainDb = (f: number, eq: typeof FLAT) => 20 * Math.log10(rms(renderMix([tone(f)], [1], 0, n, 1, 0, [], [eq])[0]) / rms(tone(f)[0]));
+  const gainDb = async (f: number, eq: typeof FLAT) => 20 * Math.log10(rms((await renderMix([tone(f)], [1], 0, n, 1, 0, [], [eq]))[0]) / rms(tone(f)[0]));
   const a = signal(20_000, 31);
-  const flat = renderMix([a], [1], 0, 20_000, 1, 0, [], [FLAT]);
+  const flat = await renderMix([a], [1], 0, 20_000, 1, 0, [], [FLAT]);
   ok('EQ flat is bit-exact passthrough', maxErr(flat[0], (i) => a[0][i]) === 0);
   const kick = PRESETS.find((p) => p.name === 'Kick')!.eq;
   const hats = PRESETS.find((p) => p.name === 'Hi-hats')!.eq;
-  const k50 = gainDb(50, kick), k5k = gainDb(5000, kick);
+  const k50 = await gainDb(50, kick), k5k = await gainDb(5000, kick);
   ok('EQ Kick keeps 50 Hz, removes 5 kHz', Math.abs(k50) < 6 && k5k < -40, `50 Hz ${k50.toFixed(1)} dB, 5 kHz ${k5k.toFixed(1)} dB`);
-  const h100 = gainDb(100, hats), h10k = gainDb(10000, hats);
+  const h100 = await gainDb(100, hats), h10k = await gainDb(10000, hats);
   ok('EQ Hi-hats removes 100 Hz, keeps 10 kHz', h100 < -60 && Math.abs(h10k) < 1, `100 Hz ${h100.toFixed(1)} dB, 10 kHz ${h10k.toFixed(1)} dB`);
   const boost = { ...FLAT, freq: 1000, gain: 12, q: 1 };
-  const b1k = gainDb(1000, boost);
+  const b1k = await gainDb(1000, boost);
   ok('EQ focus +12 dB at 1 kHz', Math.abs(b1k - 12) < 0.3, `${b1k.toFixed(2)} dB`);
-  const k260 = gainDb(260, kick);
+  const k260 = await gainDb(260, kick);
   const pred = responseDb(kick, [260])[0];
   ok('EQ curve matches measured response', Math.abs(pred - k260) < 0.5, `curve ${pred.toFixed(1)} vs measured ${k260.toFixed(1)} dB at 260 Hz`);
 }
@@ -222,10 +232,11 @@ for (const [len, overlap, shifts] of [
   const len = SR * 6;
   const src: Stereo = [new Float32Array(len), new Float32Array(len)];
   src[0][SR] = src[1][SR] = 0.9; // marker at the loop start (1.0 s)
+  const stretch = await Stretch.create();
   const make = () => {
     const ms = new MixSource([src], [1], len);
     ms.padEnd = 32768;
-    return new Transport(new Renderer(ms));
+    return new Transport(new Renderer(ms, stretch));
   };
   const run = (t: Transport, seconds: number, onBlock?: (frame: number) => void) => {
     const out = new Float32Array(Math.round(seconds * SR));

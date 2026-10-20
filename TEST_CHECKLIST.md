@@ -298,7 +298,7 @@ Turn **Use native playback** off for this section.
 - [ ] Tick **Use native playback**, then reopen a saved song: it plays.
 - [ ] Play, pause, seek (click the overview), scrub, restart.
 - [ ] Loop a section; loop passes repeat cleanly with no click at the loop point.
-- [ ] Tempo (50–150%) and pitch (±12): sound is clean; compare the sound with the normal engine (it uses a different stretcher).
+- [ ] Tempo (50–150%) and pitch (±12): sound is clean; compare the sound with the WebAssembly engine.
 - [ ] Mixer: mute, solo, level, pan, EQ all change the sound; the master Volume works.
 - [ ] Count-in and Click play and stay in time with the music, also at slow tempo.
 - [ ] Speed trainer and gap between passes work.
@@ -366,4 +366,4 @@ Turn **Use native playback** off for this section.
 - Dotted lengths can't be set by key in Follow along (type them in the rhythm line).
 - Bar colours are red / green only; the exact count is in the tooltip.
 - Native audio: saved songs only; needs the input and output to share a sample rate; takes are mono at 44.1 kHz; Windows / macOS and JACK / ASIO are not tested or not built yet.
-- The native engine's time-stretch is a different algorithm from the normal engine's, so slowed audio sounds a little different.
+- The native engine and web player both use Signalsmith Stretch; compare their output at the same tempo and pitch.

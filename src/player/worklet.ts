@@ -2,6 +2,7 @@ import { MixSource, Renderer, type Stereo } from './mixcore.ts';
 import { DEFAULT_PRACTICE, Transport, type Practice } from './transport.ts';
 import type { EqParams } from './eq.ts';
 import { StreamResampler } from './resample.ts';
+import { Stretch } from './stretch.ts';
 
 /** The audio context's sample rate; a global inside an AudioWorklet. */
 declare const sampleRate: number;
@@ -36,18 +37,22 @@ class StemPlayer extends AudioWorkletProcessor {
   private practice: Practice = DEFAULT_PRACTICE;
   /** Songs are 44.1 kHz; when the context runs at another rate (low-latency mode on a 48 kHz card) the output is converted. */
   private rs = sampleRate === 44100 ? null : new StreamResampler(44100, sampleRate);
+  private stretch = Stretch.create();
+  private messages = Promise.resolve();
 
   constructor() {
     super();
-    this.port.onmessage = (e: MessageEvent<PlayerMsg>) => this.handle(e.data);
+    this.port.onmessage = (e: MessageEvent<PlayerMsg>) => {
+      this.messages = this.messages.then(() => this.handle(e.data));
+    };
   }
 
-  private handle(m: PlayerMsg) {
+  private async handle(m: PlayerMsg) {
     if (m.type === 'load') {
       this.rs?.reset();
       const src = new MixSource(m.stems, m.gains, m.stems[0]?.[0].length ?? 0);
       src.padEnd = 32768;
-      const r = new Renderer(src);
+      const r = new Renderer(src, await this.stretch);
       r.setTempoPitch(this.tp.tempo, this.tp.pitch);
       this.t = new Transport(r);
       this.t.setLoop(this.loop.on, this.loop.start, this.loop.end);
@@ -111,7 +116,7 @@ class StemPlayer extends AudioWorkletProcessor {
   private report(ended = false) {
     const t = this.t;
     const msg: PlayerReport = {
-      pos: t?.r.heard ?? 0,
+      pos: t?.r.audible() ?? 0,
       playing: this.playing,
       ended,
       passes: t?.passes ?? 0,

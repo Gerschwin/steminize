@@ -87,7 +87,7 @@ async function handle(m: EncodeReq) {
       post({ id: m.id, type: 'file', name: s.name, bytes }, [bytes.buffer as ArrayBuffer]);
     }
   } else if (m.type === 'mix') {
-    const mix = renderMix(m.stems, m.gains, m.start, m.end, m.tempo, m.pitch, m.pans, m.eqs);
+    const mix = await renderMix(m.stems, m.gains, m.start, m.end, m.tempo, m.pitch, m.pans, m.eqs);
     const bytes = encodeAudio(mix, m.out);
     post({ id: m.id, type: 'file', name: m.name, bytes }, [bytes.buffer as ArrayBuffer]);
   } else if (m.type === 'lib-encode') {

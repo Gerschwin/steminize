@@ -154,7 +154,7 @@ src/
   engine/worker.ts     ONNX Runtime Web (WebGPU → WASM fallback) in a Web Worker
   models.ts            model catalogue (Hugging Face URLs, sizes)
   modelstore.ts        downloads and caches models in Cache Storage (works offline)
-  player/mixcore.ts    stem mixing, looping, SoundTouch time-stretch and pitch-shift
+  player/mixcore.ts    stem mixing, looping, Signalsmith Stretch time-stretch and pitch-shift
   player/worklet.ts    real-time player (AudioWorklet)
   encode/              WAV, FLAC (own encoder), MP3 (lamejs) and MIDI; runs in a worker
   analysis/            beats and tempo, key, notes view (constant-Q transform), chords,
@@ -200,7 +200,7 @@ Steminize is free and open source, and nothing is held back behind a payment. If
 - **Demucs** by Alexandre Défossez, Simon Rouard, Francisco Massa and Meta AI, MIT licence: https://github.com/adefossez/demucs
 - **ONNX exports** by StemSplit (`StemSplitio/*` on Hugging Face), MIT licence.
 - **ONNX Runtime Web** by Microsoft, MIT licence.
-- **SoundTouchJS**, LGPL-2.1. It's used unmodified from npm, and you can swap in your own build of it.
+- **Signalsmith Stretch**, MIT. The web player and mix export use its official WebAssembly core; the native player uses the Rust binding. The bundled core's licence is in `src/player/vendor/LICENSE.txt`.
 - **lamejs** (MP3), LGPL. **fflate** (ZIP), MIT.
 - **Basic Pitch** by Spotify, Apache-2.0: https://github.com/spotify/basic-pitch. The model file is bundled unchanged; its licence and notice are next to it in `src/analysis/models/`. The note-extraction steps are ported from its Python code.
 - Steminize itself: MIT (see `LICENSE`).
