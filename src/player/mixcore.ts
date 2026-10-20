@@ -160,8 +160,11 @@ export class Renderer {
   private output = new Float32Array(0);
   private carry = 0;
   private seekPos = 0;
+  /** Input wraps since the last seek, used to place the delayed output within the loop. */
+  private loopTurns = 0;
   tempo = 1;
   pitch = 0;
+  forceStretch = false;
   /** Source position (frames) of the audio most recently output. */
   heard = 0;
 
@@ -170,12 +173,26 @@ export class Renderer {
   }
 
   get bypass() {
-    return this.tempo === 1 && this.pitch === 0;
+    return !this.forceStretch && this.tempo === 1 && this.pitch === 0;
   }
 
   /** Source frame currently audible after the stretcher's input latency. */
   audible() {
-    return this.bypass ? this.heard : Math.max(this.seekPos, Math.min(this.heard, this.heard - this.st!.inputLatency));
+    if (!this.src.looping) return this.bypass ? this.heard : Math.max(this.seekPos, Math.min(this.heard, this.heard - this.st!.inputLatency));
+    const length = this.src.loopEnd - this.src.loopStart;
+    const played = this.playedInLoop(length);
+    return this.src.loopStart + ((played - this.src.loopStart) % length);
+  }
+
+  private playedInLoop(length: number) {
+    return Math.max(this.seekPos, this.heard + this.loopTurns * length - (this.bypass ? 0 : this.st!.inputLatency));
+  }
+
+  /** Passes whose boundary has reached the output, rather than just the input. */
+  audiblePasses() {
+    if (!this.src.looping) return 0;
+    const length = this.src.loopEnd - this.src.loopStart;
+    return Math.floor((this.playedInLoop(length) - this.src.loopStart) / length);
   }
 
   seek(pos: number) {
@@ -183,6 +200,7 @@ export class Renderer {
     this.src.pos = Math.max(0, Math.min(Math.round(pos), this.src.end));
     this.heard = this.src.pos;
     this.seekPos = this.heard;
+    this.loopTurns = 0;
     this.src.resetPad();
     this.src.resetEqs();
     this.st?.reset();
@@ -204,7 +222,7 @@ export class Renderer {
     let n: number;
     if (this.bypass) {
       n = this.src.extract(t, frames);
-      this.heard = this.src.pos;
+      this.heard = this.src.looping ? this.heard + n : this.src.pos;
     } else {
       if (!this.st) throw new Error('Signalsmith Stretch is not loaded');
       const want = frames * this.tempo + this.carry;
@@ -218,10 +236,14 @@ export class Renderer {
       n = got === take ? frames : Math.min(frames, Math.round(got / this.tempo));
       for (let i = 0; i < n * 2; i++) t[i] = this.output[i];
       this.heard += got;
-      const s = this.src;
-      if (s.looping && this.heard >= s.loopEnd) this.heard = s.loopStart + ((this.heard - s.loopEnd) % (s.loopEnd - s.loopStart));
-      this.heard = Math.min(this.heard, s.end);
     }
+    const s = this.src;
+    if (s.looping && this.heard >= s.loopEnd) {
+      const length = s.loopEnd - s.loopStart;
+      this.loopTurns += Math.floor((this.heard - s.loopStart) / length);
+      this.heard = s.loopStart + ((this.heard - s.loopStart) % length);
+    }
+    this.heard = Math.min(this.heard, s.end);
     for (let i = 0; i < n; i++) {
       outL[i] = t[2 * i];
       outR[i] = t[2 * i + 1];

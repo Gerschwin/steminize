@@ -275,6 +275,29 @@ for (const [len, overlap, shifts] of [
   const g = markers(run(t, 5));
   ok('loop gap: 1 s pass then 1 s silence', g.join() === '0,2,4', `loop starts at ${g.join(' ')} s`);
 
+  const tone = Float32Array.from({ length: len }, (_, i) => i >= SR && i < 2 * SR ? 0.6 * Math.sin((2 * Math.PI * 440 * i) / SR) : 0);
+  for (const [name, tempo, pitch, practice] of [
+    ['ordinary', 0.8, 0, DEFAULT_PRACTICE],
+    ['normal-speed', 1, 0, DEFAULT_PRACTICE],
+    ['pitch-shifted', 1, 3, DEFAULT_PRACTICE],
+    ['speed trainer', 0.8, 0, { ...DEFAULT_PRACTICE, trainer: { on: true, from: 0.7, to: 1, step: 0.1, every: 1 } }],
+  ] as const) {
+    const loop = new Transport(new Renderer(new MixSource([[tone, tone]], [1], len), stretch));
+    loop.setLoop(true, SR, 2 * SR);
+    loop.r.setTempoPitch(tempo, pitch);
+    loop.setPractice(practice);
+    loop.onPlay();
+    let inRange = true;
+    const audio = run(loop, 5, () => { inRange &&= loop.r.audible() >= SR && loop.r.audible() < 2 * SR; });
+    let quietest = Infinity;
+    for (let i = SR / 2; i + 1103 < audio.length; i += 1103) {
+      let power = 0;
+      for (let j = i; j < i + 1103; j++) power += audio[j] * audio[j];
+      quietest = Math.min(quietest, Math.sqrt(power / 1103));
+    }
+    ok(`${name} loop stays audible across repeats`, quietest > 0.1 && loop.passes >= 2 && inRange, `min rms ${quietest.toFixed(3)}, passes ${loop.passes}`);
+  }
+
   t = make();
   t.setLoop(true, SR, 2 * SR);
   t.setPractice({ ...DEFAULT_PRACTICE, countIn: true, beats, perBar: 4 });
