@@ -212,8 +212,8 @@
           </div>
           <div class="field">
             <label class="label" for="stretchOverlap">STFT overlap <output id="stretchOverlapOut"></output></label>
-            <input type="range" id="stretchOverlap" min="50" max="85" step="5" />
-            <small class="muted">More overlap processes audio more often and uses more CPU. This is separate from Separation overlap above.</small>
+            <input type="range" id="stretchOverlap" min="2" max="8" step="0.1" />
+            <small class="muted">2×–8×, as in the Signalsmith demo. 4× means 75% overlap; 8× means 87.5%. More overlap uses more CPU. Separate from Separation overlap above.</small>
           </div>
           <label class="switch" title="Spread stretch calculations across audio blocks"><input type="checkbox" id="stretchSplit" /> Split computation</label>
         </section>

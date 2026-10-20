@@ -159,10 +159,12 @@ for (const [len, overlap, shifts] of [
 
 // ---- 5. mixer / time-stretch
 {
-  const short = await Stretch.create({ blockMs: 60, overlap: 50, split: true });
+  const short = await Stretch.create({ blockMs: 60, overlap: 2, split: true });
   const normal = await Stretch.create(DEFAULT_STRETCH);
   ok('stretch controls change the processing block and latency', short.inputLatency < normal.inputLatency);
-  ok('stretch settings reject out-of-range saved values', stretchConfig({ blockMs: 999, overlap: 0 }).blockMs === 200 && stretchConfig({ blockMs: 999, overlap: 0 }).overlap === 50);
+  ok('stretch settings reject out-of-range saved values', stretchConfig({ blockMs: 999, overlap: 0 }).blockMs === 200 && stretchConfig({ blockMs: 999, overlap: 0 }).overlap === 2);
+  ok('stretch settings accept demo maximum', stretchConfig({ overlap: 8 }).overlap === 8);
+  ok('stretch settings migrate saved percentages', stretchConfig({ overlap: 75 }).overlap === 4);
   const a = signal(SR * 3, 11);
   const b = signal(SR * 3, 12);
   const m = await renderMix([a, b], [1, 0.5], 0, SR * 3, 1, 0);
@@ -175,7 +177,7 @@ for (const [len, overlap, shifts] of [
   const shifted = await renderMix([a], [1], 0, SR * 2, 1, 3);
   ok('pitch shift keeps length', shifted[0].length === SR * 2);
   const sine = new Float32Array(SR * 2).map((_, i) => 0.5 * Math.sin((2 * Math.PI * 440 * i) / SR));
-  const transposed = await renderMix([[sine, sine]], [1], 0, sine.length, 0.8, 12, [], [], { blockMs: 60, overlap: 50, split: true });
+  const transposed = await renderMix([[sine, sine]], [1], 0, sine.length, 0.8, 12, [], [], { blockMs: 60, overlap: 8, split: true });
   const crossings = (x: Float32Array) => {
     let count = 0;
     for (let i = SR / 2 + 1; i < SR * 3 / 2; i++) if (x[i - 1] <= 0 && x[i] > 0) count++;

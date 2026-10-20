@@ -17,7 +17,7 @@ export class Stretch {
 
   configure(config: StretchConfig) {
     const block = Math.round(44.1 * config.blockMs);
-    const interval = Math.round(block * (1 - config.overlap / 100));
+    const interval = Math.round(block / config.overlap);
     this.module._configure(2, block, interval, Number(config.split));
   }
 

@@ -30,7 +30,7 @@ export class SettingsPanel {
     $('resetSettings').addEventListener('click', () => this.set({ ...DEFAULTS }));
     $<HTMLInputElement>('stretchBlock').addEventListener('input', (e) => { $('stretchBlockOut').textContent = `${(e.target as HTMLInputElement).value} ms`; });
     $<HTMLInputElement>('stretchBlock').addEventListener('change', (e) => this.setStretch({ blockMs: Number((e.target as HTMLInputElement).value) }));
-    $<HTMLInputElement>('stretchOverlap').addEventListener('input', (e) => { $('stretchOverlapOut').textContent = `${(e.target as HTMLInputElement).value}%`; });
+    $<HTMLInputElement>('stretchOverlap').addEventListener('input', (e) => { $('stretchOverlapOut').textContent = `${(e.target as HTMLInputElement).value}×`; });
     $<HTMLInputElement>('stretchOverlap').addEventListener('change', (e) => this.setStretch({ overlap: Number((e.target as HTMLInputElement).value) }));
     $<HTMLInputElement>('stretchSplit').addEventListener('change', (e) => this.setStretch({ split: (e.target as HTMLInputElement).checked }));
     $('resetStretch').addEventListener('click', () => this.setStretch(DEFAULT_STRETCH));
@@ -55,7 +55,7 @@ export class SettingsPanel {
     $<HTMLInputElement>('stretchOverlap').value = String(this.stretch.overlap);
     $<HTMLInputElement>('stretchSplit').checked = this.stretch.split;
     $('stretchBlockOut').textContent = `${this.stretch.blockMs} ms`;
-    $('stretchOverlapOut').textContent = `${this.stretch.overlap}%`;
+    $('stretchOverlapOut').textContent = `${this.stretch.overlap}×`;
   }
 
   set(patch: Partial<Settings>) {
