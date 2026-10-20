@@ -199,6 +199,27 @@
           </details>
           <p class="estimate" id="estimate"></p>
         </section>
+        <section class="card settings" id="stretchSettings">
+          <div class="card-head">
+            <h2>Audio stretching</h2>
+            <button class="btn tiny ghost" id="resetStretch" type="button" title="Restore Signalsmith Stretch defaults">Reset</button>
+          </div>
+          <p class="muted small">Adjust playback and exported mixes when changing speed or pitch.</p>
+          <div class="field">
+            <label class="label" for="stretchBlock">Block size <output id="stretchBlockOut"></output></label>
+            <input type="range" id="stretchBlock" min="40" max="400" step="10" />
+            <small class="muted">Longer blocks can smooth sustained sounds but soften sharp hits.</small>
+          </div>
+          <div class="field">
+            <label class="label" for="stretchOverlap">STFT overlap <output id="stretchOverlapOut"></output></label>
+            <input type="range" id="stretchOverlap" min="2" max="16" step="0.1" />
+            <small class="muted">More overlap can sound smoother but uses more CPU.</small>
+          </div>
+          <div class="field">
+            <label class="switch"><input type="checkbox" id="stretchSplit" /> Split computation</label>
+            <small class="muted">Spreads processing over time to reduce CPU spikes.</small>
+          </div>
+        </section>
         <section class="card settings" id="youtubeCard" hidden>
           <div class="card-head">
             <h2>From YouTube</h2>
@@ -216,9 +237,9 @@
         <section class="card settings" id="appPrefs">
           <div class="card-head">
             <h2>App preferences</h2>
-            <button class="btn tiny ghost" id="resetAppPrefs" title="Put the theme, panels and live-input and native-audio choices back to how they start">Reset</button>
+            <button class="btn tiny ghost" id="resetAppPrefs" title="Put the theme, panels, web playback, live-input and native-audio choices back to how they start">Reset</button>
           </div>
-          <p class="muted small">The theme, which panels are open, the live-input and native-audio choices and other interface choices. Resetting puts them back to how they start. Your library, setlists and the separation settings above are not touched.</p>
+          <p class="muted small">The theme, which panels are open, web playback, live-input and native-audio choices and other interface choices. Resetting puts them back to how they start. Your library, setlists and the separation settings above are not touched.</p>
         </section>
         </div>
       </aside>
@@ -317,7 +338,7 @@
             <div class="tools-sliders">
               <div class="tool">
                 <label>Tempo <output id="tempoOut">100%</output></label>
-                <input type="range" id="tempo" min="0.5" max="1.5" step="0.01" value="1" />
+                <input type="range" id="tempo" min="0.25" max="1.5" step="0.01" value="1" />
                 <button class="btn tiny ghost" data-reset="tempo">Reset</button>
               </div>
               <div class="tool">
@@ -343,8 +364,8 @@
                 <div class="tool practice">
                   <button class="btn tiny toggle" id="trainerBtn" aria-pressed="false" title="Loop the section, speeding up after each pass">Speed trainer</button>
                   <span class="trainer-cfg">
-                    <input type="number" id="trFrom" min="30" max="150" step="5" value="70" aria-label="Start speed" />% →
-                    <input type="number" id="trTo" min="30" max="150" step="5" value="100" aria-label="Target speed" />%,
+                    <input type="number" id="trFrom" min="25" max="150" step="5" value="70" aria-label="Start speed" />% →
+                    <input type="number" id="trTo" min="25" max="150" step="5" value="100" aria-label="Target speed" />%,
                     +<input type="number" id="trStep" min="1" max="25" step="1" value="5" aria-label="Step" />% every
                     <input type="number" id="trEvery" min="1" max="10" step="1" value="1" aria-label="Passes per step" /> pass(es)
                   </span>

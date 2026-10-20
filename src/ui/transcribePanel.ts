@@ -1329,7 +1329,7 @@ export class Transcribe {
     const start = Math.max(0, Math.round(pos - seg / 4));
     const end = Math.min(s.stems[0].data[0].length, start + seg);
     if (end - start < 4096) return;
-    const src = renderMix(
+    const src = await renderMix(
       s.stems.map((x) => x.data as [Float32Array, Float32Array]),
       this.host.gains(),
       start,

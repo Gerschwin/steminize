@@ -72,25 +72,48 @@ export class Transport {
     return this.pauseLeft > 0;
   }
 
+  private get continuousLoop() {
+    return this.looping && !this.p.gap && !this.p.countIn;
+  }
+
+  private syncSourceLoop() {
+    const src = this.r.src;
+    src.loopOn = this.continuousLoop;
+    src.loopStart = this.loop.start;
+    src.loopEnd = this.loop.end;
+    this.r.forceStretch = this.continuousLoop && this.p.trainer.on;
+  }
+
   setLoop(on: boolean, start: number, end: number) {
+    const pos = this.r.audible();
+    const wasContinuous = this.r.src.looping;
+    const oldLoop = this.loop;
     this.loop = { on, start: Math.round(start), end: Math.round(end) };
     const src = this.r.src;
-    src.loopOn = false; // passes are sequenced here instead
+    this.syncSourceLoop();
     src.end = this.looping ? this.loop.end : this.length;
     if (!this.looping) this.pauseLeft = 0;
-    if (this.looping && (this.r.heard < this.loop.start || this.r.heard >= this.loop.end)) this.r.seek(this.loop.start);
+    const outside = pos < this.loop.start || pos >= this.loop.end;
+    const changed = oldLoop.start !== this.loop.start || oldLoop.end !== this.loop.end;
+    if (this.looping && (outside || wasContinuous !== src.looping || (src.looping && changed))) {
+      this.r.seek(outside ? this.loop.start : pos);
+    } else if (!this.looping && wasContinuous) this.r.seek(pos);
     this.passes = 0;
   }
 
   setPractice(p: Practice) {
     const trainerStarted = p.trainer.on && !this.p.trainer.on;
+    const wasContinuous = this.r.src.looping;
+    const wasBypass = this.r.bypass;
+    const pos = this.r.audible();
     this.p = p;
+    this.syncSourceLoop();
     this.r.src.click = p.click && p.beats.length ? { beats: p.beats, downbeat: p.downbeat, perBar: p.perBar, vol: p.clickVol } : null;
     if (trainerStarted) {
       this.passes = 0;
       this.r.setTempoPitch(p.trainer.from, this.r.pitch);
       if (this.looping) this.r.seek(this.loop.start);
-    }
+    } else if (wasContinuous !== this.r.src.looping || wasBypass !== this.r.bypass) this.r.seek(pos);
     if (!p.countIn && !p.gap) this.pauseLeft = 0;
   }
 
@@ -134,13 +157,17 @@ export class Transport {
     this.pauseClicks = clicks;
   }
 
-  private endPass() {
+  private advancePass() {
     this.passes++;
     const t = this.p.trainer;
     if (t.on && !t.gate && this.passes % Math.max(1, t.every) === 0) {
       const next = Math.min(t.to, Math.round((this.r.tempo + t.step) * 100) / 100);
       if (next !== this.r.tempo) this.r.setTempoPitch(next, this.r.pitch);
     }
+  }
+
+  private endPass() {
+    this.advancePass();
     this.r.seek(this.loop.start);
     this.beginPause(this.p.gap);
   }
@@ -169,6 +196,13 @@ export class Transport {
         continue;
       }
       if (this.looping) {
+        if (this.r.src.looping) {
+          const before = this.r.audiblePasses();
+          const got = this.r.render(L.subarray(i), R.subarray(i), n - i);
+          i += got;
+          for (let pass = before; pass < this.r.audiblePasses(); pass++) this.advancePass();
+          continue;
+        }
         const remain = this.loop.end - this.r.heard;
         if (remain <= 0.5) {
           this.endPass();

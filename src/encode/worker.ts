@@ -6,6 +6,7 @@ import { zipSync, unzipSync } from 'fflate';
 import { encodeAudio, type OutputOptions } from './index.ts';
 import { encodeFlac } from './flac.ts';
 import { renderMix, type Stereo } from '../player/mixcore.ts';
+import type { StretchConfig } from '../player/stretchConfig.ts';
 import type { EqParams } from '../player/eq.ts';
 import { analyse } from '../analysis/beats.ts';
 import { detectKey, rankKeys } from '../analysis/key.ts';
@@ -25,6 +26,7 @@ export type EncodeReq =
       end: number;
       tempo: number;
       pitch: number;
+      stretch: StretchConfig;
       out: OutputOptions;
     }
   /** Peak-scales and FLAC-encodes stems for the library (either backend): posted back one 'file' at a
@@ -87,7 +89,7 @@ async function handle(m: EncodeReq) {
       post({ id: m.id, type: 'file', name: s.name, bytes }, [bytes.buffer as ArrayBuffer]);
     }
   } else if (m.type === 'mix') {
-    const mix = renderMix(m.stems, m.gains, m.start, m.end, m.tempo, m.pitch, m.pans, m.eqs);
+    const mix = await renderMix(m.stems, m.gains, m.start, m.end, m.tempo, m.pitch, m.pans, m.eqs, m.stretch);
     const bytes = encodeAudio(mix, m.out);
     post({ id: m.id, type: 'file', name: m.name, bytes }, [bytes.buffer as ArrayBuffer]);
   } else if (m.type === 'lib-encode') {

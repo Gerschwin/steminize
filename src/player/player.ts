@@ -1,7 +1,8 @@
 import workletUrl from './worklet.ts?worker&url';
 import probeUrl from './inputProbe.ts?worker&url';
 import { detectLatency, type LatencyResult } from './latency.ts';
-import { loadLowLatencyAudio, loadRecLatencyMs } from '../settings.ts';
+import { loadLowLatencyAudio, loadRecLatencyMs, loadStretchConfig } from '../settings.ts';
+import type { StretchConfig } from './stretchConfig.ts';
 import { isTauri } from '../platform.ts';
 import type { PlayerMsg, PlayerReport } from './worklet.ts';
 import type { Practice } from './transport.ts';
@@ -42,6 +43,7 @@ export class Player {
   private master: GainNode | null = null;
   private ready: Promise<void> | null = null;
   private queued: PlayerMsg[] = [];
+  private stretchConfig = loadStretchConfig();
   state: PlayerState = { pos: 0, playing: false, ended: false, passes: 0, tempo: 1, countingIn: false };
   onState: (s: PlayerState) => void = () => {};
   private stateStamp = 0;
@@ -231,6 +233,7 @@ export class Player {
       this.ctx = ctx;
       this.node = node;
       this.master = master;
+      node.port.postMessage({ type: 'stretch', config: this.stretchConfig } satisfies PlayerMsg);
       for (const m of this.queued) node.port.postMessage(m);
       this.queued = [];
     })();
@@ -318,6 +321,13 @@ export class Player {
   setTempoPitch(tempo: number, pitch: number) {
     if (this.nativeSong) return this.nativeCall('native_engine_tempo', { tempo, pitch });
     this.send({ type: 'tempo', tempo, pitch });
+  }
+  setStretchConfig(config: StretchConfig) {
+    this.stretchConfig = config;
+    if (this.node) this.node.port.postMessage({ type: 'stretch', config } satisfies PlayerMsg);
+  }
+  get stretchSettings() {
+    return this.stretchConfig;
   }
   setPractice(practice: Practice) {
     if (this.nativeSong) return this.nativeCall('native_engine_practice', { practice });

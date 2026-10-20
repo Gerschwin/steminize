@@ -1,12 +1,11 @@
 // Mixing, looping and time-stretch/pitch-shift, shared by the real-time
 // AudioWorklet player and the offline "export mix" renderer.
 
-import { SoundTouch } from 'soundtouchjs';
+import { Stretch } from './stretch.ts';
+import type { StretchConfig } from './stretchConfig.ts';
 import { StemEq, type EqParams } from './eq.ts';
 
 export type Stereo = [Float32Array, Float32Array];
-
-const FEED = 1024;
 
 /** A short click: 1.5 kHz on bar starts, 1 kHz on other beats. */
 export const CLICK_LEN = Math.round(0.04 * 44100);
@@ -156,37 +155,63 @@ export class MixSource {
 }
 
 export class Renderer {
-  private st = new SoundTouch();
   private tmp = new Float32Array(0);
-  private feed = new Float32Array(FEED * 2);
+  private feed = new Float32Array(0);
+  private output = new Float32Array(0);
+  private carry = 0;
+  private seekPos = 0;
+  /** Input wraps since the last seek, used to place the delayed output within the loop. */
+  private loopTurns = 0;
   tempo = 1;
   pitch = 0;
+  forceStretch = false;
   /** Source position (frames) of the audio most recently output. */
   heard = 0;
 
-  constructor(public src: MixSource) {}
+  constructor(public src: MixSource, private st: Stretch | null) {
+    this.st?.reset();
+  }
 
   get bypass() {
-    return this.tempo === 1 && this.pitch === 0;
+    return !this.forceStretch && this.tempo === 1 && this.pitch === 0;
+  }
+
+  /** Source frame currently audible after the stretcher's input latency. */
+  audible() {
+    if (!this.src.looping) return this.bypass ? this.heard : Math.max(this.seekPos, Math.min(this.heard, this.heard - this.st!.inputLatency));
+    const length = this.src.loopEnd - this.src.loopStart;
+    const played = this.playedInLoop(length);
+    return this.src.loopStart + ((played - this.src.loopStart) % length);
+  }
+
+  private playedInLoop(length: number) {
+    return Math.max(this.seekPos, this.heard + this.loopTurns * length - (this.bypass ? 0 : this.st!.inputLatency));
+  }
+
+  /** Passes whose boundary has reached the output, rather than just the input. */
+  audiblePasses() {
+    if (!this.src.looping) return 0;
+    const length = this.src.loopEnd - this.src.loopStart;
+    return Math.floor((this.playedInLoop(length) - this.src.loopStart) / length);
   }
 
   seek(pos: number) {
     // Positions must be whole frames: they index the sample arrays.
     this.src.pos = Math.max(0, Math.min(Math.round(pos), this.src.end));
     this.heard = this.src.pos;
+    this.seekPos = this.heard;
+    this.loopTurns = 0;
     this.src.resetPad();
     this.src.resetEqs();
-    this.st.clear();
-    this.st.inputBuffer.clear();
-    this.st.outputBuffer.clear();
+    this.st?.reset();
+    this.carry = 0;
   }
 
   setTempoPitch(tempo: number, pitch: number) {
     const wasBypass = this.bypass;
     this.tempo = tempo;
     this.pitch = pitch;
-    this.st.tempo = tempo;
-    this.st.pitchSemitones = pitch;
+    this.st?.setPitch(pitch);
     if (wasBypass !== this.bypass) this.seek(this.heard);
   }
 
@@ -197,23 +222,28 @@ export class Renderer {
     let n: number;
     if (this.bypass) {
       n = this.src.extract(t, frames);
-      this.heard = this.src.pos;
+      this.heard = this.src.looping ? this.heard + n : this.src.pos;
     } else {
-      // Feed the stretcher in small slices so no single audio callback does a lot of work.
-      const st = this.st;
-      while (st.outputBuffer.frameCount < frames) {
-        const got = this.src.extract(this.feed, FEED);
-        if (!got) break;
-        st.inputBuffer.putSamples(this.feed, 0, got);
-        st.process();
-      }
-      n = Math.min(frames, st.outputBuffer.frameCount);
-      st.outputBuffer.receiveSamples(t, n);
-      this.heard += n * this.tempo;
-      const s = this.src;
-      if (s.looping && this.heard >= s.loopEnd) this.heard = s.loopStart + ((this.heard - s.loopEnd) % (s.loopEnd - s.loopStart));
-      this.heard = Math.min(this.heard, s.end);
+      if (!this.st) throw new Error('Signalsmith Stretch is not loaded');
+      const want = frames * this.tempo + this.carry;
+      const take = Math.floor(want);
+      this.carry = want - take;
+      if (this.feed.length < take * 2) this.feed = new Float32Array(take * 2);
+      if (this.output.length < frames * 2) this.output = new Float32Array(frames * 2);
+      const got = this.src.extract(this.feed, take);
+      this.feed.fill(0, got * 2, take * 2);
+      this.st.process(this.feed, take, this.output, frames);
+      n = got === take ? frames : Math.min(frames, Math.round(got / this.tempo));
+      for (let i = 0; i < n * 2; i++) t[i] = this.output[i];
+      this.heard += got;
     }
+    const s = this.src;
+    if (s.looping && this.heard >= s.loopEnd) {
+      const length = s.loopEnd - s.loopStart;
+      this.loopTurns += Math.floor((this.heard - s.loopStart) / length);
+      this.heard = s.loopStart + ((this.heard - s.loopStart) % length);
+    }
+    this.heard = Math.min(this.heard, s.end);
     for (let i = 0; i < n; i++) {
       outL[i] = t[2 * i];
       outR[i] = t[2 * i + 1];
@@ -223,7 +253,7 @@ export class Renderer {
 }
 
 /** Offline render of [start, end) with the current gains, tempo and pitch. */
-export function renderMix(
+export async function renderMix(
   stems: Stereo[],
   gains: number[],
   start: number,
@@ -232,14 +262,15 @@ export function renderMix(
   pitch: number,
   pans: number[] = [],
   eqs: (EqParams | undefined)[] = [],
-): Stereo {
+  stretch?: StretchConfig,
+): Promise<Stereo> {
   start = Math.round(start);
   end = Math.round(end);
   const src = new MixSource(stems, gains, end);
   src.pans = pans;
   src.setEqs(eqs);
   src.padEnd = 32768;
-  const r = new Renderer(src);
+  const r = new Renderer(src, tempo === 1 && pitch === 0 ? null : await Stretch.create(stretch));
   r.setTempoPitch(tempo, pitch);
   r.seek(start);
   const expected = Math.round((end - start) / tempo);

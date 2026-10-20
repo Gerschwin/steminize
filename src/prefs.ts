@@ -12,6 +12,7 @@ export const APP_PREFERENCE_KEYS = [
   'steminize.autoStart',
   'steminize.liveChannel',
   'steminize.lowLatencyAudio',
+  'steminize.webStretch',
   'steminize.maxTakes',
   'steminize.recLatencyMs',
   'steminize.nativeRecLatencyMs',

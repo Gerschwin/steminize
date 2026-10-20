@@ -3166,8 +3166,8 @@ export class Deck {
       if (Number.isFinite(v) && v > 0) f(v);
       this.practiceChanged();
     });
-    num('trFrom', (v) => (this.pr.trainer.from = Math.min(1.5, Math.max(0.3, v / 100))));
-    num('trTo', (v) => (this.pr.trainer.to = Math.min(1.5, Math.max(0.3, v / 100))));
+    num('trFrom', (v) => (this.pr.trainer.from = Math.min(1.5, Math.max(0.25, v / 100))));
+    num('trTo', (v) => (this.pr.trainer.to = Math.min(1.5, Math.max(0.25, v / 100))));
     num('trStep', (v) => (this.pr.trainer.step = Math.min(0.25, v / 100)));
     num('trEvery', (v) => (this.pr.trainer.every = Math.round(v)));
     // Gated speed-up: the checkbox turns it on at the number's accuracy; the number alone only matters while it's on.
@@ -4455,7 +4455,7 @@ export class Deck {
     btn.textContent = 'Rendering…';
     try {
       await this.encoder.run(
-        { type: 'mix', name, stems: this.r.stems.map((s) => s.data), gains: g, pans: this.pans(), eqs: this.eqs(), start, end, tempo: this.tempo, pitch: this.pitch, out: o },
+        { type: 'mix', name, stems: this.r.stems.map((s) => s.data), gains: g, pans: this.pans(), eqs: this.eqs(), start, end, tempo: this.tempo, pitch: this.pitch, stretch: this.player.stretchSettings, out: o },
         async (n, bytes) => void (await saveFile(n, bytes, mimeFor(o))),
       );
     } catch (e) {

@@ -1,4 +1,5 @@
 import type { ModelId, Precision } from './models.ts';
+import { DEFAULT_STRETCH, stretchConfig, type StretchConfig } from './player/stretchConfig.ts';
 
 export type OutputFormat = 'wav' | 'flac' | 'mp3';
 export type WavDepth = '16' | '24' | '32f';
@@ -101,6 +102,25 @@ export function saveLowLatencyAudio(on: boolean) {
     localStorage.setItem(LOW_LATENCY_KEY, on ? '1' : '0');
   } catch {
     /* ignore */
+  }
+}
+
+const STRETCH_KEY = 'steminize.webStretch';
+
+export function loadStretchConfig(): StretchConfig {
+  try {
+    const raw = localStorage.getItem(STRETCH_KEY);
+    return raw ? stretchConfig(JSON.parse(raw)) : { ...DEFAULT_STRETCH };
+  } catch {
+    return { ...DEFAULT_STRETCH };
+  }
+}
+
+export function saveStretchConfig(config: StretchConfig) {
+  try {
+    localStorage.setItem(STRETCH_KEY, JSON.stringify(config));
+  } catch {
+    /* storage unavailable */
   }
 }
 
