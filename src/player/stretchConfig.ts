@@ -11,10 +11,10 @@ export function stretchConfig(value: Partial<StretchConfig> = {}): StretchConfig
   const block = Number(value.blockMs);
   const savedOverlap = Number(value.overlap);
   // Older settings stored overlap as a percentage; the demo uses block/interval.
-  const overlap = savedOverlap > 8 ? 1 / (1 - savedOverlap / 100) : savedOverlap;
+  const overlap = savedOverlap > 16 ? 1 / (1 - savedOverlap / 100) : savedOverlap;
   return {
-    blockMs: Number.isFinite(block) ? Math.max(60, Math.min(200, Math.round(block / 10) * 10)) : DEFAULT_STRETCH.blockMs,
-    overlap: Number.isFinite(overlap) ? Math.max(2, Math.min(8, Math.round(overlap * 10) / 10)) : DEFAULT_STRETCH.overlap,
+    blockMs: Number.isFinite(block) ? Math.max(40, Math.min(400, Math.round(block / 10) * 10)) : DEFAULT_STRETCH.blockMs,
+    overlap: Number.isFinite(overlap) ? Math.max(2, Math.min(16, Math.round(overlap * 10) / 10)) : DEFAULT_STRETCH.overlap,
     split: typeof value.split === 'boolean' ? value.split : DEFAULT_STRETCH.split,
   };
 }

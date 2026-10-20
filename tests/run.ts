@@ -159,12 +159,13 @@ for (const [len, overlap, shifts] of [
 
 // ---- 5. mixer / time-stretch
 {
-  const short = await Stretch.create({ blockMs: 60, overlap: 2, split: true });
+  const short = await Stretch.create({ blockMs: 40, overlap: 2, split: true });
   const normal = await Stretch.create(DEFAULT_STRETCH);
   ok('stretch controls change the processing block and latency', short.inputLatency < normal.inputLatency);
-  ok('stretch settings reject out-of-range saved values', stretchConfig({ blockMs: 999, overlap: 0 }).blockMs === 200 && stretchConfig({ blockMs: 999, overlap: 0 }).overlap === 2);
-  ok('stretch settings accept demo maximum', stretchConfig({ overlap: 8 }).overlap === 8);
+  ok('stretch settings reject out-of-range saved values', stretchConfig({ blockMs: 999, overlap: 0 }).blockMs === 400 && stretchConfig({ blockMs: 999, overlap: 0 }).overlap === 2);
+  ok('stretch settings accept expanded maximum', stretchConfig({ blockMs: 400, overlap: 16 }).blockMs === 400 && stretchConfig({ overlap: 16 }).overlap === 16);
   ok('stretch settings migrate saved percentages', stretchConfig({ overlap: 75 }).overlap === 4);
+  ok('stretch settings preserve new overlap values above 8', stretchConfig({ overlap: 12 }).overlap === 12);
   const a = signal(SR * 3, 11);
   const b = signal(SR * 3, 12);
   const m = await renderMix([a, b], [1, 0.5], 0, SR * 3, 1, 0);
@@ -172,6 +173,9 @@ for (const [len, overlap, shifts] of [
   const slow = await renderMix([a, b], [1, 1], 0, SR * 2, 0.5, 0);
   const rms = Math.sqrt(slow[0].reduce((s, v) => s + v * v, 0) / slow[0].length);
   ok('50% tempo doubles length and has audio', slow[0].length === SR * 4 && rms > 0.05, `rms ${rms.toFixed(3)}`);
+  const verySlow = await renderMix([a], [1], 0, SR / 2, 0.25, 0, [], [], { blockMs: 400, overlap: 16, split: true });
+  const verySlowRms = Math.sqrt(verySlow[0].reduce((sum, sample) => sum + sample * sample, 0) / verySlow[0].length);
+  ok('25% tempo and maximum stretch settings render audio', verySlow[0].length === SR * 2 && verySlowRms > 0.05, `rms ${verySlowRms.toFixed(3)}`);
   const frac = await renderMix([a], [1], 1000.4, 50000.7, 1, 0);
   ok('fractional positions still render audio', frac[0][10] === a[0][1010]);
   const shifted = await renderMix([a], [1], 0, SR * 2, 1, 3);
