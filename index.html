@@ -199,6 +199,24 @@
           </details>
           <p class="estimate" id="estimate"></p>
         </section>
+        <section class="card settings" id="stretchSettings">
+          <div class="card-head">
+            <h2>Web playback</h2>
+            <button class="btn tiny ghost" id="resetStretch" type="button" title="Restore Signalsmith Stretch defaults">Reset</button>
+          </div>
+          <p class="muted small">Signalsmith Stretch settings for web playback and mix export. Native audio uses its own preset. Changing these while playing briefly restarts the stretch buffer.</p>
+          <div class="field">
+            <label class="label" for="stretchBlock">Block size <output id="stretchBlockOut"></output></label>
+            <input type="range" id="stretchBlock" min="60" max="200" step="10" />
+            <small class="muted">Longer blocks can smooth sustained sounds but add delay.</small>
+          </div>
+          <div class="field">
+            <label class="label" for="stretchOverlap">STFT overlap <output id="stretchOverlapOut"></output></label>
+            <input type="range" id="stretchOverlap" min="50" max="85" step="5" />
+            <small class="muted">More overlap processes audio more often and uses more CPU. This is separate from Separation overlap above.</small>
+          </div>
+          <label class="switch" title="Spread stretch calculations across audio blocks"><input type="checkbox" id="stretchSplit" /> Split computation</label>
+        </section>
         <section class="card settings" id="youtubeCard" hidden>
           <div class="card-head">
             <h2>From YouTube</h2>
@@ -216,9 +234,9 @@
         <section class="card settings" id="appPrefs">
           <div class="card-head">
             <h2>App preferences</h2>
-            <button class="btn tiny ghost" id="resetAppPrefs" title="Put the theme, panels and live-input and native-audio choices back to how they start">Reset</button>
+            <button class="btn tiny ghost" id="resetAppPrefs" title="Put the theme, panels, web playback, live-input and native-audio choices back to how they start">Reset</button>
           </div>
-          <p class="muted small">The theme, which panels are open, the live-input and native-audio choices and other interface choices. Resetting puts them back to how they start. Your library, setlists and the separation settings above are not touched.</p>
+          <p class="muted small">The theme, which panels are open, web playback, live-input and native-audio choices and other interface choices. Resetting puts them back to how they start. Your library, setlists and the separation settings above are not touched.</p>
         </section>
         </div>
       </aside>

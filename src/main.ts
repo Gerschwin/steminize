@@ -35,6 +35,7 @@ document.addEventListener('contextmenu', (e) => {
 initTheme($<HTMLButtonElement>('themeBtn'), $<HTMLMetaElement>('themeColorMeta'));
 const settings = new SettingsPanel(loadSettings());
 const deck = new Deck(() => settings.s);
+settings.onStretchChange = (config) => deck.player.setStretchConfig(config);
 const library = initLibrary(deck);
 library.onOpen = () => refreshQueue();
 initSetlists(deck, library);

@@ -1,11 +1,14 @@
 import { MODELS, neededFiles, stemColour, type ModelId } from '../models.ts';
 import { hasModel, partialBytes } from '../modelstore.ts';
-import { DEFAULTS, saveSettings, type Settings } from '../settings.ts';
+import { DEFAULTS, loadStretchConfig, saveSettings, saveStretchConfig, type Settings } from '../settings.ts';
+import { DEFAULT_STRETCH, stretchConfig, type StretchConfig } from '../player/stretchConfig.ts';
 import { resetAppPreferences } from '../prefs.ts';
 import { $, fmtMB, h, pressed } from './dom.ts';
 
 export class SettingsPanel {
   onChange: () => void = () => {};
+  onStretchChange: (config: StretchConfig) => void = () => {};
+  stretch = loadStretchConfig();
 
   constructor(public s: Settings) {
     const bindSelect = (id: keyof Settings, parse: (v: string) => any = (v) => v) => {
@@ -25,12 +28,34 @@ export class SettingsPanel {
       if (v) this.set({ format: v as Settings['format'] });
     });
     $('resetSettings').addEventListener('click', () => this.set({ ...DEFAULTS }));
+    $<HTMLInputElement>('stretchBlock').addEventListener('input', (e) => { $('stretchBlockOut').textContent = `${(e.target as HTMLInputElement).value} ms`; });
+    $<HTMLInputElement>('stretchBlock').addEventListener('change', (e) => this.setStretch({ blockMs: Number((e.target as HTMLInputElement).value) }));
+    $<HTMLInputElement>('stretchOverlap').addEventListener('input', (e) => { $('stretchOverlapOut').textContent = `${(e.target as HTMLInputElement).value}%`; });
+    $<HTMLInputElement>('stretchOverlap').addEventListener('change', (e) => this.setStretch({ overlap: Number((e.target as HTMLInputElement).value) }));
+    $<HTMLInputElement>('stretchSplit').addEventListener('change', (e) => this.setStretch({ split: (e.target as HTMLInputElement).checked }));
+    $('resetStretch').addEventListener('click', () => this.setStretch(DEFAULT_STRETCH));
     $('resetAppPrefs').addEventListener('click', () => {
-      if (!confirm('Put the theme, panels and live-input and native-audio choices back to how they start? Your songs, setlists and separation settings are not touched. The app will reload.')) return;
+      if (!confirm('Put the theme, panels, web playback, live-input and native-audio choices back to how they start? Your songs, setlists and separation settings are not touched. The app will reload.')) return;
       resetAppPreferences(localStorage);
       location.reload();
     });
     this.render();
+    this.renderStretch();
+  }
+
+  private setStretch(patch: Partial<StretchConfig>) {
+    this.stretch = stretchConfig({ ...this.stretch, ...patch });
+    saveStretchConfig(this.stretch);
+    this.renderStretch();
+    this.onStretchChange(this.stretch);
+  }
+
+  private renderStretch() {
+    $<HTMLInputElement>('stretchBlock').value = String(this.stretch.blockMs);
+    $<HTMLInputElement>('stretchOverlap').value = String(this.stretch.overlap);
+    $<HTMLInputElement>('stretchSplit').checked = this.stretch.split;
+    $('stretchBlockOut').textContent = `${this.stretch.blockMs} ms`;
+    $('stretchOverlapOut').textContent = `${this.stretch.overlap}%`;
   }
 
   set(patch: Partial<Settings>) {

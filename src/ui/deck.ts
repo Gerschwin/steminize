@@ -4455,7 +4455,7 @@ export class Deck {
     btn.textContent = 'Rendering…';
     try {
       await this.encoder.run(
-        { type: 'mix', name, stems: this.r.stems.map((s) => s.data), gains: g, pans: this.pans(), eqs: this.eqs(), start, end, tempo: this.tempo, pitch: this.pitch, out: o },
+        { type: 'mix', name, stems: this.r.stems.map((s) => s.data), gains: g, pans: this.pans(), eqs: this.eqs(), start, end, tempo: this.tempo, pitch: this.pitch, stretch: this.player.stretchSettings, out: o },
         async (n, bytes) => void (await saveFile(n, bytes, mimeFor(o))),
       );
     } catch (e) {

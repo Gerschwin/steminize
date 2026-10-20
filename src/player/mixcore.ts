@@ -2,6 +2,7 @@
 // AudioWorklet player and the offline "export mix" renderer.
 
 import { Stretch } from './stretch.ts';
+import type { StretchConfig } from './stretchConfig.ts';
 import { StemEq, type EqParams } from './eq.ts';
 
 export type Stereo = [Float32Array, Float32Array];
@@ -239,6 +240,7 @@ export async function renderMix(
   pitch: number,
   pans: number[] = [],
   eqs: (EqParams | undefined)[] = [],
+  stretch?: StretchConfig,
 ): Promise<Stereo> {
   start = Math.round(start);
   end = Math.round(end);
@@ -246,7 +248,7 @@ export async function renderMix(
   src.pans = pans;
   src.setEqs(eqs);
   src.padEnd = 32768;
-  const r = new Renderer(src, tempo === 1 && pitch === 0 ? null : await Stretch.create());
+  const r = new Renderer(src, tempo === 1 && pitch === 0 ? null : await Stretch.create(stretch));
   r.setTempoPitch(tempo, pitch);
   r.seek(start);
   const expected = Math.round((end - start) / tempo);

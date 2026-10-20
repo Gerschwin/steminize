@@ -1,4 +1,5 @@
 import createModule from './vendor/signalsmith-core.mjs';
+import { DEFAULT_STRETCH, type StretchConfig } from './stretchConfig.ts';
 
 /** Stereo wrapper around Signalsmith's planar WebAssembly buffers. */
 export class Stretch {
@@ -6,12 +7,18 @@ export class Stretch {
   private pointer = 0;
   private heap: Float32Array = new Float32Array(0);
 
-  private constructor(private module: Awaited<ReturnType<typeof createModule>>) {
-    module._presetDefault(2, 44100);
+  private constructor(private module: Awaited<ReturnType<typeof createModule>>, config: StretchConfig) {
+    this.configure(config);
   }
 
-  static async create() {
-    return new Stretch(await createModule());
+  static async create(config: StretchConfig = DEFAULT_STRETCH) {
+    return new Stretch(await createModule(), config);
+  }
+
+  configure(config: StretchConfig) {
+    const block = Math.round(44.1 * config.blockMs);
+    const interval = Math.round(block * (1 - config.overlap / 100));
+    this.module._configure(2, block, interval, Number(config.split));
   }
 
   get inputLatency() {

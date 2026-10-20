@@ -3,6 +3,7 @@ import { DEFAULT_PRACTICE, Transport, type Practice } from './transport.ts';
 import type { EqParams } from './eq.ts';
 import { StreamResampler } from './resample.ts';
 import { Stretch } from './stretch.ts';
+import type { StretchConfig } from './stretchConfig.ts';
 
 /** The audio context's sample rate; a global inside an AudioWorklet. */
 declare const sampleRate: number;
@@ -17,6 +18,7 @@ export type PlayerMsg =
   | { type: 'seek'; pos: number }
   | { type: 'loop'; on: boolean; start: number; end: number }
   | { type: 'tempo'; tempo: number; pitch: number }
+  | { type: 'stretch'; config: StretchConfig }
   | { type: 'practice'; practice: Practice };
 
 export interface PlayerReport {
@@ -48,6 +50,18 @@ class StemPlayer extends AudioWorkletProcessor {
   }
 
   private async handle(m: PlayerMsg) {
+    if (m.type === 'stretch') {
+      const st = await this.stretch;
+      const pos = this.t?.r.audible();
+      st.configure(m.config);
+      if (this.t && pos != null) {
+        this.t.r.setTempoPitch(this.t.r.tempo, this.t.r.pitch);
+        this.t.r.seek(pos);
+        this.rs?.reset();
+        this.report();
+      }
+      return;
+    }
     if (m.type === 'load') {
       this.rs?.reset();
       const src = new MixSource(m.stems, m.gains, m.stems[0]?.[0].length ?? 0);

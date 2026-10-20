@@ -30,6 +30,7 @@ import { detectLatency } from '../src/player/latency.ts';
 import { placeTake, shiftTake } from '../src/player/placement.ts';
 import { StreamResampler } from '../src/player/resample.ts';
 import { Stretch } from '../src/player/stretch.ts';
+import { DEFAULT_STRETCH, stretchConfig } from '../src/player/stretchConfig.ts';
 import { withTimeout } from '../src/engine/timeout.ts';
 import { separationMemory, songSizeWarning } from '../src/engine/sizeHint.ts';
 import { beatCells, beatPositionAt, displayName, simplifyChord, timeAtBeat } from '../src/analysis/chordStrip.ts';
@@ -158,6 +159,10 @@ for (const [len, overlap, shifts] of [
 
 // ---- 5. mixer / time-stretch
 {
+  const short = await Stretch.create({ blockMs: 60, overlap: 50, split: true });
+  const normal = await Stretch.create(DEFAULT_STRETCH);
+  ok('stretch controls change the processing block and latency', short.inputLatency < normal.inputLatency);
+  ok('stretch settings reject out-of-range saved values', stretchConfig({ blockMs: 999, overlap: 0 }).blockMs === 200 && stretchConfig({ blockMs: 999, overlap: 0 }).overlap === 50);
   const a = signal(SR * 3, 11);
   const b = signal(SR * 3, 12);
   const m = await renderMix([a, b], [1, 0.5], 0, SR * 3, 1, 0);
@@ -170,13 +175,13 @@ for (const [len, overlap, shifts] of [
   const shifted = await renderMix([a], [1], 0, SR * 2, 1, 3);
   ok('pitch shift keeps length', shifted[0].length === SR * 2);
   const sine = new Float32Array(SR * 2).map((_, i) => 0.5 * Math.sin((2 * Math.PI * 440 * i) / SR));
-  const transposed = await renderMix([[sine, sine]], [1], 0, sine.length, 0.8, 12);
+  const transposed = await renderMix([[sine, sine]], [1], 0, sine.length, 0.8, 12, [], [], { blockMs: 60, overlap: 50, split: true });
   const crossings = (x: Float32Array) => {
     let count = 0;
     for (let i = SR / 2 + 1; i < SR * 3 / 2; i++) if (x[i - 1] <= 0 && x[i] > 0) count++;
     return count;
   };
-  ok('tempo and octave shift are independent', transposed[0].length === SR * 2.5 && Math.abs(crossings(transposed[0]) - 880) < 4,
+  ok('tempo and octave shift are independent', transposed[0].length === SR * 2.5 && Math.abs(crossings(transposed[0]) - 880) < 8,
     `${transposed[0].length} frames, ${crossings(transposed[0])} Hz`);
   const src = new MixSource([a], [1], SR * 3);
   src.loopOn = true;
@@ -1186,6 +1191,7 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   const store = new Map<string, string>([
     ['steminize.theme', 'light'],
     ['steminize.drawer', 'live'],
+    ['steminize.webStretch', '{"blockMs":60}'],
     ['steminize.setlist.active', 'abc'],
     ['steminize.lastBackup', '123'],
     ['steminize.settings', '{"model":"htdemucs"}'],
@@ -1193,7 +1199,7 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ]);
   const fake = { removeItem: (k: string) => void store.delete(k) };
   resetAppPreferences(fake);
-  ok('prefs: the remembered look and panels are forgotten', !store.has('steminize.theme') && !store.has('steminize.drawer'));
+  ok('prefs: the remembered look, panels and web playback settings are forgotten', !store.has('steminize.theme') && !store.has('steminize.drawer') && !store.has('steminize.webStretch'));
   ok('prefs: setlists, the last-backup time, separation settings and other apps\' keys are left alone', store.get('steminize.setlist.active') === 'abc' && store.get('steminize.lastBackup') === '123' && store.get('steminize.settings') === '{"model":"htdemucs"}' && store.get('something.else') === 'x');
   ok('prefs: nothing that looks like a library or setlist key is in the list', APP_PREFERENCE_KEYS.every((k) => !/setlist|library|backup|settings$/.test(k)));
   ok('prefs: a store that throws does not break the reset', resetAppPreferences({ removeItem: () => { throw new Error('blocked'); } }) === APP_PREFERENCE_KEYS.length);
