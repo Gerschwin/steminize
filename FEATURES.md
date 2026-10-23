@@ -1,6 +1,6 @@
 # Steminize: features
 
-Everything the app does as of 2026-10-10 (branch `native-audio`, version 0.9.4). **Released** means it is in v0.9.3 or earlier; **Released in 0.9.4** means it is new in that pre-release. Ideas that are not built are in `BACKLOG.md`; what 1.0 needs is in `V1_CRITERIA.md`.
+Everything the app does as of 2026-10-24 (version 0.9.5). **Released** means it is in v0.9.3 or earlier; **Released in 0.9.4** or **0.9.5** means it is new in that pre-release. Ideas that are not built are in `BACKLOG.md`; what 1.0 needs is in `V1_CRITERIA.md`.
 
 Where it works: the desktop app (Windows, macOS, Linux) and the web app (installable on desktop and phone) are the same code. A few features
 are desktop only and are marked **[desktop]**.
@@ -11,7 +11,7 @@ are desktop only and are marked **[desktop]**.
 - **Batch queue:** drop in several songs; each shows progress and time left. Released.
 - **Open multitrack:** open separate track files or a whole folder and each becomes a lane, with all the same tools (a shared folder makes this a simple way for a band to share parts). Released.
 - **From YouTube [desktop], opt-in:** search and download audio into the queue (fetches yt-dlp on first use). Off until you turn it on under Settings → From YouTube, after a notice about only downloading audio you own, that is royalty-free or Creative Commons, or that you have the right to use. The opt-in is new in 0.9.4; the feature itself was released earlier. The Windows black command window no longer appears: released in 0.9.3.
-- **Model downloads carry on where they stopped:** a lost connection or a Stop keeps what arrived; the next try asks only for the rest. Models shows how much is kept, with Resume and Discard. Next release.
+- **Model downloads carry on where they stopped:** a lost connection or a Stop keeps what arrived; the next try asks only for the rest. Models shows how much is kept, with Resume and Discard. Released in 0.9.5.
 - **Runs offline** once a model has downloaded; no audio is ever uploaded. WebGPU acceleration where available, otherwise multi-threaded CPU. Released.
 - **If the graphics card never loads the model**, it falls back to the CPU after 60 seconds, says so, and remembers; "Loading model…" counts the seconds. Released in 0.9.3.
 
@@ -68,7 +68,7 @@ are desktop only and are marked **[desktop]**.
 - **Float** the Scratchpad as a movable, resizable window. Released.
 
 ## Native audio engine [desktop] (experimental)
-- **Off by default, but not hidden:** a tip in the Live input drawer says it exists (with **Show me** and **Got it**), the desktop Settings has a Native audio card with **Show me where**, and the welcome panel mentions it. Next release.
+- **Off by default, but not hidden:** a tip in the Live input drawer says it exists (with **Show me** and **Got it**), the desktop Settings has a Native audio card with **Show me where**, and the welcome panel mentions it. Released in 0.9.5.
 - **Direct sound-card playback** of songs saved in the library through a Rust engine with a buffer size you choose: mixer, EQ, tempo and pitch, loops, count-in, click and the speed trainer. Released in 0.9.2.
 - **Native live input and recording** in the same engine, so a take lines up with the song to about a millisecond with no manual alignment; native monitor, level, tuner and trainer; its own latency value, set by Measure or the Loopback test. Released in 0.9.2.
 - **Native audio panel:** devices with plain-words routing and a recommended choice, buffer size and sample rate, a quick native monitor, and a loopback round-trip test. Released.
@@ -78,16 +78,16 @@ are desktop only and are marked **[desktop]**.
 
 ## The app itself
 - **Desktop app** for Windows (`.exe`, `.msi`), macOS (`.dmg`) and Linux (`.deb`, `.rpm`, AppImage), built by CI; the web app installs on desktop and phone. Released.
-- **About:** version, what uses the network, credits and licences, a Support link, **Check for updates** [desktop], and **Copy diagnostic info** for bug reports. Released. **In-app update** [desktop]: where the install can replace itself (Windows, macOS, the Linux AppImage), an **Install and restart** button downloads the update, checks its signature against the key built into the app, installs it and restarts; .deb and .rpm installs get the download link. Built, not yet in a release; it needs the signing secrets set (see UPDATER.md) and two published releases to try for real.
+- **About:** version, what uses the network, credits and licences, a Support link, **Check for updates** [desktop], and **Copy diagnostic info** for bug reports. Released. **In-app update** [desktop]: where the install can replace itself (Windows, macOS, the Linux AppImage), an **Install and restart** button downloads the update, checks its signature against the key built into the app, installs it and restarts; .deb and .rpm installs get the download link. New in 0.9.5, so 0.9.4 to 0.9.5 is still by hand; it can be tried for real once 0.9.6 is out (see UPDATER.md).
 - **Support:** a PayPal link in About and the README, and a Sponsor button on the repository. Released.
 - **Appearance:** dark theme by default, a light theme, remembered. No flash of the wrong theme at start, and the desktop window starts dark. Released in 0.9.4.
 - **No stray text selection** and no ghost image when dragging controls or resizing a track. Released in 0.9.4.
 - **Export:** single stems, all stems (folder or ZIP), or "what you hear" as a mix with your levels, loop, tempo and pitch applied. Released.
-- **Send to DAW:** opens the song in a recording program: a ready-made **Reaper** project, **Ardour** session or **DAWproject** file for Bitwig Studio, Studio One and Cubase 14 (stems as tracks with your levels, pan, mute and solo, the song's tempo and bars with the first bar on a bar line, markers and the loop), or for **Logic, Pro Tools, Cubase, Ableton and others** the aligned stems plus a MIDI tempo map and a marker list. See `DAW_EXPORT.md`. Next release.
+- **Send to DAW:** opens the song in a recording program: a ready-made **Reaper** project, **Ardour** session or **DAWproject** file for Bitwig Studio, Studio One and Cubase 14 (stems as tracks with your levels, pan, mute and solo, the song's tempo and bars with the first bar on a bar line, markers and the loop), or for **Logic, Pro Tools, Cubase, Ableton and others** the aligned stems plus a MIDI tempo map and a marker list. See `DAW_EXPORT.md`. Released in 0.9.5.
 
 ## Safety and help (0.9.4)
-- **Welcome panel** when no song is open: what the app is for, **Choose a song** / **Open tracks I already have** buttons, what the first split downloads (the chosen model's name and size, and whether it is already on this computer), and what you can do with a song. Next release.
-- **"Draft" tags** on the Chord timeline and Chords lanes: chord detection is a first attempt, roughly 60 to 75% right. Next release.
+- **Welcome panel** when no song is open: what the app is for, **Choose a song** / **Open tracks I already have** buttons, what the first split downloads (the chosen model's name and size, and whether it is already on this computer), and what you can do with a song. Released in 0.9.5.
+- **"Draft" tags** on the Chord timeline and Chords lanes: chord detection is a first attempt, roughly 60 to 75% right. Released in 0.9.5.
 - **Before separating a very long file** (about 15 minutes or more, or more than the machine's memory allows) a heads-up with what to try if it stalls.
 - **Disk-space check** before saving a song to the library, and a "last backed up" line (with a nudge after a month) under the Library.
 - **Older saved songs** are brought up to date by one tested function, so an update never loses a scratchpad; a damaged song file skips that one song instead of stopping the library from listing; and a song folder is never deleted unless its description file is definitely missing and the folder has sat untouched for a day (this fixes a case where an unreadable file could have cost a song its audio). Documented in `DATA_FORMAT.md` and tested against saved songs from every era.

@@ -89,7 +89,7 @@ E|-0---0---0---0---|
 
 - [ ] The installer for your platform installs and the app opens (note the OS and version).
 - [ ] Linux AppImage: opens, and a saved song opens and plays (it used to sit on "Opening…").
-- [ ] The version number in the header matches the release (0.9.4).
+- [ ] The version number in the header matches the release (0.9.5).
 - [ ] **ⓘ About** shows the version, what uses the network, credits and licences, and a Support link that opens in your browser.
 - [ ] **Check for updates** (desktop) says whether a newer version exists; for 0.x it should only mention newer 0.x pre-releases.
 - [ ] **In-app update** [desktop; needs two published releases N and N+1, with the update signing key set up, see UPDATER.md]: with N installed, press Check for updates, then **Install and restart**: it confirms, shows Preparing then a download percentage, installs and restarts into N+1 (check the version in About), and the library and settings are all still there. Try it on Windows (.exe install), macOS, and Linux as an **AppImage**. On a Linux **.deb** or **.rpm** install the button must not appear (only the download link). With no network it should fail with a message and still show the link.
