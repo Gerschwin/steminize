@@ -9,6 +9,7 @@ import { gateStep, type Trainer } from '../player/transport.ts';
 import { extensionFor, mimeFor } from '../encode/meta.ts';
 import { stemColour, MODELS } from '../models.ts';
 import { openSink, safeName, saveFile } from '../platform.ts';
+import { ardourSession } from '../export/ardour.ts';
 import { barAlignment, beatTempos, dawReadme, markersCsv, reaperProject, tempoMapFile, type DawProject } from '../export/daw.ts';
 import { MAX_REC_LATENCY_MS, loadLiveChannel, loadLowLatencyAudio, loadRecLatencyMs, saveLiveChannel, saveLowLatencyAudio, saveRecLatencyMs, type LiveChannel, type Settings } from '../settings.ts';
 import { BarTally, barColour, barCue, barTip, type BarScores, type BarVisit } from '../lyrics/barScores.ts';
@@ -542,7 +543,10 @@ export class Deck {
     $('clearLoop').onclick = () => this.clearLoop();
     $('saveAllBtn').onclick = () => this.saveAll();
     $('dawBtn').onclick = () => this.openDawDialog();
-    $('dawGo').onclick = () => void this.sendToDaw((document.querySelector('input[name="dawTarget"]:checked') as HTMLInputElement | null)?.value === 'generic' ? 'generic' : 'reaper');
+    $('dawGo').onclick = () => {
+      const v = (document.querySelector('input[name="dawTarget"]:checked') as HTMLInputElement | null)?.value;
+      void this.sendToDaw(v === 'generic' ? 'generic' : v === 'ardour' ? 'ardour' : 'reaper');
+    };
     $('exportMixBtn').onclick = () => this.exportMix();
     $('rerunBtn').onclick = () => this.onRerun();
     const tempo = $<HTMLInputElement>('tempo');
@@ -4422,7 +4426,7 @@ export class Deck {
    * the tempo and bars, the markers and loop, and what a DAW needs to open it. `reaper` writes a Reaper project beside the stems; `generic`
    * writes stems that already line up (the lead-in is built into each file) with a tempo map and a marker list to import.
    */
-  private async sendToDaw(target: 'reaper' | 'generic') {
+  private async sendToDaw(target: 'reaper' | 'ardour' | 'generic') {
     if (!this.r) return;
     const go = $<HTMLButtonElement>('dawGo');
     const base = this.baseName();
@@ -4451,7 +4455,8 @@ export class Deck {
         name,
         data: useLead ? (lane.data.map((ch) => { const out = new Float32Array(ch.length + pad); out.set(ch, pad); return out; }) as unknown as Stereo) : lane.data,
       }));
-      const fileFor = (name: string) => `${base} - ${name}.wav`;
+      // Ardour reads %L and %R in a file name specially, so none are used.
+      const fileFor = (name: string) => `${base} - ${name}.wav`.replace(/%/g, '');
       const timeline = (frames: number) => frames / SR + padSec;
       const project: DawProject = {
         title: base,
@@ -4464,10 +4469,13 @@ export class Deck {
         markers: this.markers.map((m) => ({ name: m.name, time: timeline(m.pos) })),
         loop: this.loop.on && this.loop.b > this.loop.a ? { start: timeline(this.loop.a), end: timeline(this.loop.b) } : undefined,
       };
+      // Ardour keeps a session's audio in its own folder inside the session folder; the other targets put the files in the top folder.
+      const ardour = target === 'ardour' ? ardourSession({ ...project, padSec }) : null;
+      const where = (file: string) => (ardour ? `${ardour.name}/${ardour.audioDir}/${file}` : file);
       let n = 0;
       go.textContent = `Writing 0/${stems.length}…`;
       await this.encoder.run({ type: 'stems', stems, out: o }, async (name, bytes) => {
-        await sink.write(fileFor(name), bytes);
+        await sink.write(where(fileFor(name)), bytes);
         go.textContent = `Writing ${++n}/${stems.length}…`;
       });
       const enc = (s: string) => new TextEncoder().encode(s);
@@ -4475,6 +4483,7 @@ export class Deck {
         // In Reaper the stems are placed after the lead-in by the project itself, so the audio files stay exactly as they were.
         await sink.write(`${base}.rpp`, enc(reaperProject({ ...project, padSec })));
       }
+      if (ardour) await sink.write(`${ardour.name}/${ardour.name}.ardour`, enc(ardour.xml));
       await sink.write('tempo-map.mid', tempoMapFile(project));
       if (a && bpm > 0) {
         const changes = beatTempos(a.beats, beatIdx, bpm, perBar, leadBars);
@@ -4484,7 +4493,7 @@ export class Deck {
       await sink.write('README.txt', enc(dawReadme({ ...project, padSec }, target, useLead)));
       await sink.close();
       $<HTMLDialogElement>('dawDlg').close();
-      toast(target === 'reaper' ? `Saved a Reaper project with ${stems.length} tracks` : `Saved ${stems.length} tracks with a tempo map and markers`);
+      toast(target === 'reaper' ? `Saved a Reaper project with ${stems.length} tracks` : target === 'ardour' ? `Saved an Ardour session with ${stems.length} tracks` : `Saved ${stems.length} tracks with a tempo map and markers`);
     } catch (e) {
       toast(`Couldn't send to the DAW: ${(e as Error).message}`, true);
     } finally {

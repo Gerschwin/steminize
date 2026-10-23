@@ -21,7 +21,19 @@ If no tempo has been detected for the song the grid is a plain 120 BPM and will 
 | Program | What you get | How to open it |
 |---|---|---|
 | **Reaper** | A ready-made project (`.rpp`): one track per stem with its level, pan, mute and solo and colour, the tempo and bars, markers, and the loop as the time selection. The audio files are untouched; the project places them after the lead-in. | Open the `.rpp` (keep the audio files beside it). |
-| **Ardour, Logic, Pro Tools, Cubase, Ableton, Studio One, Bitwig and others** | The audio files **with the lead-in built in**, so they all line up when dropped in at the very start of the project, plus `tempo-map.mid` and `markers.csv`. | New project, set the tempo and bar length from the README, drag the files in at the start. Import `tempo-map.mid` as the tempo map if the program can (Ardour: Session → Import → MIDI file, tempo map option; Logic: File → Import → Tempo map; Pro Tools: Import Session Data → tempo map). |
+| **Ardour** (8 or later) | A ready-made **session folder**: one stereo track per stem with its name, colour, level, pan, mute and solo, the audio regions placed after the lead-in, the tempo and bar length, your markers, and the loop. The audio is inside the session (`interchange/<name>/audiofiles`). | Session → Open, and pick the `.ardour` file. If you hear nothing, connect the Master outputs in Window → Audio Connections. |
+| **Logic, Pro Tools, Cubase, Ableton, Studio One, Bitwig and others** | The audio files **with the lead-in built in**, so they all line up when dropped in at the very start of the project, plus `tempo-map.mid` and `markers.csv`. | New project, set the tempo and bar length from the README, drag the files in at the start. Import `tempo-map.mid` as the tempo map if the program can (Logic: File → Import → Tempo map; Pro Tools: Import Session Data → tempo map; Ardour users should use the Ardour option instead). |
+
+## How the Ardour session was checked
+Ardour has no published description of its session file, so the export is built on what Ardour itself writes: a new session made with
+`ardour9-new_session` is the skeleton, and a plain stereo track from a real Ardour 9.7 session is the track template (`tools/make-ardour-template.py`
+captures both into `src/export/ardourTemplate.ts`; only the structure is kept). It was checked with **Ardour 9.7.0** itself, by loading and rendering:
+- `ardour9-export` rendered an exported session without error. The render had silence for exactly the lead-in, then each stem in the right
+  channels, the muted stem absent, and the right level and pan (a stem at level 0.8 panned halfway left came out at 0.4 left / 0.2 right).
+- `ardour9-lua` read back the tracks (names, gain, mute), the markers, the loop (3.2 to 7.2 s), the session range, the tempo (120.1) and the bar length.
+- The same check was run on a session written by the real app (ZIP, unzipped), not only the test code.
+Not checked: Ardour 8.x (the session version is 7003, which Ardour 8 and 9 both write), and playing it on a real sound card (the
+Master outputs are saved as connected to `system:playback_1/2`; if your setup names them differently, connect them by hand).
 
 ## What it is not
 - It is not live: Steminize and the DAW are separate. Change the tempo or key in Steminize, then send again (or use **Export mix** to
@@ -30,6 +42,6 @@ If no tempo has been detected for the song the grid is a plain 120 BPM and will 
 - It does not play along or sync with the DAW's transport. A live link (audio sent into the DAW and MIDI clock for the transport) is on the backlog.
 
 ## How it works (for the code)
-`src/export/daw.ts` holds the logic and is tested: bar alignment (`barAlignment`), per-beat tempos (`beatTempos`), the Reaper project
+`src/export/ardour.ts` writes the Ardour session. `src/export/daw.ts` holds the shared logic and is tested: bar alignment (`barAlignment`), per-beat tempos (`beatTempos`), the Reaper project
 (`reaperProject`), the marker list, the tempo-map MIDI (`writeMidiTempoMap` in `src/encode/midi.ts`) and the README. The deck
 (`sendToDaw` in `src/ui/deck.ts`) gathers the song and writes the files.

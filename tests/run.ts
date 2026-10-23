@@ -42,6 +42,7 @@ import { CHORD_TONES, chordCost, fretShape, pianoKeys, shapeIsRight, suggestCapo
 import { QUALITIES } from '../src/analysis/chords.ts';
 import { segmentsFor, snapToWord, sungSeconds } from '../src/lyrics/lyricChords.ts';
 import { modelNote } from '../src/models.ts';
+import { ardourColour, ardourSession, ardourSessionName } from '../src/export/ardour.ts';
 import { barAlignment, beatTempos, dawReadme, guid, markersCsv, reaperColour, reaperProject, tempoMapFile, type DawProject } from '../src/export/daw.ts';
 import { ZOOM_KEY, ZOOM_STEPS, loadZoom, nearestZoom, saveZoom, stepZoom, zoomLabel } from '../src/textSize.ts';
 import { NATIVE_INFO, NATIVE_TIP, NATIVE_TIP_KEY, NATIVE_WELCOME, nativeTipVisible } from '../src/nativeHint.ts';
@@ -1517,6 +1518,35 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('daw: the README names the tempo, the lead-in and how to open it', /120 BPM, 4\/4/.test(readme) && /0\.7 s/.test(readme) && /Example\.rpp/.test(readme) && /dawproject/.test(dawReadme(proj, 'dawproject')) && /tempo-map\.mid/.test(dawReadme(proj, 'generic')));
   ok('daw: for stems with the lead-in built in, the README says each file begins with silence', /Each audio file begins with 0\.7 s of silence/.test(dawReadme(proj, 'generic', true)));
   ok('daw: a song with no detected tempo says so instead of pretending', /no tempo was detected/.test(dawReadme({ ...proj, bpm: 0 }, 'generic')));
+}
+
+
+{
+  // Send to DAW, Ardour: the session text for Ardour 8 and later (also checked by loading it into real Ardour; see DAW_EXPORT.md).
+  const proj: DawProject = {
+    title: 'My Song (take 2)', sampleRate: 44100, seconds: 12, bpm: 120.1, perBar: 4, padSec: 1.198,
+    tracks: [
+      { name: 'Bass', file: 'My Song - Bass.wav', colour: '#a78bfa', vol: 0.8, pan: -0.5, mute: false, solo: false },
+      { name: 'Drums', file: 'My Song - Drums.wav', colour: '#fb923c', vol: 1, pan: 0, mute: true, solo: true },
+      { name: 'Bass', file: 'My Song - Bass (2).wav', colour: '#34d399', vol: 1.2, pan: 1, mute: false, solo: false },
+    ],
+    markers: [{ name: 'Verse & "intro"', time: 3.2 }],
+    loop: { start: 3.2, end: 7.2 },
+  };
+  const s = ardourSession(proj);
+  ok('ardour: the session is named safely for a folder and a file', ardourSessionName('A/B: C?*"d"|e%f,g') === 'A B C d e f g' && ardourSessionName('   ') === 'Steminize song' && s.name === 'My Song (take 2)');
+  ok('ardour: one route, playlist and region per track and a pair of sources each, with the audio in the session\'s own folder', (s.xml.match(/<Route /g) || []).length === 4 && (s.xml.match(/<Playlist /g) || []).length === 3 && (s.xml.match(/<Source /g) || []).length === 6 && s.audioDir === 'interchange/My Song (take 2)/audiofiles' && s.dirs.includes(s.audioDir));
+  ok('ardour: positions use Ardour\'s clock (282,240,000 to the second): the lead-in, the loop and the marker', s.xml.includes('length="a3386880000@a338123520"') && s.xml.includes('name="Loop" start="a903168000" end="a2032128000" flags="IsAutoLoop"') && /name="Verse &amp; &quot;intro&quot;" start="a903168000" end="a903168000" flags="IsMark"/.test(s.xml));
+  ok('ardour: the session range runs to the end of the audio and the tempo and bar length are set', /flags="IsSessionRange"/.test(s.xml) && s.xml.includes(`end="a${Math.round(13.198 * 282240000)}"`) && /<Tempo npm="120.1" enpm="120.1"/.test(s.xml) && /divisions-per-bar="4"/.test(s.xml));
+  ok('ardour: levels, pan, mute and solo reach the tracks (pan -0.5 is 0.25 of the way across)', /name="gaincontrol"[^>]* value="0.8"/.test(s.xml) && /name="pan-azimuth"[^>]* value="0.25"/.test(s.xml) && /name="gaincontrol"[^>]* value="1.2"/.test(s.xml) && /name="pan-azimuth"[^>]* value="1"/.test(s.xml) && /<MuteMaster [^>]*muted="1"/.test(s.xml) && /name="solo"[^>]* value="1" self-solo="1"/.test(s.xml));
+  ok('ardour: two tracks called Bass get different names, so their ports do not clash', s.xml.includes('name="Bass"') && s.xml.includes('name="Bass 2"') && s.xml.includes('Bass 2/audio_in 1'));
+  const ids = [...s.xml.matchAll(/(?<![-\w])id="(\d+)"/g)].map((m) => m[1]);
+  const mine = ids.filter((i) => Number(i) >= 1000);
+  ok('ardour: every id is unique and the id counter is above them all', new Set(ids).size === ids.length && Number(/id-counter="(\d+)"/.exec(s.xml)![1]) > Math.max(...mine.map(Number)));
+  ok('ardour: no placeholder is left, and nothing from the capture\'s sound card or music is in it', !/\{\{[A-Z0-9]+\}\}/.test(s.xml) && !/USB Audio|YTDown|dancefloor/i.test(s.xml));
+  ok('ardour: a "$" in a name is not treated as a replacement pattern', ardourSession({ ...proj, title: 'Cost $& more' }).xml.includes('name="Cost $&amp; more"'));
+  ok('ardour: colours become Ardour\'s 0xRRGGBBAA number', ardourColour('#ff0000') === 0xff0000ff && ardourColour('#102030') === 0x102030ff && ardourColour('bad') === 0xaaaaaaff);
+  ok('ardour: the README tells Ardour users how to open it', /open the session folder/.test(dawReadme(proj, 'ardour')));
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

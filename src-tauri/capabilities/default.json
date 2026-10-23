@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Open/save dialogs and reading/writing the files or folders the user chose",
   "windows": ["main"],
-  "permissions": ["core:default", "core:webview:allow-set-webview-zoom", "dialog:default", "fs:allow-write-file", "fs:allow-read-file", "fs:allow-read-dir"]
+  "permissions": ["core:default", "core:webview:allow-set-webview-zoom", "dialog:default", "fs:allow-write-file", "fs:allow-mkdir", "fs:allow-read-file", "fs:allow-read-dir"]
 }

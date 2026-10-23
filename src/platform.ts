@@ -39,11 +39,19 @@ export async function saveFile(name: string, bytes: Uint8Array, mime: string): P
 export async function openSink(zipName: string): Promise<Sink | null> {
   if (isTauri) {
     const { open } = await import('@tauri-apps/plugin-dialog');
-    const { writeFile } = await import('@tauri-apps/plugin-fs');
+    const { writeFile, mkdir } = await import('@tauri-apps/plugin-fs');
     const { join } = await import('@tauri-apps/api/path');
     const dir = await open({ directory: true, title: 'Choose a folder for the stems' });
     if (!dir || Array.isArray(dir)) return null;
-    return { write: async (n, b) => writeFile(await join(dir, n), b), close: async () => {} };
+    return {
+      // A name like "Song/audio/Bass.wav" puts the file in folders, which are made first.
+      write: async (n, b) => {
+        const parts = n.split('/');
+        if (parts.length > 1) await mkdir(await join(dir, ...parts.slice(0, -1)), { recursive: true });
+        await writeFile(await join(dir, ...parts), b);
+      },
+      close: async () => {},
+    };
   }
   const picker = (window as any).showDirectoryPicker;
   if (picker) {
@@ -51,7 +59,10 @@ export async function openSink(zipName: string): Promise<Sink | null> {
       const dir = await picker({ mode: 'readwrite', id: 'steminize' });
       return {
         async write(n, b) {
-          const fh = await dir.getFileHandle(n, { create: true });
+          const parts = n.split('/');
+          let folder = dir;
+          for (const part of parts.slice(0, -1)) folder = await folder.getDirectoryHandle(part, { create: true });
+          const fh = await folder.getFileHandle(parts[parts.length - 1], { create: true });
           const w = await fh.createWritable();
           await w.write(b);
           await w.close();

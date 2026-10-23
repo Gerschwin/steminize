@@ -174,7 +174,9 @@ export function dawReadme(p: DawProject, target: string, leadInInFiles = false):
     ``,
     target === 'reaper'
       ? `Reaper: open "${p.title}.rpp". The audio files must stay beside it.`
-      : target === 'dawproject'
+      : target === 'ardour'
+        ? `Ardour 8 or later: open the session folder's .ardour file (Session > Open). If you hear nothing, connect the Master outputs to your speakers in Window > Audio Connections.`
+        : target === 'dawproject'
         ? `Bitwig Studio, Studio One or Cubase: open "${p.title}.dawproject" (File > Open).`
         : `Other DAWs: make a new project, set the tempo to ${p.bpm > 0 ? num(p.bpm, 2) : '120'} BPM and ${p.perBar}/4, drag the audio files in at the very start of the project, and (optional) import tempo-map.mid as the tempo map and markers.csv for markers.`,
   ].join('\n') + '\n';

@@ -83,7 +83,7 @@ are desktop only and are marked **[desktop]**.
 - **Appearance:** dark theme by default, a light theme, remembered. No flash of the wrong theme at start, and the desktop window starts dark. Released in 0.9.4.
 - **No stray text selection** and no ghost image when dragging controls or resizing a track. Released in 0.9.4.
 - **Export:** single stems, all stems (folder or ZIP), or "what you hear" as a mix with your levels, loop, tempo and pitch applied. Released.
-- **Send to DAW:** opens the song in a recording program: a ready-made **Reaper** project (stems as tracks with your levels, pan, mute and solo, the song's tempo and bars with the first bar on a bar line, markers and the loop), or for **Ardour, Logic, Pro Tools, Cubase, Ableton and others** the aligned stems plus a MIDI tempo map and a marker list. See `DAW_EXPORT.md`. Next release.
+- **Send to DAW:** opens the song in a recording program: a ready-made **Reaper** project or **Ardour** session (stems as tracks with your levels, pan, mute and solo, the song's tempo and bars with the first bar on a bar line, markers and the loop), or for **Logic, Pro Tools, Cubase, Ableton and others** the aligned stems plus a MIDI tempo map and a marker list. See `DAW_EXPORT.md`. Next release.
 
 ## Safety and help (0.9.4)
 - **Welcome panel** when no song is open: what the app is for, **Choose a song** / **Open tracks I already have** buttons, what the first split downloads (the chosen model's name and size, and whether it is already on this computer), and what you can do with a song. Next release.
