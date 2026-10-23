@@ -22,7 +22,8 @@ If no tempo has been detected for the song the grid is a plain 120 BPM and will 
 |---|---|---|
 | **Reaper** | A ready-made project (`.rpp`): one track per stem with its level, pan, mute and solo and colour, the tempo and bars, markers, and the loop as the time selection. The audio files are untouched; the project places them after the lead-in. | Open the `.rpp` (keep the audio files beside it). |
 | **Ardour** (8 or later) | A ready-made **session folder**: one stereo track per stem with its name, colour, level, pan, mute and solo, the audio regions placed after the lead-in, the tempo and bar length, your markers, and the loop. The audio is inside the session (`interchange/<name>/audiofiles`). | Session → Open, and pick the `.ardour` file. If you hear nothing, connect the Master outputs in Window → Audio Connections. |
-| **Logic, Pro Tools, Cubase, Ableton, Studio One, Bitwig and others** | The audio files **with the lead-in built in**, so they all line up when dropped in at the very start of the project, plus `tempo-map.mid` and `markers.csv`. | New project, set the tempo and bar length from the README, drag the files in at the start. Import `tempo-map.mid` as the tempo map if the program can (Logic: File → Import → Tempo map; Pro Tools: Import Session Data → tempo map; Ardour users should use the Ardour option instead). |
+| **Bitwig Studio, Studio One, Cubase 14** (anything that opens **DAWproject**) | One `.dawproject` file (a ZIP the program opens as a project): one audio track per stem with its colour, level, pan, mute and solo, each stem as a clip placed after the lead-in, the tempo and bar length, and your markers (the loop's ends become two markers). Time is in seconds, so the audio plays in real time with no warping. | File → Open the `.dawproject` file. |
+| **Logic, Pro Tools, Cubase (older), Ableton and others** | The audio files **with the lead-in built in**, so they all line up when dropped in at the very start of the project, plus `tempo-map.mid` and `markers.csv`. | New project, set the tempo and bar length from the README, drag the files in at the start. Import `tempo-map.mid` as the tempo map if the program can (Logic: File → Import → Tempo map; Pro Tools: Import Session Data → tempo map; Ardour users should use the Ardour option instead). |
 
 ## How the Ardour session was checked
 Ardour has no published description of its session file, so the export is built on what Ardour itself writes: a new session made with
@@ -35,6 +36,13 @@ captures both into `src/export/ardourTemplate.ts`; only the structure is kept). 
 Not checked: Ardour 8.x (the session version is 7003, which Ardour 8 and 9 both write), and playing it on a real sound card (the
 Master outputs are saved as connected to `system:playback_1/2`; if your setup names them differently, connect them by hand).
 
+## How the DAWproject file was checked
+DAWproject is an open format ([bitwig/dawproject](https://github.com/bitwig/dawproject)) with a published schema. The `project.xml` and
+`metadata.xml` the app writes were validated against the format's `Project.xsd` and `MetaData.xsd` with `xmllint`, including a file
+written by the real app (ZIP, unzipped): every id, reference and audio path resolves. It has **not** been opened in Bitwig Studio,
+Studio One or Cubase (not installed here), so how each of them places the clips and shows the markers is untested. If one of them
+mis-places the audio, tell me which and what you see.
+
 ## What it is not
 - It is not live: Steminize and the DAW are separate. Change the tempo or key in Steminize, then send again (or use **Export mix** to
   render a slowed or re-keyed mix).
@@ -42,6 +50,6 @@ Master outputs are saved as connected to `system:playback_1/2`; if your setup na
 - It does not play along or sync with the DAW's transport. A live link (audio sent into the DAW and MIDI clock for the transport) is on the backlog.
 
 ## How it works (for the code)
-`src/export/ardour.ts` writes the Ardour session. `src/export/daw.ts` holds the shared logic and is tested: bar alignment (`barAlignment`), per-beat tempos (`beatTempos`), the Reaper project
+`src/export/ardour.ts` writes the Ardour session and `src/export/dawproject.ts` the DAWproject file. `src/export/daw.ts` holds the shared logic and is tested: bar alignment (`barAlignment`), per-beat tempos (`beatTempos`), the Reaper project
 (`reaperProject`), the marker list, the tempo-map MIDI (`writeMidiTempoMap` in `src/encode/midi.ts`) and the README. The deck
 (`sendToDaw` in `src/ui/deck.ts`) gathers the song and writes the files.

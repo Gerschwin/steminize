@@ -42,6 +42,7 @@ import { CHORD_TONES, chordCost, fretShape, pianoKeys, shapeIsRight, suggestCapo
 import { QUALITIES } from '../src/analysis/chords.ts';
 import { segmentsFor, snapToWord, sungSeconds } from '../src/lyrics/lyricChords.ts';
 import { modelNote } from '../src/models.ts';
+import { dawprojectAudioPath, dawprojectMetadata, dawprojectXml } from '../src/export/dawproject.ts';
 import { ardourColour, ardourSession, ardourSessionName } from '../src/export/ardour.ts';
 import { barAlignment, beatTempos, dawReadme, guid, markersCsv, reaperColour, reaperProject, tempoMapFile, type DawProject } from '../src/export/daw.ts';
 import { ZOOM_KEY, ZOOM_STEPS, loadZoom, nearestZoom, saveZoom, stepZoom, zoomLabel } from '../src/textSize.ts';
@@ -1547,6 +1548,31 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('ardour: a "$" in a name is not treated as a replacement pattern', ardourSession({ ...proj, title: 'Cost $& more' }).xml.includes('name="Cost $&amp; more"'));
   ok('ardour: colours become Ardour\'s 0xRRGGBBAA number', ardourColour('#ff0000') === 0xff0000ff && ardourColour('#102030') === 0x102030ff && ardourColour('bad') === 0xaaaaaaff);
   ok('ardour: the README tells Ardour users how to open it', /open the session folder/.test(dawReadme(proj, 'ardour')));
+}
+
+
+{
+  // Send to DAW, DAWproject: the project.xml (also checked against the format's official schema with xmllint; see DAW_EXPORT.md).
+  const proj: DawProject = {
+    title: 'My Song & more', sampleRate: 44100, seconds: 12.5, bpm: 120.1, perBar: 3, padSec: 1.198,
+    tracks: [
+      { name: 'Bass "low"', file: 'My Song - Bass.wav', colour: '#a78bfa', vol: 0.8, pan: -0.5, mute: false, solo: false },
+      { name: 'Drums', file: 'My Song - Drums.wav', colour: '#fb923c', vol: 1.5, pan: 1, mute: true, solo: true },
+    ],
+    markers: [{ name: 'Verse <1>', time: 3.2 }, { name: 'Chorus', time: 7.2 }],
+    loop: { start: 3.2, end: 7.2 },
+  };
+  const xml = dawprojectXml(proj, '0.9.4');
+  const ids = [...xml.matchAll(/ id="([^"]+)"/g)].map((m) => m[1]);
+  ok('dawproject: every id is unique and a valid XML name', new Set(ids).size === ids.length && ids.every((i) => /^[A-Za-z_][\w.-]*$/.test(i)));
+  const refs = [...xml.matchAll(/(?:destination|track)="([^"]+)"/g)].map((m) => m[1]);
+  ok('dawproject: every track and destination reference points at something that exists', refs.length === 5 && refs.every((r) => ids.includes(r)));
+  ok('dawproject: tempo, bar length, and one audio track plus the master per stem', /unit="bpm" value="120.1"/.test(xml) && /numerator="3"/.test(xml) && (xml.match(/<Track /g) || []).length === 3 && /role="master"/.test(xml));
+  ok('dawproject: levels, pan (normalised, -0.5 is 0.25), mute and solo carry over, and volume is capped at the format\'s maximum', /unit="linear" value="0.8"/.test(xml) && /unit="normalized" value="0.25"/.test(xml) && /<Mute value="true"/.test(xml) && /solo="true"/.test(xml) && /unit="linear" value="1.5"/.test(xml));
+  ok('dawproject: each stem is one clip, in seconds, after the lead-in, pointing at its audio file', (xml.match(/<Clip time="1.198" duration="12.5" contentTimeUnit="seconds"/g) || []).length === 2 && /<File path="audio\/My Song - Bass\.wav"\/>/.test(xml) && /<Lanes timeUnit="seconds"/.test(xml) && dawprojectAudioPath('x.wav') === 'audio/x.wav');
+  ok('dawproject: markers and the loop\'s ends are markers, in time order, with names escaped', /<Marker time="3.2" name="Loop start"\/>/.test(xml) && /name="Verse &lt;1&gt;"/.test(xml) && xml.indexOf('Loop start') > 0 && /<Marker time="7.2" name="Chorus"\/>/.test(xml));
+  ok('dawproject: names and titles with quotes and ampersands cannot break the XML', /name="Bass &quot;low&quot;"/.test(xml) && dawprojectMetadata(proj).includes('<Title>My Song &amp; more</Title>'));
+  ok('dawproject: a song with no tempo gets a plain 120 BPM', /unit="bpm" value="120"/.test(dawprojectXml({ ...proj, bpm: 0 })));
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');
