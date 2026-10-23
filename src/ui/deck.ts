@@ -9,6 +9,7 @@ import { gateStep, type Trainer } from '../player/transport.ts';
 import { extensionFor, mimeFor } from '../encode/meta.ts';
 import { stemColour, MODELS } from '../models.ts';
 import { openSink, safeName, saveFile } from '../platform.ts';
+import { barAlignment, beatTempos, dawReadme, markersCsv, reaperProject, tempoMapFile, type DawProject } from '../export/daw.ts';
 import { MAX_REC_LATENCY_MS, loadLiveChannel, loadLowLatencyAudio, loadRecLatencyMs, saveLiveChannel, saveLowLatencyAudio, saveRecLatencyMs, type LiveChannel, type Settings } from '../settings.ts';
 import { BarTally, barColour, barCue, barTip, type BarScores, type BarVisit } from '../lyrics/barScores.ts';
 import { initNativeAudio } from './nativeAudio.ts';
@@ -52,7 +53,7 @@ import {
 import { FLAT, isFlat, sameEq, type EqParams } from '../player/eq.ts';
 import { eqPanel, type EqPanel } from './eqPanel.ts';
 import { drawStaff, drawTabScore, noteAt, staffU, staffX, type StaffLayout, type TabScoreLayout } from './staff.ts';
-import { $, activatable, fitCanvas, fmtDuration, fmtTime, h, pressed, toast } from './dom.ts';
+import { $, activatable, fitCanvas, fmtDuration, fmtTime, h, openDialog, pressed, toast } from './dom.ts';
 import { Transcribe, type TxHost, type TxState } from './transcribePanel.ts';
 import type { Chord } from '../analysis/chords.ts';
 import type { NoteEvent } from '../analysis/basicPitch.ts';
@@ -540,6 +541,8 @@ export class Deck {
     $('setB').onclick = () => this.setPoint('b');
     $('clearLoop').onclick = () => this.clearLoop();
     $('saveAllBtn').onclick = () => this.saveAll();
+    $('dawBtn').onclick = () => this.openDawDialog();
+    $('dawGo').onclick = () => void this.sendToDaw((document.querySelector('input[name="dawTarget"]:checked') as HTMLInputElement | null)?.value === 'generic' ? 'generic' : 'reaper');
     $('exportMixBtn').onclick = () => this.exportMix();
     $('rerunBtn').onclick = () => this.onRerun();
     const tempo = $<HTMLInputElement>('tempo');
@@ -4401,6 +4404,92 @@ export class Deck {
       toast(`Export failed: ${(e as Error).message}`, true);
     } finally {
       t.remove();
+    }
+  }
+
+  /** Opens the Send to DAW dialog, saying what the song has to offer (tempo or not). */
+  private openDawDialog() {
+    if (!this.r) return;
+    const a = this.r.analysis;
+    $('dawNote').textContent = a
+      ? `Tempo: ${a.bpm.toFixed(1)} BPM, ${this.pr.perBar}/4. If that is wrong, correct it under Tempo & key first.`
+      : 'No tempo has been detected for this song, so the project will use a plain 120 BPM grid that will not match the music. Open Tempo & key first to detect it.';
+    openDialog($<HTMLDialogElement>('dawDlg'));
+  }
+
+  /**
+   * Writes this song as a project for a recording program: the stems (after a silent lead-in so the song's first bar lands on a bar line),
+   * the tempo and bars, the markers and loop, and what a DAW needs to open it. `reaper` writes a Reaper project beside the stems; `generic`
+   * writes stems that already line up (the lead-in is built into each file) with a tempo map and a marker list to import.
+   */
+  private async sendToDaw(target: 'reaper' | 'generic') {
+    if (!this.r) return;
+    const go = $<HTMLButtonElement>('dawGo');
+    const base = this.baseName();
+    const sink = await openSink(`${base} (DAW project).zip`);
+    if (!sink) return;
+    go.disabled = true;
+    try {
+      const o = { ...this.settings(), format: 'wav' as const };
+      const a = this.r.analysis;
+      const perBar = this.pr.perBar;
+      const bpm = a?.bpm ?? 0;
+      const beatIdx = a ? this.downbeat() : 0;
+      const bar1 = a ? (a.beats[beatIdx] ?? 0) : 0;
+      const { padSec, leadBars } = bpm > 0 ? barAlignment(bar1, bpm, perBar) : { padSec: 0, leadBars: 0 };
+      const pad = Math.round(padSec * SR);
+      const seen = new Map<string, number>();
+      const lanes = this.lanes.map((l) => {
+        let name = safeName(laneLabel(l));
+        const n = (seen.get(name.toLowerCase()) ?? 0) + 1;
+        seen.set(name.toLowerCase(), n);
+        if (n > 1) name = `${name} (${n})`;
+        return { lane: l, name };
+      });
+      const useLead = target === 'generic' && pad > 0;
+      const stems = lanes.map(({ lane, name }) => ({
+        name,
+        data: useLead ? (lane.data.map((ch) => { const out = new Float32Array(ch.length + pad); out.set(ch, pad); return out; }) as unknown as Stereo) : lane.data,
+      }));
+      const fileFor = (name: string) => `${base} - ${name}.wav`;
+      const timeline = (frames: number) => frames / SR + padSec;
+      const project: DawProject = {
+        title: base,
+        sampleRate: SR,
+        seconds: this.length / SR + (useLead ? padSec : 0),
+        bpm,
+        perBar,
+        padSec: useLead ? 0 : padSec,
+        tracks: lanes.map(({ lane, name }) => ({ name: laneLabel(lane), file: fileFor(name), colour: lane.colour, vol: lane.vol, pan: lane.pan, mute: lane.mute, solo: lane.solo })),
+        markers: this.markers.map((m) => ({ name: m.name, time: timeline(m.pos) })),
+        loop: this.loop.on && this.loop.b > this.loop.a ? { start: timeline(this.loop.a), end: timeline(this.loop.b) } : undefined,
+      };
+      let n = 0;
+      go.textContent = `Writing 0/${stems.length}…`;
+      await this.encoder.run({ type: 'stems', stems, out: o }, async (name, bytes) => {
+        await sink.write(fileFor(name), bytes);
+        go.textContent = `Writing ${++n}/${stems.length}…`;
+      });
+      const enc = (s: string) => new TextEncoder().encode(s);
+      if (target === 'reaper') {
+        // In Reaper the stems are placed after the lead-in by the project itself, so the audio files stay exactly as they were.
+        await sink.write(`${base}.rpp`, enc(reaperProject({ ...project, padSec })));
+      }
+      await sink.write('tempo-map.mid', tempoMapFile(project));
+      if (a && bpm > 0) {
+        const changes = beatTempos(a.beats, beatIdx, bpm, perBar, leadBars);
+        if (changes.length > 1) await sink.write('tempo-map-follows-the-beats.mid', tempoMapFile(project, changes));
+      }
+      await sink.write('markers.csv', enc(markersCsv(project)));
+      await sink.write('README.txt', enc(dawReadme({ ...project, padSec }, target, useLead)));
+      await sink.close();
+      $<HTMLDialogElement>('dawDlg').close();
+      toast(target === 'reaper' ? `Saved a Reaper project with ${stems.length} tracks` : `Saved ${stems.length} tracks with a tempo map and markers`);
+    } catch (e) {
+      toast(`Couldn't send to the DAW: ${(e as Error).message}`, true);
+    } finally {
+      go.disabled = false;
+      go.textContent = 'Send';
     }
   }
 

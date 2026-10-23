@@ -77,6 +77,12 @@ E|-0---0---0---0---|
 ## 0g. Website guide (NEW)
 - [ ] `/guide/` on the website opens, looks right in the dark and light system settings and on a phone, every screenshot loads, and **Open the web app** goes to the app. About → **Getting started guide** opens it (in the desktop app it opens in your browser).
 
+## 0h. Send to DAW (NEW)
+- [ ] With a song that has a detected tempo, **Send to DAW…** (above the song) opens a dialog with the tempo shown. **Reaper**: choose a folder (desktop) or get a ZIP (web); it contains the stems, `<song>.rpp`, `tempo-map.mid`, `markers.csv` and `README.txt`. Open the `.rpp` in Reaper: one track per stem, the right names and colours, levels / pan / mute / solo as in Steminize, the tempo in the project settings, markers where your markers are, and the loop as the time selection. Press play: the stems line up with the grid (the song's first bar on a bar line; check by turning on the metronome).
+- [ ] **Other programs** option: the audio files have a short silent start; drop them all in at 0 in Ardour / Logic / Pro Tools / Cubase / Ableton, set the tempo from the README, and the beat lines up. Import `tempo-map.mid` as the tempo map: tempo and bar length and markers arrive. If the song speeds up and slows down there is also `tempo-map-follows-the-beats.mid`: try it if the grid drifts.
+- [ ] A song with no detected tempo says so in the dialog and the README.
+- [ ] Note which programs you tried and anything that did not open (Reaper is the one with a real project file; the rest rely on the audio and the MIDI tempo map).
+
 ## 1. Install, launch and About
 
 - [ ] The installer for your platform installs and the app opens (note the OS and version).

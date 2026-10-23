@@ -32,6 +32,7 @@ It runs as a web app (installable on desktop and phone) and as a desktop app (Wi
 - **Chords over the lyrics** (Scratchpad → Lyrics, with synced `.lrc` lyrics and **Follow along** on): the **Chords** button writes each detected chord above the word where it changes, like a chord sheet, and lights the one sounding now. It uses the same names as the Timeline (Simple, pitch shift, capo). Lyrics are timed by line, so a chord's place within a line is estimated and may be a word off.
 - **Tab+** (Scratchpad → Tab): type or paste ASCII guitar/bass tab, tap it in time with the song, and **Follow along** draws it as engraved notation that scrolls with the music. Supports a rhythm line and time signatures, hammer-ons, pull-offs, slides, bends and pre-bends, vibrato, harmonics, taps, repeats, and picking, fingering and palm-mute marks (the **Symbols** button lists them). Click a note to set its length, click a bar number to loop that bar, and use **Ear** to hide the tab and play from memory. The **Trainer** listens through Live input and marks each note right or wrong, and colours each bar number by how well that bar was last played (green clean, red missed; hover for the count, **Clear bar colours** forgets them); the **speed trainer** can be set to speed up only once you score above a target.
 - **Hands-free:** PageDown plays/pauses and PageUp restarts the section, which suits most Bluetooth page-turner pedals; "Foot pedal mode" maps arrow-key pedals the same way. Media keys and lock-screen / notification controls (play, pause, restart, skip, seek) also work where the browser or system supports them, and the screen stays awake while a song plays.
+- **Send to DAW:** **Send to DAW…** opens the song in a recording program such as Reaper or Ardour, so the DAW does the live monitoring and recording: the stems as tracks (with your levels, pan, mute and solo), the song's tempo and bars with the first bar on a bar line, and your markers. Reaper gets a ready-made project; other programs get aligned stems plus a MIDI tempo map and marker list. See [DAW_EXPORT.md](DAW_EXPORT.md).
 - **Export:** single stems, all stems (to a folder, or as a ZIP), or "what you hear" as a mix with your levels, loop, tempo and pitch applied.
 - **Offline:** once a model has downloaded, the app works with no connection.
 - **GPU acceleration** through WebGPU where available, otherwise multi-threaded CPU.
@@ -187,6 +188,7 @@ The float64 conversion is done by `src/engine/fixfloat64.ts`, which rewrites tho
 ## More documents
 
 - **[Getting-started guide](https://gerschwin.github.io/steminize/guide/)** (a short tour with screenshots; the page is `public/guide/index.html`).
+- [DAW_EXPORT.md](DAW_EXPORT.md): what Send to DAW writes for Reaper and other programs, and how to open it.
 - [DATA_FORMAT.md](DATA_FORMAT.md): what the app saves (songs, takes, setlists, backups) and the rules that keep old songs opening.
 - [UPDATER.md](UPDATER.md): how in-app updates work and the update-signing key.
 - [FAQ.md](FAQ.md): installing, slow separation, recording delay and other common questions.

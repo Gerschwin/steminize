@@ -268,6 +268,7 @@
               </div>
               <div class="deck-actions">
                 <button class="btn ghost" id="rerunBtn" title="Separate again with the current settings">Re-run</button>
+                <button class="btn ghost" id="dawBtn" title="Open this song in your recording program: the stems as tracks, with the tempo, bars and markers">Send to DAW…</button>
                 <button class="btn ghost" id="exportMixBtn" title="Save what you hear: mutes, levels, tempo and pitch">Export mix</button>
                 <button class="btn primary" id="saveAllBtn">Save all stems</button>
               </div>
@@ -714,6 +715,21 @@
         <details><summary class="small">Basic Pitch · Apache-2.0 (bundled model)</summary><pre id="licBasicPitch"></pre></details>
         <p class="muted small">The other projects above are used under the licences named next to them; follow the links for their full text.</p>
       </div>
+    </dialog>
+
+    <dialog id="dawDlg" aria-labelledby="dawTitle">
+      <form method="dialog" class="dlg-head">
+        <h2 id="dawTitle">Send to DAW</h2>
+        <button class="btn tiny ghost" aria-label="Close">Close</button>
+      </form>
+      <p class="muted small">Open this song in your recording program, to play and record along with proper live monitoring. Each track becomes a track in the project, with your levels, pan, mute and solo, the song's tempo and bars, and your markers. The files are saved in a folder (or a ZIP in the browser).</p>
+      <fieldset class="daw-pick">
+        <legend class="small muted">Your program</legend>
+        <label><input type="radio" name="dawTarget" value="reaper" checked /> <b>Reaper</b>: a ready-made project (.rpp)</label>
+        <label><input type="radio" name="dawTarget" value="generic" /> <b>Ardour, Logic, Pro Tools, Cubase, Ableton and others</b>: the tracks as audio files that line up, plus a tempo map and markers to import</label>
+      </fieldset>
+      <p class="muted small" id="dawNote"></p>
+      <div class="daw-actions"><button class="btn primary" id="dawGo" type="button">Send</button></div>
     </dialog>
 
     <dialog id="helpDlg" aria-labelledby="helpTitle">

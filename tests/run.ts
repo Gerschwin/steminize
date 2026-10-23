@@ -42,6 +42,7 @@ import { CHORD_TONES, chordCost, fretShape, pianoKeys, shapeIsRight, suggestCapo
 import { QUALITIES } from '../src/analysis/chords.ts';
 import { segmentsFor, snapToWord, sungSeconds } from '../src/lyrics/lyricChords.ts';
 import { modelNote } from '../src/models.ts';
+import { barAlignment, beatTempos, dawReadme, guid, markersCsv, reaperColour, reaperProject, tempoMapFile, type DawProject } from '../src/export/daw.ts';
 import { ZOOM_KEY, ZOOM_STEPS, loadZoom, nearestZoom, saveZoom, stepZoom, zoomLabel } from '../src/textSize.ts';
 import { NATIVE_INFO, NATIVE_TIP, NATIVE_TIP_KEY, NATIVE_WELCOME, nativeTipVisible } from '../src/nativeHint.ts';
 import { YOUTUBE_KEY, YOUTUBE_NOTICE, YOUTUBE_REMINDER, setYoutubeEnabled, youtubeEnabled } from '../src/youtubeOptIn.ts';
@@ -1445,6 +1446,77 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('guide page: one main heading, a language, a viewport and a skip link', (html.match(/<h1\b/g) || []).length === 1 && /<html lang="en">/.test(html) && /name="viewport"/.test(html) && /class="skip"/.test(html));
   ok('guide page: links to the app, the downloads, the FAQ and the privacy statement', ['href="../"', '/releases', 'FAQ.md', 'PRIVACY.md'].every((s) => html.includes(s)));
   ok('guide page: says what the app is honestly (free, pre-release, chord detection is a draft, installers unsigned)', /pre-release/i.test(html) && /first draft/i.test(html) && /not code-signed/i.test(html) && /MIT/.test(html));
+}
+
+
+{
+  // Send to DAW: bar alignment, the Reaper project, the markers list and the MIDI tempo map.
+  const a = barAlignment(1.3, 120, 4); // a bar is 2 s
+  ok('daw: stems are put after a lead-in so the song\'s first bar lands on a bar line', Math.abs(a.padSec - 0.7) < 1e-9 && Math.abs(a.padSec + 1.3 - 2) < 1e-9 && a.leadBars === 1 && a.padSec < a.barLen);
+  ok('daw: a song that starts on its first bar needs no lead-in, and neither does one a whole number of bars in', barAlignment(0, 120, 4).padSec === 0 && barAlignment(4, 120, 4).padSec === 0 && barAlignment(2, 120, 4).padSec === 0);
+  ok('daw: odd values never throw or give a negative lead-in', [barAlignment(-1, 120, 4), barAlignment(NaN, 120, 4), barAlignment(1, 0, 4), barAlignment(1, 90, 3)].every((x) => x.padSec >= 0 && Number.isFinite(x.padSec)));
+  const steady = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4];
+  ok('daw: a steady song needs only one tempo', beatTempos(steady, 0, 120, 4, 0).length === 1);
+  const drift = [0.5, 1, 1.5, 2, 2.55, 3.1, 3.65, 4.2];
+  const bt = beatTempos(drift, 0, 120, 4, 1);
+  ok('daw: a song that slows down gets a tempo change at the right beat, counted from the project start', bt.length === 2 && bt[0].beat === 0 && bt[1].beat === 4 + 3 && Math.abs(bt[1].bpm - 109.09) < 0.01, JSON.stringify(bt));
+
+  const proj: DawProject = {
+    title: 'Example', sampleRate: 44100, seconds: 12.5, bpm: 120, perBar: 4, padSec: 0.7,
+    tracks: [
+      { name: 'Bass', file: 'Example - Bass.wav', colour: '#a78bfa', vol: 0.8, pan: -0.25, mute: false, solo: false },
+      { name: 'Vo"cals', file: 'Example - Vocals.wav', colour: '#f472b6', vol: 1, pan: 0, mute: true, solo: false },
+    ],
+    markers: [{ name: 'Verse', time: 2.7 }, { name: 'Chorus, big', time: 6.7 }],
+    loop: { start: 2.7, end: 6.7 },
+  };
+  const rpp = reaperProject(proj);
+  const opens = rpp.split('\n').filter((l) => l.trim().startsWith('<')).length;
+  const closes = rpp.split('\n').filter((l) => l.trim() === '>').length;
+  ok('daw: the Reaper project has balanced blocks, one track and item per stem, and the tempo', opens === closes && (rpp.match(/<TRACK /g) || []).length === 2 && (rpp.match(/<ITEM/g) || []).length === 2 && /TEMPO 120 4 4/.test(rpp));
+  ok('daw: the Reaper items sit after the lead-in and point at the audio files', /POSITION 0\.7\b/.test(rpp) && /FILE "Example - Bass\.wav"/.test(rpp) && /LENGTH 12\.5\b/.test(rpp));
+  ok('daw: the Reaper project carries levels, pan, mute, markers and the loop', /VOLPAN 0\.8 -0\.25/.test(rpp) && /MUTESOLO 1 0 0/.test(rpp) && /MARKER 1 2\.7 "Verse"/.test(rpp) && /LOOP 1/.test(rpp) && /SELECTION 2\.7 6\.7/.test(rpp));
+  ok('daw: a quote in a name cannot break the Reaper file', !/NAME "Vo"cals"/.test(rpp) && /NAME "Vo\'cals"/.test(rpp));
+  ok('daw: guids look like guids and the same seed gives the same one', /^\{[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\}$/.test(guid('a')) && guid('a') === guid('a') && guid('a') !== guid('b'));
+  ok('daw: colours become Reaper\'s custom-colour numbers', reaperColour('#ff0000') === (0x1000000 | 255) && reaperColour('#0000ff') === (0x1000000 | (255 << 16)) && reaperColour('nonsense') === 0);
+
+  const csv = markersCsv(proj).trim().split('\n');
+  ok('daw: the markers list has a header, quotes names with commas, and gives a bar and beat', csv[0].startsWith('#,Name') && csv.some((r) => r.includes('"Chorus, big"')) && csv.some((r) => /Verse,2\.7,2\.2$/.test(r)) && csv.length === 5, csv.join(' | '));
+
+  // Read the tempo map back with a tiny MIDI reader.
+  const readMidi = (b: Uint8Array) => {
+    const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+    const tag = (o: number) => String.fromCharCode(...b.slice(o, o + 4));
+    const ppq = dv.getUint16(12);
+    let o = 14 + 8;
+    const end = 14 + 8 + dv.getUint32(18);
+    const ev: { at: number; type: number; data: number[] }[] = [];
+    let at = 0;
+    while (o < end) {
+      let d = 0; let c: number;
+      do { c = b[o++]; d = (d << 7) | (c & 127); } while (c & 128);
+      at += d;
+      const st = b[o++];
+      if (st !== 0xff) throw new Error('unexpected status');
+      const type = b[o++]; const len = b[o++];
+      ev.push({ at, type, data: [...b.slice(o, o + len)] }); o += len;
+    }
+    return { head: tag(0), track: tag(14), ppq, ev };
+  };
+  const mid = readMidi(tempoMapFile(proj));
+  const tempos = mid.ev.filter((e) => e.type === 0x51);
+  const sig = mid.ev.find((e) => e.type === 0x58)!;
+  const marks = mid.ev.filter((e) => e.type === 0x06);
+  ok('daw: the tempo map is a MIDI file with the tempo, the bar length and the markers', mid.head === 'MThd' && mid.track === 'MTrk' && tempos.length === 1 && (tempos[0].data[0] << 16 | tempos[0].data[1] << 8 | tempos[0].data[2]) === 500000 && sig.data[0] === 4 && sig.data[1] === 2 && marks.length === 2 && String.fromCharCode(...marks[0].data) === 'Verse');
+  ok('daw: a marker\'s tick matches its time at the tempo (2.7 s at 120 BPM is 5.4 beats)', Math.abs(marks[0].at - Math.round(5.4 * mid.ppq)) <= 1);
+  const midVar = readMidi(tempoMapFile(proj, [{ beat: 8, bpm: 100 }]));
+  const tv = midVar.ev.filter((e) => e.type === 0x51);
+  const mv = midVar.ev.filter((e) => e.type === 0x06);
+  ok('daw: tempo changes are written at their beat, and a marker after one is placed by the new tempo', tv.length === 2 && tv[1].at === 8 * midVar.ppq && Math.abs(mv[1].at - Math.round((8 + (6.7 - 4) / 0.6) * midVar.ppq)) <= 1, JSON.stringify(mv.map((m) => m.at)));
+  const readme = dawReadme(proj, 'reaper');
+  ok('daw: the README names the tempo, the lead-in and how to open it', /120 BPM, 4\/4/.test(readme) && /0\.7 s/.test(readme) && /Example\.rpp/.test(readme) && /dawproject/.test(dawReadme(proj, 'dawproject')) && /tempo-map\.mid/.test(dawReadme(proj, 'generic')));
+  ok('daw: for stems with the lead-in built in, the README says each file begins with silence', /Each audio file begins with 0\.7 s of silence/.test(dawReadme(proj, 'generic', true)));
+  ok('daw: a song with no detected tempo says so instead of pretending', /no tempo was detected/.test(dawReadme({ ...proj, bpm: 0 }, 'generic')));
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

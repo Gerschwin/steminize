@@ -69,3 +69,56 @@ export function programFor(name: string) {
   if (/synth/.test(n)) return 81;
   return 0; // piano
 }
+
+/**
+ * A MIDI file that is only a tempo map: the tempo and bar length at the start, any tempo changes (each at a whole beat, counted in
+ * quarter notes from the start), and markers at times in seconds. A DAW can import it to set up its tempo grid and marker list.
+ */
+export function writeMidiTempoMap(o: {
+  bpm: number;
+  perBar: number;
+  changes?: { beat: number; bpm: number }[];
+  markers?: { name: string; time: number }[];
+  seconds?: number;
+}): Uint8Array {
+  const segs = [{ beat: 0, bpm: o.bpm }, ...(o.changes ?? []).filter((c) => c.beat > 0)].sort((a, b) => a.beat - b.beat);
+  /** The tick at a time in seconds, walking through the tempo segments. */
+  const tickAt = (sec: number) => {
+    let t = 0;
+    let beat = 0;
+    for (let i = 0; i < segs.length; i++) {
+      const next = i + 1 < segs.length ? segs[i + 1].beat : Infinity;
+      const secPerBeat = 60 / segs[i].bpm;
+      const room = (next - segs[i].beat) * secPerBeat;
+      if (sec - t <= room || next === Infinity) {
+        beat = segs[i].beat + (sec - t) / secPerBeat;
+        break;
+      }
+      t += room;
+      beat = next;
+    }
+    return Math.max(0, Math.round(beat * PPQ));
+  };
+  const events: { at: number; order: number; bytes: number[] }[] = [];
+  const perBar = Math.max(1, Math.min(32, Math.round(o.perBar)));
+  events.push({ at: 0, order: 0, bytes: [0xff, 0x58, 4, perBar, 2, 24, 8] }); // perBar/4
+  for (const sg of segs) {
+    const us = Math.round(60_000_000 / sg.bpm);
+    events.push({ at: Math.round(sg.beat * PPQ), order: 1, bytes: [0xff, 0x51, 3, (us >> 16) & 255, (us >> 8) & 255, us & 255] });
+  }
+  for (const m of o.markers ?? []) {
+    const name = text(m.name.replace(/[\r\n]+/g, ' ').slice(0, 120));
+    events.push({ at: tickAt(m.time), order: 2, bytes: [0xff, 0x06, ...vlq(name.length), ...name] });
+  }
+  events.sort((a, b) => a.at - b.at || a.order - b.order);
+  const title = text('Tempo map');
+  const body = [0, 0xff, 0x03, ...vlq(title.length), ...title];
+  let last = 0;
+  for (const ev of events) {
+    body.push(...vlq(ev.at - last), ...ev.bytes);
+    last = ev.at;
+  }
+  const end = Math.max(last, o.seconds != null ? tickAt(o.seconds) : last);
+  body.push(...vlq(end - last), 0xff, 0x2f, 0);
+  return Uint8Array.from([...chunk('MThd', [0, 1, 0, 1, (PPQ >> 8) & 255, PPQ & 255]), ...chunk('MTrk', body)]);
+}
