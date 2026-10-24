@@ -73,7 +73,7 @@ are desktop only and are marked **[desktop]**.
 - **Float** the Scratchpad as a movable, resizable window. Released.
 
 ## Steminize Player plugin (early, in development)
-- **A VST3 plugin** (`plugin/`, GPLv3) that plays a song's stems inside a DAW in time with its transport: a mix output plus eight stem outputs, per-stem level / mute / solo, a master level and an offset. Songs come from **Send to DAW** (`steminize-song.json`). Checked in Ardour 9.7 (scan and an offline render); no window yet, no tempo-following yet. Not in the installers.
+- **A VST3 plugin** (`plugin/`, GPLv3) that plays a song's stems inside a DAW in time with its transport: a mix output plus eight stem outputs, per-stem level / mute / solo, a master level and an offset. Songs come from **Send to DAW** (`steminize-song.json`). Checked in Ardour 9.7 (scan and an offline render); follows the DAW's tempo (time-stretch, pitch kept) and has a key shift; no window yet. Not in the installers.
 
 ## Native audio engine [desktop] (experimental)
 - **Off by default, but not hidden:** a tip in the Live input drawer says it exists (with **Show me** and **Got it**), the desktop Settings has a Native audio card with **Show me where**, and the welcome panel mentions it. Released in 0.9.5.

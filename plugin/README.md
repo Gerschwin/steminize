@@ -4,10 +4,17 @@ A plugin that plays a Steminize song's stems **inside your DAW**, in time with t
 (live monitoring and recording) while Steminize does the stems. Licensed **GPL-3.0-or-later** (see `LICENSE`): the VST3 bindings the
 plugin framework ([nih-plug](https://github.com/robbert-vdh/nih-plug)) uses are GPLv3. The Steminize app itself stays MIT.
 
-**Status: first working version (0.1.0).** It loads in Ardour, plays the stems in sync with the transport, and has the mix and each stem
-on its own output. There is no window yet and it does not yet follow the DAW's tempo: see "Not yet".
+**Status: early (0.1.0).** It loads in Ardour, plays the stems in sync with the transport, follows the DAW's tempo and can shift the key,
+and has the mix and each stem on its own output. There is no window yet: see "Not yet".
 
 ## What it does
+- **Follows the DAW's tempo.** When the DAW reports its tempo and position in beats, the song is laid on the DAW's *beats*: change the
+  project tempo (or automate it) and the song speeds up or slows down with it, staying on the DAW's bar lines, **without changing pitch**
+  (a time-stretcher, [Signalsmith Stretch](https://github.com/Signalsmith-Audio/signalsmith-stretch), MIT). A song at exactly the DAW's
+  tempo skips the stretcher and plays untouched. The **Follow tempo** switch turns this off (the song then plays at its own speed from the
+  DAW's clock). The stretcher's delay (about 120 ms) is cancelled by feeding it that far ahead, so the plugin reports **no latency** and
+  monitoring is not delayed.
+- **Key shift.** ±12 semitones, without changing speed.
 - **Plays in time with the DAW.** Wherever the DAW's playhead is, the plugin plays that moment of the song. Starting, stopping,
   looping and jumping all stay in step, because every block of audio is worked out from the playhead position alone.
 - **A lead-in.** Steminize's Send to DAW puts the stems after a short silent lead-in (under one bar) so the song's first bar lands on a
@@ -41,12 +48,16 @@ Copy `target/bundled/steminize_player.vst3` to `~/.vst3/` (Linux), `~/Library/Au
 - **Ardour 9.7 scanned it** (`ardour-vst3-scanner`: found "Steminize Player", no inputs, a stereo output and eight stereo aux outputs).
 - **Ardour 9.7 rendered it** (`ardour9-export` on a session with the plugin on a track): audio began at exactly 1.198 s (the lead-in), and
   the bass at level 0.8 panned halfway left came out at 0.4 left and 0.2 right, with the drums' left and right content in place.
+- **Tempo-following, tested two ways.** `cargo test` plays a click through the follower at 0.5x to 2x, after a jump, across different block
+  sizes and through a tempo ramp, and requires it within about 2 ms of where the DAW's beat grid says. Then Ardour 9.7 rendered a click
+  song (120 bpm, with a 1 s lead-in) in sessions at 60, 90, 100 and 150 bpm: every click landed on the session's beat grid (for example
+  at 150 bpm the first click at 1.599 s, then every 0.400 s; at 90 bpm 2.666 s, every 0.667 s), to within about a millisecond (5 ms at
+  60 bpm).
 - Not tried in Reaper, Bitwig, Studio One or Cubase, on Windows or macOS, or with the DAW's transport looping live.
 
 ## Not yet (in the order I would do them)
 1. **A window**: choose the song, see the stems with their names and faders, the host tempo against the song's, and apply Steminize's
    mute / solo settings (the song file records them; the plugin does not apply them yet, so every stem starts unmuted).
-2. **Follow the DAW's tempo** (time-stretch, bypassed when the tempos match) and a **key shift**, so slowing the DAW slows the song.
-3. Markers as a list to jump to, and awareness of the DAW's loop.
-4. CLAP as well as VST3, Windows and macOS builds in CI, an installer.
-5. Loading a song straight from the Steminize app's library.
+2. Markers as a list to jump to, and awareness of the DAW's loop.
+3. CLAP as well as VST3, Windows and macOS builds in CI, an installer.
+4. Loading a song straight from the Steminize app's library.

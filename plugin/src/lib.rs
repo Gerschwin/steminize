@@ -1,13 +1,15 @@
 //! Steminize Player: plays a Steminize song's stems inside a DAW, in time with the DAW's transport.
 //! Licensed GPL-3.0-or-later (see LICENSE): the VST3 bindings the plugin framework uses are GPLv3.
 
+pub mod follow;
 pub mod manifest;
 pub mod mix;
 pub mod song;
 
 use arc_swap::ArcSwapOption;
 use arrayvec::ArrayVec;
-use mix::{render, Song, StemSettings, MAX_STEMS};
+use follow::{Block, Follower};
+use mix::{Song, StemSettings, MAX_STEMS};
 use nih_plug::prelude::*;
 use std::num::NonZeroU32;
 use std::path::PathBuf;
@@ -31,6 +33,12 @@ pub struct PlayerParams {
     /// Shifts the song earlier or later against the DAW's timeline, to nudge it into step.
     #[id = "offset"]
     offset_ms: FloatParam,
+    /// Whether the song speeds up and slows down with the DAW's tempo (keeping its pitch). Off plays it at its own speed.
+    #[id = "follow"]
+    follow_tempo: BoolParam,
+    /// Shifts the song's key, in semitones, without changing its speed.
+    #[id = "pitch"]
+    pitch: IntParam,
     /// Up to eight stems, each with a level, a mute and a solo. The song says which stem is which.
     #[nested(array, group = "Stem")]
     stems: [StemParams; MAX_STEMS],
@@ -65,6 +73,9 @@ impl Default for PlayerParams {
             )
             .with_unit(" ms")
             .with_step_size(0.1),
+            follow_tempo: BoolParam::new("Follow tempo", true),
+            pitch: IntParam::new("Key shift", 0, IntRange::Linear { min: -12, max: 12 })
+                .with_unit(" st"),
             stems: std::array::from_fn(|i| StemParams {
                 gain: FloatParam::new(
                     format!("Stem {} level", i + 1),
@@ -91,6 +102,7 @@ pub struct SteminizePlayer {
     /// The song being played, swapped in by the loader thread when it has finished reading it.
     song: Arc<ArcSwapOption<Song>>,
     sample_rate: u32,
+    follower: Follower,
 }
 
 impl Default for SteminizePlayer {
@@ -99,6 +111,7 @@ impl Default for SteminizePlayer {
             params: Arc::new(PlayerParams::default()),
             song: Arc::new(ArcSwapOption::empty()),
             sample_rate: 44100,
+            follower: Follower::new(44100, 1024),
         }
     }
 }
@@ -186,6 +199,7 @@ impl Plugin for SteminizePlayer {
         _context: &mut impl InitContext<Self>,
     ) -> bool {
         let rate = config.sample_rate.round() as u32;
+        self.follower = Follower::new(rate, config.max_buffer_size as usize);
         // The song is converted to the DAW's rate when it is loaded, so a change of rate means loading it again.
         if rate != self.sample_rate || self.song.load().is_none() {
             self.sample_rate = rate;
@@ -212,6 +226,7 @@ impl Plugin for SteminizePlayer {
         };
         let (Some(song), Some(pos)) = (song.as_ref(), playhead) else {
             // Stopped, or no song yet, or the host does not say where it is: silence on every output.
+            self.follower.stop();
             for ch in buffer.as_slice() {
                 ch.fill(0.0);
             }
@@ -233,7 +248,22 @@ impl Plugin for SteminizePlayer {
         let master = self.params.master.value();
         let offset = (self.params.offset_ms.value() as f64 * self.sample_rate as f64 / 1000.0)
             .round() as i64;
-        let start = pos - song.lead_in as i64 - offset;
+        // On the DAW's beats when it says its tempo and position in beats, otherwise on its clock at the song's own speed.
+        let beats = transport.pos_beats();
+        let (speed, target) = match (transport.tempo, beats) {
+            (Some(tempo), Some(beats))
+                if self.params.follow_tempo.value() && song.bpm > 0.0 && tempo > 0.0 =>
+            {
+                let speed = tempo / song.bpm;
+                (
+                    speed,
+                    beats * 60.0 / song.bpm * self.sample_rate as f64
+                        - song.lead_in as f64
+                        - offset as f64 * speed,
+                )
+            }
+            _ => (1.0, (pos - song.lead_in as i64 - offset) as f64),
+        };
 
         let main = buffer.as_slice();
         let (ml, mr) = main.split_at_mut(1);
@@ -244,12 +274,17 @@ impl Plugin for SteminizePlayer {
             let (a, b) = ch.split_at_mut(1);
             stem_bufs.push((&mut *a[0], &mut *b[0]));
         }
-        render(
+        let pitch = self.params.pitch.value() as f64;
+        self.follower.render(
             song,
             &settings,
             master,
-            start,
-            frames,
+            Block {
+                target,
+                speed,
+                pitch,
+                frames,
+            },
             (&mut *ml[0], &mut *mr[0]),
             &mut stem_bufs,
         );
