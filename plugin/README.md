@@ -4,8 +4,8 @@ A plugin that plays a Steminize song's stems **inside your DAW**, in time with t
 (live monitoring and recording) while Steminize does the stems. Licensed **GPL-3.0-or-later** (see `LICENSE`): the VST3 bindings the
 plugin framework ([nih-plug](https://github.com/robbert-vdh/nih-plug)) uses are GPLv3. The Steminize app itself stays MIT.
 
-**Status: early (0.1.0).** It loads in Ardour, plays the stems in sync with the transport, follows the DAW's tempo and can shift the key,
-and has the mix and each stem on its own output. There is no window yet: see "Not yet".
+**Status: early (0.1.0).** It loads in Ardour, plays the stems in sync with the transport, follows the DAW's tempo, can shift the key, has
+the mix and each stem on its own output, and has a window to choose the song and set the stems. See "Not yet".
 
 ## What it does
 - **Follows the DAW's tempo.** When the DAW reports its tempo and position in beats, the song is laid on the DAW's *beats*: change the
@@ -14,6 +14,11 @@ and has the mix and each stem on its own output. There is no window yet: see "No
   tempo skips the stretcher and plays untouched. The **Follow tempo** switch turns this off (the song then plays at its own speed from the
   DAW's clock). The stretcher's delay (about 120 ms) is cancelled by feeding it that far ahead, so the plugin reports **no latency** and
   monitoring is not delayed.
+- **A window.** Paste the folder Send to DAW wrote and press **Load**; the window then shows the song's title, its tempo against the DAW's
+  (and whether it is playing straight, following the DAW at some speed, or stopped), the Master, Offset, Key shift and Follow tempo
+  controls, and a row per stem with its Steminize colour, name, level, **M**ute, **S**olo and which output it is on. A song loaded from the
+  window starts with the mute and solo it had in Steminize (**Use the mute and solo from Steminize** puts them back). The folder is saved
+  with the DAW project, so the song comes back when the project is opened.
 - **Key shift.** ±12 semitones, without changing speed.
 - **Plays in time with the DAW.** Wherever the DAW's playhead is, the plugin plays that moment of the song. Starting, stopping,
   looping and jumping all stay in step, because every block of audio is worked out from the playhead position alone.
@@ -40,7 +45,8 @@ cargo test                                  # the logic: mixing, loading, the so
 cargo xtask bundle steminize_player --release   # builds target/bundled/steminize_player.vst3
 ```
 Copy `target/bundled/steminize_player.vst3` to `~/.vst3/` (Linux), `~/Library/Audio/Plug-Ins/VST3/` (macOS) or
-`C:\Program Files\Common Files\VST3\` (Windows), and rescan plugins in the DAW. Needs a recent Rust toolchain; no other libraries.
+`C:\Program Files\Common Files\VST3\` (Windows), and rescan plugins in the DAW. Needs a recent Rust toolchain and, for the window and the stretcher, libclang plus on Linux the X11 / xcb / OpenGL development
+packages (see `.github/workflows/plugin.yml` for the list).
 
 ## How it was checked
 - `cargo test`: the mixing (positions, lead-in, ends of stems, mute / solo / levels / pan, loops and jumps give identical audio),
@@ -58,6 +64,7 @@ Copy `target/bundled/steminize_player.vst3` to `~/.vst3/` (Linux), `~/Library/Au
 ## Not yet (in the order I would do them)
 1. **A window**: choose the song, see the stems with their names and faders, the host tempo against the song's, and apply Steminize's
    mute / solo settings (the song file records them; the plugin does not apply them yet, so every stem starts unmuted).
-2. Markers as a list to jump to, and awareness of the DAW's loop.
-3. CLAP as well as VST3, Windows and macOS builds in CI, an installer.
-4. Loading a song straight from the Steminize app's library.
+2. A folder chooser button in the window (today you paste the path), a level meter per stem.
+3. Markers as a list to jump to, and awareness of the DAW's loop.
+4. CLAP as well as VST3, Windows and macOS builds in CI, an installer.
+5. Loading a song straight from the Steminize app's library.

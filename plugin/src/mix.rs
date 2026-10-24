@@ -7,7 +7,7 @@
 pub const MAX_STEMS: usize = 8;
 
 /// One stem, as stereo audio at the rate the DAW is running at.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Stem {
     pub name: String,
     pub left: Vec<f32>,
@@ -15,6 +15,11 @@ pub struct Stem {
     /// What Steminize had set for this stem: level (linear) and pan (-1 left to 1 right).
     pub base_gain: f32,
     pub pan: f32,
+    /// What Steminize had muted or soloed, offered to the window as a starting point (the plugin's own mute and solo are what play).
+    pub mute: bool,
+    pub solo: bool,
+    /// The stem's colour in Steminize, as red, green, blue.
+    pub colour: [u8; 3],
 }
 
 #[derive(Debug)]
@@ -119,14 +124,14 @@ mod tests {
                     left: (1..=10).map(|x| x as f32).collect(),
                     right: (1..=10).map(|x| x as f32).collect(),
                     base_gain: 1.0,
-                    pan: 0.0,
+                    ..Default::default()
                 },
                 Stem {
                     name: "B".into(),
                     left: vec![0.5; 10],
                     right: vec![-0.5; 10],
                     base_gain: 1.0,
-                    pan: 0.0,
+                    ..Default::default()
                 },
             ],
             markers: vec![],

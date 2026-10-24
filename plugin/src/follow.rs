@@ -295,7 +295,7 @@ mod tests {
                 right: left.clone(),
                 left,
                 base_gain: 1.0,
-                pan: 0.0,
+                ..Default::default()
             }],
             markers: vec![],
             len,

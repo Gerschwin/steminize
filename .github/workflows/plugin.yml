@@ -27,6 +27,11 @@ jobs:
             ~/.cargo/git
             plugin/target
           key: plugin-${{ matrix.os }}-${{ hashFiles('plugin/Cargo.toml') }}
+      - name: Linux libraries for the window and the stretcher
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libclang-dev libx11-xcb-dev libxcb1-dev libxcb-icccm4-dev libxcb-dri2-0-dev libxcb-xfixes0-dev libxcb-shape0-dev libxcb-xkb-dev libxcb-keysyms1-dev libxcb-util-dev libgl1-mesa-dev libxcursor-dev libxkbcommon-dev libxkbcommon-x11-dev libasound2-dev
       - run: cargo test --lib
       - run: cargo xtask bundle steminize_player --release
       - uses: actions/upload-artifact@v4

@@ -16,6 +16,7 @@ crate-type = ["cdylib", "lib"]
 [dependencies]
 # The plugin framework. Its VST3 export uses GPLv3 bindings, so this plugin as a whole is GPLv3 (see LICENSE); the app is MIT.
 nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", default-features = false, features = ["vst3"] }
+nih_plug_egui = { git = "https://github.com/robbert-vdh/nih-plug.git", default-features = false, features = ["opengl"] }
 arc-swap = "1"
 arrayvec = "0.7"
 signalsmith-stretch = "0.1.3"

@@ -67,6 +67,17 @@ pub fn resample(input: &[f32], from: u32, to: u32) -> Vec<f32> {
         .collect()
 }
 
+/// `#rrggbb` as red, green, blue; anything else is Steminize's purple.
+fn parse_colour(text: &str) -> [u8; 3] {
+    let hex = text.trim().trim_start_matches('#');
+    if hex.len() == 6 {
+        if let Ok(v) = u32::from_str_radix(hex, 16) {
+            return [(v >> 16) as u8, (v >> 8) as u8, v as u8];
+        }
+    }
+    [0xa7, 0x8b, 0xfa]
+}
+
 /// Loads the song at `chosen` (a folder holding `steminize-song.json`, or that file) for a DAW running at `host_rate`.
 pub fn load(chosen: &Path, host_rate: u32) -> Result<Song, String> {
     let manifest_file = manifest_path(chosen);
@@ -93,6 +104,9 @@ pub fn load(chosen: &Path, host_rate: u32) -> Result<Song, String> {
             right: r,
             base_gain: entry.gain.max(0.0),
             pan: entry.pan.clamp(-1.0, 1.0),
+            mute: entry.mute,
+            solo: entry.solo,
+            colour: parse_colour(&entry.colour),
         });
     }
     let len = stems.iter().map(|s| s.left.len()).max().unwrap_or(0);
@@ -115,6 +129,12 @@ pub fn load(chosen: &Path, host_rate: u32) -> Result<Song, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn colours_read_as_rgb_and_fall_back_to_purple() {
+        assert_eq!(parse_colour("#ff8000"), [255, 128, 0]);
+        assert_eq!(parse_colour("nonsense"), [0xa7, 0x8b, 0xfa]);
+    }
 
     fn temp(name: &str) -> PathBuf {
         let dir =
