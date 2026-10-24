@@ -132,6 +132,28 @@ export function reaperProject(p: DawProject): string {
   return `${lines.join('\n')}\n`;
 }
 
+/**
+ * The description the Steminize Player plugin reads (`steminize-song.json`, beside the stems): the song, its tempo and bars, where the
+ * stems start on the DAW's timeline, and each stem's file (relative to this description), colour and mixer settings. See plugin/README.md.
+ * `files` are the audio file paths as they will be written, in the same order as `p.tracks`.
+ */
+export function songManifest(p: DawProject, files: string[]): string {
+  return `${JSON.stringify(
+    {
+      format: 1,
+      title: p.title,
+      sampleRate: p.sampleRate,
+      bpm: p.bpm > 0 ? Number(p.bpm.toFixed(4)) : 0,
+      perBar: p.perBar,
+      leadInSec: Number(p.padSec.toFixed(6)),
+      stems: p.tracks.map((t, i) => ({ name: t.name, file: files[i], colour: t.colour, gain: Number(t.vol.toFixed(4)), pan: Number(t.pan.toFixed(4)), mute: t.mute, solo: t.solo })),
+      markers: p.markers.map((m) => ({ name: m.name, timeSec: Number(m.time.toFixed(4)) })),
+    },
+    null,
+    2,
+  )}\n`;
+}
+
 /** The markers as a CSV that Reaper, Pro Tools and most DAWs can import as a marker list: name, start in seconds and bars.beats. */
 export function markersCsv(p: DawProject): string {
   const cell = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);

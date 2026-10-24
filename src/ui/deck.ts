@@ -15,7 +15,7 @@ import { LearnPanel } from './learnPanel.ts';
 import { ardourSession } from '../export/ardour.ts';
 import { dawprojectAudioPath, dawprojectMetadata, dawprojectXml } from '../export/dawproject.ts';
 import { zipSync } from 'fflate';
-import { barAlignment, beatTempos, dawReadme, markersCsv, reaperProject, tempoMapFile, type DawProject } from '../export/daw.ts';
+import { barAlignment, beatTempos, dawReadme, markersCsv, reaperProject, songManifest, tempoMapFile, type DawProject } from '../export/daw.ts';
 import { MAX_REC_LATENCY_MS, loadLiveChannel, loadLowLatencyAudio, loadRecLatencyMs, saveLiveChannel, saveLowLatencyAudio, saveRecLatencyMs, type LiveChannel, type Settings } from '../settings.ts';
 import { BarTally, barColour, barCue, barTip, type BarScores, type BarVisit } from '../lyrics/barScores.ts';
 import { initNativeAudio } from './nativeAudio.ts';
@@ -4551,6 +4551,8 @@ export class Deck {
         await sink.write(`${base}.rpp`, enc(reaperProject({ ...project, padSec })));
       }
       if (ardour) await sink.write(`${ardour.name}/${ardour.name}.ardour`, enc(ardour.xml));
+      // For the Steminize Player plugin: the stems' places in this folder, and where they start on the timeline.
+      if (target !== 'dawproject') await sink.write('steminize-song.json', enc(songManifest({ ...project, padSec: useLead ? 0 : padSec }, lanes.map(({ name }) => where(fileFor(name))))));
       if (target === 'dawproject') {
         await sink.write('README.txt', enc(dawReadme({ ...project, padSec }, target, false)));
         await sink.close();

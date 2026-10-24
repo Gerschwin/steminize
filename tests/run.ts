@@ -46,7 +46,7 @@ import { dawprojectAudioPath, dawprojectMetadata, dawprojectXml } from '../src/e
 import { addEdgeCuts, barFeatures, boundaries, nameSegments, novelty, selfSimilarity, standardise, suggestSections } from '../src/analysis/structure.ts';
 import { DEFAULT_LEARN, mergeMarkers, addClean, addMiss, addPass, barStarts, chunksOf, firstUnfinished, newProgress, readLearn, sameSpan, sectionStatus, sectionsFromMarkers, spanKey, stitch } from '../src/learn/learn.ts';
 import { ardourColour, ardourSession, ardourSessionName } from '../src/export/ardour.ts';
-import { barAlignment, beatTempos, dawReadme, guid, markersCsv, reaperColour, reaperProject, tempoMapFile, type DawProject } from '../src/export/daw.ts';
+import { songManifest, barAlignment, beatTempos, dawReadme, guid, markersCsv, reaperColour, reaperProject, tempoMapFile, type DawProject } from '../src/export/daw.ts';
 import { ZOOM_KEY, ZOOM_STEPS, loadZoom, nearestZoom, saveZoom, stepZoom, zoomLabel } from '../src/textSize.ts';
 import { NATIVE_INFO, NATIVE_TIP, NATIVE_TIP_KEY, NATIVE_WELCOME, nativeTipVisible } from '../src/nativeHint.ts';
 import { YOUTUBE_KEY, YOUTUBE_NOTICE, YOUTUBE_REMINDER, setYoutubeEnabled, youtubeEnabled } from '../src/youtubeOptIn.ts';
@@ -1679,6 +1679,23 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   const sug = [{ name: 'Intro', pos: 0 }, { name: 'Verse 1', pos: 10 * sr2 + 1000 }, { name: 'Chorus 1', pos: 30 * sr2 }];
   ok('structure: added suggestions skip a place you already marked (your name wins), and keep everything in order', mergeMarkers(mine, sug, false, sr2).map((m) => m.name).join() === 'Intro,Verse,Chorus 1');
   ok('structure: replacing swaps your markers for the suggestions', mergeMarkers(mine, sug, true, sr2).map((m) => m.name).join() === 'Intro,Verse 1,Chorus 1' && mine.length === 1);
+}
+
+
+{
+  // The description the Steminize Player plugin reads.
+  const proj: DawProject = {
+    title: 'My Song', sampleRate: 44100, seconds: 12, bpm: 120.1, perBar: 4, padSec: 1.198,
+    tracks: [
+      { name: 'Bass', file: 'x', colour: '#a78bfa', vol: 0.8, pan: -0.5, mute: false, solo: false },
+      { name: 'Drums', file: 'x', colour: '#fb923c', vol: 1, pan: 0, mute: true, solo: true },
+    ],
+    markers: [{ name: 'Verse', time: 3.2 }],
+  };
+  const m = JSON.parse(songManifest(proj, ['a/Bass.wav', 'a/Drums.wav']));
+  ok('plugin manifest: the song, tempo, bar length and lead-in are written', m.format === 1 && m.title === 'My Song' && m.bpm === 120.1 && m.perBar === 4 && m.leadInSec === 1.198 && m.sampleRate === 44100);
+  ok('plugin manifest: each stem has its own file path, colour and mixer settings', m.stems.length === 2 && m.stems[0].file === 'a/Bass.wav' && m.stems[0].gain === 0.8 && m.stems[0].pan === -0.5 && m.stems[1].mute === true && m.stems[1].solo === true && m.stems[1].colour === '#fb923c');
+  ok('plugin manifest: markers are on the DAW timeline, and no tempo is written as 0', m.markers[0].name === 'Verse' && m.markers[0].timeSec === 3.2 && JSON.parse(songManifest({ ...proj, bpm: 0 }, ['a', 'b'])).bpm === 0);
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

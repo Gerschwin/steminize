@@ -25,6 +25,11 @@ If no tempo has been detected for the song the grid is a plain 120 BPM and will 
 | **Bitwig Studio, Studio One, Cubase 14** (anything that opens **DAWproject**) | One `.dawproject` file (a ZIP the program opens as a project): one audio track per stem with its colour, level, pan, mute and solo, each stem as a clip placed after the lead-in, the tempo and bar length, and your markers (the loop's ends become two markers). Time is in seconds, so the audio plays in real time with no warping. | File → Open the `.dawproject` file. |
 | **Logic, Pro Tools, Cubase (older), Ableton and others** | The audio files **with the lead-in built in**, so they all line up when dropped in at the very start of the project, plus `tempo-map.mid` and `markers.csv`. | New project, set the tempo and bar length from the README, drag the files in at the start. Import `tempo-map.mid` as the tempo map if the program can (Logic: File → Import → Tempo map; Pro Tools: Import Session Data → tempo map; Ardour users should use the Ardour option instead). |
 
+## The Steminize Player plugin
+Every export except the `.dawproject` one also writes `steminize-song.json`, a small description (the song's tempo and bars, where the stems
+start on the timeline, and each stem's file and mixer settings) that the **Steminize Player** plugin (`plugin/`, VST3, early) reads to play the
+stems inside the DAW in time with its transport. See `plugin/README.md`.
+
 ## How the Ardour session was checked
 Ardour has no published description of its session file, so the export is built on what Ardour itself writes: a new session made with
 `ardour9-new_session` is the skeleton, and a plain stereo track from a real Ardour 9.7 session is the track template (`tools/make-ardour-template.py`

@@ -1,0 +1,35 @@
+# Tests the Steminize Player plugin and builds its VST3 bundle on all three systems, whenever its code changes.
+name: Plugin
+on:
+  push:
+    branches: [native-audio, main]
+    paths: ['plugin/**', '.github/workflows/plugin.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: plugin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            plugin/target
+          key: plugin-${{ matrix.os }}-${{ hashFiles('plugin/Cargo.toml') }}
+      - run: cargo test --lib
+      - run: cargo xtask bundle steminize_player --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: steminize-player-${{ matrix.os }}
+          path: plugin/target/bundled/*

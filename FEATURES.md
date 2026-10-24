@@ -72,6 +72,9 @@ are desktop only and are marked **[desktop]**.
 - **Chords over the lyrics:** with synced lyrics in Follow along, a **Chords** button writes each chord above the word where it changes, like a chord sheet; the chord sounding now is lit. It uses the same names as the timeline (Simple, pitch shift, capo) and redraws when you correct a chord. Chords are placed by their time within each line (lyrics are timed by line, not by word), so they are close, not exact. Released in 0.9.4.
 - **Float** the Scratchpad as a movable, resizable window. Released.
 
+## Steminize Player plugin (early, in development)
+- **A VST3 plugin** (`plugin/`, GPLv3) that plays a song's stems inside a DAW in time with its transport: a mix output plus eight stem outputs, per-stem level / mute / solo, a master level and an offset. Songs come from **Send to DAW** (`steminize-song.json`). Checked in Ardour 9.7 (scan and an offline render); no window yet, no tempo-following yet. Not in the installers.
+
 ## Native audio engine [desktop] (experimental)
 - **Off by default, but not hidden:** a tip in the Live input drawer says it exists (with **Show me** and **Got it**), the desktop Settings has a Native audio card with **Show me where**, and the welcome panel mentions it. Released in 0.9.5.
 - **Direct sound-card playback** of songs saved in the library through a Rust engine with a buffer size you choose: mixer, EQ, tempo and pitch, loops, count-in, click and the speed trainer. Released in 0.9.2.
