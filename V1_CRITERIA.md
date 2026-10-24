@@ -1,6 +1,6 @@
 # Steminize 1.0: what has to be true
 
-Written 2026-10-10 against the `native-audio` branch (0.9.5 released). 1.0 is the first public release, so this list is about trust and
+Written 2026-10-10 against the `native-audio` branch (0.9.6 released). 1.0 is the first public release, so this list is about trust and
 polish more than new features. Tick items as they are done. **Owner**: Neil = a decision or action only Neil can take; Claude = built
 and fixed by Claude; Both = needs real hardware or a person plus a fix.
 
@@ -71,4 +71,4 @@ needed for 1.0.
 6. **When is it "ready"?** Suggested rule: every Must have ticked, plus two weeks of testers with no new serious bug.
 
 ## Suggested path
-0.9.5 (parts, drums, chord view, DAW export, updater, accessibility) → test round on all three platforms → fix → 0.10.0 (welcome screen, sample song, in-app update, data-format tests) → (signing only if use justifies it) → release candidate → 1.0.
+0.9.6 (parts, drums, chord view, DAW export, updater, accessibility, Learn) → test round on all three platforms → fix → 0.10.0 (welcome screen, sample song, in-app update, data-format tests) → (signing only if use justifies it) → release candidate → 1.0.
