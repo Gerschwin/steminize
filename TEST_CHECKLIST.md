@@ -93,6 +93,7 @@ E|-0---0---0---0---|
 - [ ] With the tab Trainer on (Scratchpad, Live input monitoring, a tapped tab) and "Let the tab Trainer judge each pass" ticked: play a loop of the tab well and the streak goes up by itself; play it badly and it resets; the Nailed it / Missed buttons stand aside.
 - [ ] The checklist shows New, Learning (◐) and Solid (✓) with progress bars; **Mark solid** and **Reset** work. Close and reopen the song: progress, chunk size and target are still there. Moving a marker rebuilds the chunks without errors.
 - [ ] A song with no detected tempo still works (a bar is taken as 2 seconds).
+- [ ] **Suggest sections** on a song with clear verses and choruses (and a detected tempo): after a few seconds a list of sections appears with times, editable names and bar counts; the boundaries should fall on the real changes (check by listening to a few). Names such as Intro, Verse, Chorus, Bridge, Outro are guesses: note how often they are right. **Add as markers** adds them as section markers (your own markers stay and win when close); **Replace my markers** asks first. Try songs with a quiet intro, with no repeats at all, and a very short one ("not enough bars").
 
 ## 1. Install, launch and About
 

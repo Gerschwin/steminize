@@ -53,7 +53,8 @@ are desktop only and are marked **[desktop]**.
 
 ## Learn (practice method)
 - **Learn drawer:** work through a song the way the practice method says to: **sections** (your markers) become checkpoints, each section is split into **chunks** of 1, 2 or 4 bars (or the whole section) that start on bar lines, and you loop one chunk at a time. **Loop this chunk** starts it; the **◀ ▶** buttons (or `,` and `.`) move along; **Stitch next chunk** joins pieces back together. Every loop pass is counted, and a **clean-pass streak** (default 20 in a row) finishes the chunk: press **Nailed it** (`N`) or **Missed** (`X`), or let the **tab Trainer** judge each pass (it counts as clean when the accuracy is high enough). At the target it ticks the chunk off and moves on to the next one (and on to the next section). A checklist shows each section as New, Learning or Solid with progress; mark one solid by hand or reset it. Progress is saved with the song. Released in 0.9.5+ (next release).
-- **Not built yet:** suggesting the sections for you from the song's structure, and spotting where a riff repeats.
+- **Suggest sections** (draft): the **Suggest sections** button listens to the song and finds where the intro, verses, chorus, bridge and outro start, by comparing every bar with every other (repeats show up as stripes) and finding where the music changes. It offers them as editable section names with times; **Add as markers** keeps your own markers, **Replace my markers** swaps them. Needs a detected tempo. It is exact on clearly built test songs and gave a plausible result on a real rock song, but the names are guesses and quiet or unusual structures can be missed or split oddly: change anything you like.
+- **Not built yet:** spotting where a riff repeats.
 
 ## Tab and notation (Scratchpad)
 - **Five tabs:** Lyrics, Guitar, Bass, Drums, Notes; each song keeps its own text. Released in 0.9.4.

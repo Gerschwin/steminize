@@ -3,7 +3,7 @@
 // src/learn/learn.ts; this is the screen and the glue to the player (through the host, the way the transcription panel does it).
 
 import {
-  addClean, addMiss, addPass, chunksOf, firstUnfinished, newProgress, readLearn, sameSpan, sectionStatus, sectionsFromMarkers, spanKey, stitch,
+  addClean, addMiss, addPass, chunksOf, mergeMarkers, firstUnfinished, newProgress, readLearn, sameSpan, sectionStatus, sectionsFromMarkers, spanKey, stitch,
   type ChunkSize, type LearnState, type Progress, type Section, type Span, type Status,
 } from '../learn/learn.ts';
 import { $, fmtTime, h, toast } from './dom.ts';
@@ -21,6 +21,10 @@ export interface LearnHost {
   playLoop(a: number, b: number): void;
   /** The tab Trainer is on and listening, so it can judge passes. */
   trainerJudging(): boolean;
+  /** Listens to the song and returns its sections (positions in frames), or why it could not. */
+  suggest(): Promise<{ name: string; pos: number; bars: number }[] | 'no-tempo' | 'too-short'>;
+  /** Replaces the song's section markers. */
+  setMarkers(markers: { name: string; pos: number }[]): void;
   changed(): void;
 }
 
@@ -65,10 +69,58 @@ export class LearnPanel {
       this.state.advance = ($('learnAdvance') as HTMLInputElement).checked;
       this.save();
     };
+    $('learnSuggest').onclick = () => void this.suggest();
+    $('learnSuggestClose').onclick = () => (($('learnSuggestBox') as HTMLElement).hidden = true);
+    $('learnSuggestAdd').onclick = () => this.useSuggestions(false);
+    $('learnSuggestReplace').onclick = () => this.useSuggestions(true);
     $('learnResetChunk').onclick = () => {
       delete this.state.progress[this.key()];
       this.save();
     };
+  }
+
+  // ---------- suggested sections ----------
+  private suggested: { name: string; pos: number; bars: number }[] = [];
+
+  private async suggest() {
+    const btn = $('learnSuggest') as HTMLButtonElement;
+    btn.disabled = true;
+    btn.textContent = 'Listening…';
+    try {
+      const r = await this.host.suggest();
+      if (r === 'no-tempo') toast('No tempo yet: open Tempo & key so the bars are known, then try again', true);
+      else if (r === 'too-short' || !r.length) toast('Not enough bars to find a structure in this song', true);
+      else {
+        this.suggested = r;
+        this.renderSuggestions();
+      }
+    } catch (e) {
+      toast(`Couldn't find the sections: ${(e as Error).message}`, true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Suggest sections';
+    }
+  }
+
+  private renderSuggestions() {
+    const sr = this.host.sr;
+    ($('learnSuggestBox') as HTMLElement).hidden = false;
+    ($('learnSuggestList') as HTMLElement).replaceChildren(
+      ...this.suggested.map((s, i) => {
+        const input = h('input', { type: 'text', value: s.name, maxLength: 30, 'aria-label': `Name of the section at ${fmtTime(s.pos / sr)}` } as any) as HTMLInputElement;
+        input.oninput = () => (this.suggested[i].name = input.value.trim() || s.name);
+        return h('div', { class: 'learn-row' }, h('span', { class: 'muted small learn-time' }, fmtTime(s.pos / sr)), input, h('span', { class: 'muted small' }, `${s.bars} bar${s.bars === 1 ? '' : 's'}`));
+      }),
+    );
+  }
+
+  private useSuggestions(replace: boolean) {
+    const existing = this.host.markers();
+    if (replace && existing.length && !confirm(`Replace your ${existing.length} marker${existing.length === 1 ? '' : 's'} with ${this.suggested.length} suggested sections?`)) return;
+    const merged = mergeMarkers(existing, this.suggested.map((s) => ({ name: s.name, pos: s.pos })), replace, this.host.sr);
+    this.host.setMarkers(merged);
+    ($('learnSuggestBox') as HTMLElement).hidden = true;
+    toast(`${replace ? 'Replaced the markers with' : 'Added'} ${this.suggested.length} section${this.suggested.length === 1 ? '' : 's'}`);
   }
 
   // ---------- the song ----------

@@ -379,6 +379,19 @@
                 </div>
               </div>
               <div class="dpane" data-pane="learn" id="learnPane" hidden>
+                <div class="tool learn-suggest">
+                  <button class="btn tiny" type="button" id="learnSuggest" title="Listen to the song and find where the intro, verses, chorus and so on start, then offer them as section markers">Suggest sections</button>
+                  <span class="draft-tag" title="A first attempt: it finds the changes and the repeats well on clear songs, but the names are guesses. Change anything you like.">draft</span>
+                  <span class="muted small" id="learnSuggestNote">Finds the intro, verses, chorus and so on from the music, and offers them as section markers.</span>
+                </div>
+                <div class="learn-suggest-box" id="learnSuggestBox" hidden>
+                  <div class="learn-suggest-list" id="learnSuggestList"></div>
+                  <div class="tool">
+                    <button class="btn tiny" type="button" id="learnSuggestAdd" title="Add these as markers, keeping any you already have">Add as markers</button>
+                    <button class="btn tiny ghost" type="button" id="learnSuggestReplace" title="Replace your markers with these">Replace my markers</button>
+                    <button class="btn tiny ghost" type="button" id="learnSuggestClose">Dismiss</button>
+                  </div>
+                </div>
                 <p class="muted small" id="learnEmpty" hidden>Add a section marker (M) or open a song with a detected tempo, then work through it one chunk at a time.</p>
                 <div id="learnBody">
                   <div class="tool learn-pick">

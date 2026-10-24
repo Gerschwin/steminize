@@ -10,6 +10,7 @@ import { extensionFor, mimeFor } from '../encode/meta.ts';
 import { stemColour, MODELS } from '../models.ts';
 import { openSink, safeName, saveFile } from '../platform.ts';
 import { barStarts, type LearnState } from '../learn/learn.ts';
+import { barFeatures, suggestSections } from '../analysis/structure.ts';
 import { LearnPanel } from './learnPanel.ts';
 import { ardourSession } from '../export/ardour.ts';
 import { dawprojectAudioPath, dawprojectMetadata, dawprojectXml } from '../export/dawproject.ts';
@@ -660,6 +661,21 @@ export class Deck {
         if (!this.player.state.playing) void this.player.play();
       },
       trainerJudging: () => !!this.scratch.tabTrainer && !$('tabStrip').hidden && this.player.monitoring,
+      suggest: async () => {
+        const a = this.r?.analysis;
+        if (!a?.beats.length) return 'no-tempo';
+        const bars = barStarts(a.beats, this.downbeat(), this.pr.perBar, SR);
+        if (bars.length < 16) return 'too-short';
+        // The song as one mix of its tracks (recorded takes are left out: they are not part of the song).
+        const mono = new Float32Array(this.length);
+        for (const l of this.lanes.filter((x) => !x.recordGroup)) for (let i = 0; i < mono.length; i++) mono[i] += (l.data[0][i] + l.data[1][i]) * 0.5;
+        const sections = suggestSections(await barFeatures(mono, SR, bars, this.length));
+        return sections.map((s) => ({ name: s.name, pos: s.a === 0 ? 0 : bars[s.a], bars: s.b - s.a }));
+      },
+      setMarkers: (m) => {
+        this.markers = m.map((x) => ({ ...x }));
+        this.markersChanged();
+      },
       changed: () => this.emit(),
     });
     new ResizeObserver(() => this.invalidateLayers()).observe($('deck'));

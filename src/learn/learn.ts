@@ -160,3 +160,13 @@ export function firstUnfinished(chunks: Span[], progress: Record<string, Progres
   const i = chunks.findIndex((c) => !progress[spanKey(c, sr)]?.done);
   return i < 0 ? 0 : i;
 }
+
+/**
+ * Markers after adding suggested sections: the suggestions replace yours, or are added alongside, skipping any that fall within half a
+ * second of a marker you already have (your own placement and name win). Sorted by position, in frames.
+ */
+export function mergeMarkers(existing: { name: string; pos: number }[], suggested: { name: string; pos: number }[], replace: boolean, sr: number): { name: string; pos: number }[] {
+  const base = replace ? [] : existing.map((m) => ({ ...m }));
+  for (const s of suggested) if (!base.some((m) => Math.abs(m.pos - s.pos) < sr / 2)) base.push({ name: s.name, pos: s.pos });
+  return base.sort((a, b) => a.pos - b.pos);
+}

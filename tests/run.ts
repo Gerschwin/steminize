@@ -43,7 +43,8 @@ import { QUALITIES } from '../src/analysis/chords.ts';
 import { segmentsFor, snapToWord, sungSeconds } from '../src/lyrics/lyricChords.ts';
 import { modelNote } from '../src/models.ts';
 import { dawprojectAudioPath, dawprojectMetadata, dawprojectXml } from '../src/export/dawproject.ts';
-import { DEFAULT_LEARN, addClean, addMiss, addPass, barStarts, chunksOf, firstUnfinished, newProgress, readLearn, sameSpan, sectionStatus, sectionsFromMarkers, spanKey, stitch } from '../src/learn/learn.ts';
+import { addEdgeCuts, barFeatures, boundaries, nameSegments, novelty, selfSimilarity, standardise, suggestSections } from '../src/analysis/structure.ts';
+import { DEFAULT_LEARN, mergeMarkers, addClean, addMiss, addPass, barStarts, chunksOf, firstUnfinished, newProgress, readLearn, sameSpan, sectionStatus, sectionsFromMarkers, spanKey, stitch } from '../src/learn/learn.ts';
 import { ardourColour, ardourSession, ardourSessionName } from '../src/export/ardour.ts';
 import { barAlignment, beatTempos, dawReadme, guid, markersCsv, reaperColour, reaperProject, tempoMapFile, type DawProject } from '../src/export/daw.ts';
 import { ZOOM_KEY, ZOOM_STEPS, loadZoom, nearestZoom, saveZoom, stepZoom, zoomLabel } from '../src/textSize.ts';
@@ -1620,6 +1621,64 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   const rl = readLearn({ size: 4, target: 9999, auto: false, advance: 'no', progress: { a: { passes: 'x', streak: 2, best: 5, done: true }, b: 7 }, solid: { k: true, j: 1 } });
   ok('learn: saved state is read tolerantly: odd values are repaired, junk entries dropped', rl.size === 4 && rl.target === 200 && rl.auto === false && rl.advance === true && rl.progress.a.passes === 0 && rl.progress.a.done === true && !('b' in rl.progress) && rl.solid.k === true && !('j' in rl.solid));
   ok('learn: no saved state, or nonsense, gives the defaults', JSON.stringify(readLearn(undefined)) === JSON.stringify(DEFAULT_LEARN) && JSON.stringify(readLearn('junk')) === JSON.stringify(DEFAULT_LEARN) && readLearn({ size: 7 }).size === DEFAULT_LEARN.size);
+}
+
+
+{
+  // Song structure: finding sections from the music itself.
+  let seed = 7;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const gauss = () => { let s = 0; for (let i = 0; i < 6; i++) s += rnd(); return (s - 3) / 1.2; };
+  const D = 28;
+  const base: Record<string, number[][]> = {};
+  for (const k of 'IVCBO') base[k] = Array.from({ length: 4 }, () => Array.from({ length: D }, () => Math.abs(gauss()) + 0.2));
+  const loud: Record<string, number> = { I: 0.4, V: 0.6, C: 1, B: 0.7, O: 0.35 };
+  const plan = [['I', 4], ['V', 8], ['C', 8], ['V', 8], ['C', 8], ['B', 8], ['C', 8], ['O', 4]] as const;
+  const feats: number[][] = []; const energy: number[] = [];
+  for (const [k, n] of plan) for (let b = 0; b < n; b++) { feats.push(base[k][b % 4].map((x) => x + 0.12 * gauss())); energy.push(loud[k] + 0.03 * gauss()); }
+  const got = suggestSections({ feats, energy });
+  const edges = got.map((g) => g.a).slice(1);
+  ok('structure: sections are found at the real boundaries (bars 4 12 20 28 36 44 52) in a song with an intro, verses, choruses, a bridge and an outro', edges.join() === '4,12,20,28,36,44,52', edges.join());
+  ok('structure: the repeats get the same letter and the different sections different ones', got[1].label === got[3].label && got[2].label === got[4].label && got[2].label === got[6].label && new Set(got.map((g) => g.label)).size === 5);
+  ok('structure: the names are guessed from the pattern: intro, verses, choruses (the loud repeat), a bridge and an outro, numbered', got.map((g) => g.name).join() === 'Intro,Verse 1,Chorus 1,Verse 2,Chorus 2,Bridge,Chorus 3,Outro', got.map((g) => g.name).join());
+  ok('structure: a short piece of music has no structure to find', suggestSections({ feats: feats.slice(0, 12), energy: energy.slice(0, 12) }).length === 0);
+
+  // The same plan as real audio: chords with a different tone and loudness in each kind of section.
+  const sr = 22050; const barLen = 1.5; const f = (m: number) => 440 * 2 ** ((m - 69) / 12);
+  const prog: Record<string, { roots: number[]; amp: number; harm: number; noise: number }> = {
+    I: { roots: [60, 60, 65, 65], amp: 0.12, harm: 1, noise: 0 }, V: { roots: [60, 67, 69, 65], amp: 0.2, harm: 2, noise: 0.01 },
+    C: { roots: [65, 60, 67, 67], amp: 0.32, harm: 4, noise: 0.04 }, B: { roots: [62, 64, 65, 67], amp: 0.22, harm: 2, noise: 0 }, O: { roots: [60, 65, 60, 60], amp: 0.1, harm: 1, noise: 0 },
+  };
+  const total = plan.reduce((a, [, n]) => a + n, 0);
+  const mono = new Float32Array(Math.round(total * barLen * sr));
+  const bars: number[] = [];
+  let seed2 = 3; const r2 = () => { seed2 = (seed2 * 1664525 + 1013904223) >>> 0; return seed2 / 4294967296 - 0.5; };
+  let bar = 0;
+  for (const [k, n] of plan) for (let b = 0; b < n; b++, bar++) {
+    const start = Math.round(bar * barLen * sr); bars.push(start);
+    const p = prog[k]; const root = p.roots[b % 4];
+    for (let i = 0; i < Math.round(barLen * sr) && start + i < mono.length; i++) {
+      const tt = i / sr; let v = 0;
+      for (const iv of [0, 4, 7]) for (let h = 1; h <= p.harm; h++) v += (p.amp / h) * Math.sin(2 * Math.PI * f(root + iv) * h * tt) / 3;
+      mono[start + i] = v + p.noise * r2();
+    }
+  }
+  const bf = await barFeatures(mono, sr, bars, mono.length);
+  const audio = suggestSections(bf);
+  ok('structure: from real audio (chords, tone and loudness) the boundaries and the repeats are found too', audio.slice(1).map((g) => g.a).join() === '4,12,20,28,36,44,52' && audio[1].label === audio[3].label && audio[2].label === audio[4].label, audio.map((g) => `${g.name}@${g.a}`).join(' '));
+  ok('structure: from real audio the names come out right as well', audio.map((g) => g.name).join() === 'Intro,Verse 1,Chorus 1,Verse 2,Chorus 2,Bridge,Chorus 3,Outro', audio.map((g) => g.name).join());
+  const S = selfSimilarity(standardise(feats));
+  ok('structure: the similarity of a bar to itself is 1, and bars of the same section in different verses are alike (stripes off the diagonal)', S[5][5] > 0.999 && S[5][21] > 0.9 && S[5][13] < 0.5);
+  const nv = novelty(S);
+  ok('structure: the novelty is highest where the music changes, and a flat song has no boundaries', nv[12] > nv[16] && nv[28] > nv[24] && boundaries(new Array(40).fill(0.1), 40).length === 0);
+  ok('structure: a quiet start and a quiet end each get a boundary of their own when nothing else found one', addEdgeCuts([], [...new Array(4).fill(0.3), ...new Array(16).fill(1), ...new Array(4).fill(0.3)]).join() === '4,20' && addEdgeCuts([4], [...new Array(4).fill(0.3), ...new Array(16).fill(1)]).join() === '4');
+  ok('structure: with no repeats nothing is called a chorus, and only one section is called a bridge', !nameSegments([{ a: 0, b: 8, label: 'A', loud: 1 }, { a: 8, b: 16, label: 'B', loud: 1 }, { a: 16, b: 24, label: 'C', loud: 1 }, { a: 24, b: 32, label: 'D', loud: 1 }, { a: 32, b: 40, label: 'E', loud: 1 }]).some((n) => /Chorus/.test(n)) && nameSegments([{ a: 0, b: 8, label: 'A', loud: 1 }, { a: 8, b: 16, label: 'B', loud: 1 }, { a: 16, b: 24, label: 'C', loud: 1 }, { a: 24, b: 32, label: 'D', loud: 1 }, { a: 32, b: 40, label: 'E', loud: 1 }]).filter((n) => n === 'Bridge').length === 1);
+
+  const sr2 = 44100;
+  const mine = [{ name: 'Verse', pos: 10 * sr2 }];
+  const sug = [{ name: 'Intro', pos: 0 }, { name: 'Verse 1', pos: 10 * sr2 + 1000 }, { name: 'Chorus 1', pos: 30 * sr2 }];
+  ok('structure: added suggestions skip a place you already marked (your name wins), and keep everything in order', mergeMarkers(mine, sug, false, sr2).map((m) => m.name).join() === 'Intro,Verse,Chorus 1');
+  ok('structure: replacing swaps your markers for the suggestions', mergeMarkers(mine, sug, true, sr2).map((m) => m.name).join() === 'Intro,Verse 1,Chorus 1' && mine.length === 1);
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

@@ -918,3 +918,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .learn-prog { flex: 1 1 80px; max-width: 160px; height: 6px; border-radius: 99px; background: var(--panel); overflow: hidden; }
 .learn-prog i { display: block; height: 100%; background: var(--ok); }
 #learnSection { min-width: 9em; }
+
+.learn-suggest { flex-wrap: wrap; margin-bottom: 6px; }
+.learn-suggest-box { background: var(--panel-2); border-radius: 9px; padding: 8px 10px; margin-bottom: 8px; }
+.learn-suggest-list { display: grid; gap: 4px; margin-bottom: 6px; }
+.learn-suggest-list .learn-row { background: transparent; padding: 2px 0; }
+.learn-suggest-list input { width: 12em; }
+.learn-time { min-width: 3.5em; font-variant-numeric: tabular-nums; }
