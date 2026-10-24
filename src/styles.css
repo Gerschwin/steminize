@@ -899,3 +899,22 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .native-tip span { flex: 1 1 320px; }
 .tool.native-audio.attention { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 9px; animation: na-attn 1s ease-in-out 3; }
 @keyframes na-attn { 50% { outline-color: transparent; } }
+
+/* ---------- Learn drawer ---------- */
+.learn-pick, .learn-streak, .learn-opts { flex-wrap: wrap; }
+.learn-nav { display: inline-flex; align-items: center; gap: 6px; }
+#learnWhere { font-size: 13px; min-width: 14em; text-align: center; }
+.streak-count { font-size: 14px; }
+.streak-count b { font-size: 28px; line-height: 1; color: var(--accent); font-variant-numeric: tabular-nums; }
+.learn-bar { flex: 1 1 120px; max-width: 260px; height: 8px; border-radius: 99px; background: var(--panel); border: 1px solid var(--line); overflow: hidden; }
+.learn-bar i { display: block; height: 100%; width: 0; background: var(--ok); transition: width .2s; }
+.learn-opts input[type='number'] { width: 4.5em; }
+.learn-list { display: grid; gap: 6px; margin-top: 8px; }
+.learn-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 10px; border-radius: 9px; background: var(--panel-2); border: 1px solid transparent; }
+.learn-row.current { border-color: var(--accent); }
+.learn-row.solid .learn-mark { color: var(--ok-text); }
+.learn-row.learning .learn-mark { color: var(--accent-2); }
+.learn-name { font-weight: 600; min-width: 6em; }
+.learn-prog { flex: 1 1 80px; max-width: 160px; height: 6px; border-radius: 99px; background: var(--panel); overflow: hidden; }
+.learn-prog i { display: block; height: 100%; background: var(--ok); }
+#learnSection { min-width: 9em; }

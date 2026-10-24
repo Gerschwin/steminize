@@ -49,6 +49,7 @@ id, title, seconds, created, bytes, settings, stems[], analysis?, kind?, took?, 
   `tabAnchors`, `tabFollow`, `tabStaff`, `tabTrainer`, `tabEar`, `tabBarScores`), plus the parts: `tabPart` (which part the top-level
   tab fields belong to), `tabParts` (the other parts' tab fields, by part id), `extraParts` (added parts: `{ id, name }`),
   `partNames` (renames), `partTracks` (which track each part is linked to).
+- **`learn`** (the Learn drawer, new in 0.9.5): `size` (bars per chunk; 0 = the whole section), `target` (clean passes in a row to finish a chunk), `auto`, `advance`, `progress` (per chunk, keyed by its start and end in quarter seconds: `passes`, `streak`, `best`, `done`) and `solid` (sections marked solid by hand). Read with `readLearn` in `src/learn/learn.ts`, which repairs odd values.
 - Anything else is kept as it is.
 
 ### When each field first appeared
@@ -57,6 +58,7 @@ id, title, seconds, created, bytes, settings, stems[], analysis?, kind?, took?, 
 |---|---|
 | before 0.9.0 (v1.x numbering) | `kind`, `takeGroups`, `lyricsFollow`, `lyricsOffset`, `practiceSeconds`, `tabAnchors`, `tabFollow`, `tabStaff`, `tabTrainer`, `tabEar`; a separate drum grid text box (`scratch.drums`) |
 | 0.9.3 | `tabBarScores` |
+| 0.9.5 | `state.learn` |
 | 0.9.4 | `tabPart`, `tabParts`, `extraParts`, `partNames`, `partTracks` (the old single tab and the old `drums` box are moved into parts when a song is opened), `lyricsChords`, `tx.strip`, `tx.simple`, `tx.stripZoom`, `tx.shapes`, `tx.capo` |
 
 ## The rules (what keeps old and new songs working)

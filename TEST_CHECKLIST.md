@@ -85,6 +85,15 @@ E|-0---0---0---0---|
 - [ ] A song with no detected tempo says so in the dialog and the README.
 - [ ] Note which programs you tried and anything that did not open (Reaper is the one with a real project file; the rest rely on the audio and the MIDI tempo map).
 
+## 0i. Learn drawer (NEW)
+- [ ] Open a song with a detected tempo, add two or three section markers (M), open **Learn**. The section list shows each marker as a section (a "Start" section if there is time before the first marker), with ○ New. Pick **2 bars**: **Chunk 1 of N · bars 1–2** etc. The chunks start on bar lines and cover the section.
+- [ ] **Loop this chunk**: the loop is set to the chunk and plays; each time round the loop **plays** goes up by one. With the loop moved by hand (so it is no longer that chunk) the hint says to press Loop this chunk again and plays are not counted.
+- [ ] **Nailed it** (or `N`) adds to the streak; **Missed** (`X`) takes it back to 0 but keeps the best run. Set the target to 3: the third clean pass says "Done", ticks the chunk and (with Move on ticked) moves to the next chunk and keeps looping.
+- [ ] **◀ ▶** (`,` `.`) move between chunks and across sections; **Stitch next chunk** makes the loop two chunks long (and Unstitch undoes it); a stitched stretch keeps its own streak.
+- [ ] With the tab Trainer on (Scratchpad, Live input monitoring, a tapped tab) and "Let the tab Trainer judge each pass" ticked: play a loop of the tab well and the streak goes up by itself; play it badly and it resets; the Nailed it / Missed buttons stand aside.
+- [ ] The checklist shows New, Learning (◐) and Solid (✓) with progress bars; **Mark solid** and **Reset** work. Close and reopen the song: progress, chunk size and target are still there. Moving a marker rebuilds the chunks without errors.
+- [ ] A song with no detected tempo still works (a bar is taken as 2 seconds).
+
 ## 1. Install, launch and About
 
 - [ ] The installer for your platform installs and the app opens (note the OS and version).

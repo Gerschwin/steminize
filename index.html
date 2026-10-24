@@ -348,6 +348,7 @@
             <div class="drawer">
               <div class="drawer-tabs">
                 <button class="dtab" type="button" data-tab="practice" aria-expanded="false"><span class="chev">▸</span> Practice <span class="dsum" id="sumPractice"></span></button>
+                <button class="dtab" type="button" data-tab="learn" aria-expanded="false"><span class="chev">▸</span> Learn <span class="dsum" id="sumLearn"></span></button>
                 <button class="dtab" type="button" data-tab="beat" aria-expanded="false"><span class="chev">▸</span> Tempo &amp; key <span class="dsum" id="sumBeat"></span></button>
                 <button class="dtab" type="button" id="liveTab" data-tab="live" aria-expanded="false" hidden><span class="chev">▸</span> Live input <span class="dsum" id="sumLive"></span></button>
                 <button class="dtab" type="button" data-tab="tuner" aria-expanded="false"><span class="chev">▸</span> Tuner <span class="dsum" id="sumTuner"></span></button>
@@ -375,6 +376,40 @@
                   <button class="btn tiny toggle needs-beats" id="countInBtn" aria-pressed="false" title="One bar of clicks before each loop pass and before playing">Count-in</button>
                   <button class="btn tiny toggle needs-beats" id="clickBtn" aria-pressed="false" title="Metronome click on the beat">Click</button>
                   <input type="range" id="clickVol" min="0.05" max="1" step="0.05" value="0.5" title="Click volume" class="needs-beats" />
+                </div>
+              </div>
+              <div class="dpane" data-pane="learn" id="learnPane" hidden>
+                <p class="muted small" id="learnEmpty" hidden>Add a section marker (M) or open a song with a detected tempo, then work through it one chunk at a time.</p>
+                <div id="learnBody">
+                  <div class="tool learn-pick">
+                    <label>Section <select id="learnSection" title="The part of the song to work on: your section markers"></select></label>
+                    <label>Chunk <select id="learnSize" title="How much to practise at a time">
+                      <option value="1">1 bar</option><option value="2">2 bars</option><option value="4">4 bars</option><option value="0">Whole section</option>
+                    </select></label>
+                    <span class="learn-nav">
+                      <button class="btn tiny ghost" type="button" id="learnPrev" title="Previous chunk (,)" aria-label="Previous chunk">◀</button>
+                      <span id="learnWhere" role="status"></span>
+                      <button class="btn tiny ghost" type="button" id="learnNext" title="Next chunk (.)" aria-label="Next chunk">▶</button>
+                    </span>
+                    <button class="btn tiny" type="button" id="learnLoop" title="Loop this chunk and start playing, so your passes are counted">Loop this chunk</button>
+                    <button class="btn tiny ghost" type="button" id="learnStitch" title="Add the next chunk to this loop: joining the pieces back together">Stitch next chunk</button>
+                    <button class="btn tiny ghost" type="button" id="learnUnstitch" title="Take the last stitched chunk off again">Unstitch</button>
+                  </div>
+                  <div class="tool learn-streak">
+                    <div class="streak-count" aria-live="polite"><b id="learnStreak">0</b> <span id="learnOf"></span></div>
+                    <div class="learn-bar" aria-hidden="true"><i id="learnBar"></i></div>
+                    <span class="muted small" id="learnStats"></span>
+                    <button class="btn tiny" type="button" id="learnNailed" title="That pass was clean (N)">Nailed it</button>
+                    <button class="btn tiny ghost" type="button" id="learnMissed" title="Start the run again (X)">Missed</button>
+                    <button class="btn tiny ghost" type="button" id="learnResetChunk" title="Forget the progress on this chunk">Reset chunk</button>
+                  </div>
+                  <p class="muted small" id="learnHint"></p>
+                  <div class="tool learn-opts">
+                    <label>Clean passes in a row to finish a chunk <input type="number" id="learnTarget" min="1" max="200" step="1" value="20" /></label>
+                    <label id="learnAutoWrap"><input type="checkbox" id="learnAuto" /> Let the tab Trainer judge each pass</label>
+                    <label><input type="checkbox" id="learnAdvance" /> Move on to the next chunk by itself</label>
+                  </div>
+                  <div class="learn-list" id="learnList"></div>
                 </div>
               </div>
               <div class="dpane" data-pane="beat" hidden>
@@ -760,6 +795,9 @@
           <div class="kb-row"><kbd>[</kbd><span>Set loop point A at the playhead (turns loop on)</span></div>
           <div class="kb-row"><kbd>]</kbd><span>Set loop point B at the playhead (turns loop on)</span></div>
           <div class="kb-row"><kbd>M</kbd><span>Add a section marker at the playhead</span></div>
+          <div class="kb-row"><kbd>N</kbd><span>Learn: that pass was clean (while the Learn drawer is open)</span></div>
+          <div class="kb-row"><kbd>X</kbd><span>Learn: missed, start the run again</span></div>
+          <div class="kb-row"><kbd>,</kbd> <kbd>.</kbd><span>Learn: previous / next chunk</span></div>
           <div class="kb-row"><kbd>F</kbd><span>Freeze (Notes view): hold the sound at the playhead</span></div>
         </div>
       </div>

@@ -43,6 +43,7 @@ import { QUALITIES } from '../src/analysis/chords.ts';
 import { segmentsFor, snapToWord, sungSeconds } from '../src/lyrics/lyricChords.ts';
 import { modelNote } from '../src/models.ts';
 import { dawprojectAudioPath, dawprojectMetadata, dawprojectXml } from '../src/export/dawproject.ts';
+import { DEFAULT_LEARN, addClean, addMiss, addPass, barStarts, chunksOf, firstUnfinished, newProgress, readLearn, sameSpan, sectionStatus, sectionsFromMarkers, spanKey, stitch } from '../src/learn/learn.ts';
 import { ardourColour, ardourSession, ardourSessionName } from '../src/export/ardour.ts';
 import { barAlignment, beatTempos, dawReadme, guid, markersCsv, reaperColour, reaperProject, tempoMapFile, type DawProject } from '../src/export/daw.ts';
 import { ZOOM_KEY, ZOOM_STEPS, loadZoom, nearestZoom, saveZoom, stepZoom, zoomLabel } from '../src/textSize.ts';
@@ -1573,6 +1574,52 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('dawproject: markers and the loop\'s ends are markers, in time order, with names escaped', /<Marker time="3.2" name="Loop start"\/>/.test(xml) && /name="Verse &lt;1&gt;"/.test(xml) && xml.indexOf('Loop start') > 0 && /<Marker time="7.2" name="Chorus"\/>/.test(xml));
   ok('dawproject: names and titles with quotes and ampersands cannot break the XML', /name="Bass &quot;low&quot;"/.test(xml) && dawprojectMetadata(proj).includes('<Title>My Song &amp; more</Title>'));
   ok('dawproject: a song with no tempo gets a plain 120 BPM', /unit="bpm" value="120"/.test(dawprojectXml({ ...proj, bpm: 0 })));
+}
+
+
+{
+  // Learn mode: sections, chunks, the clean-pass streak and saved progress.
+  const sr = 44100;
+  const secs = sectionsFromMarkers([{ name: 'Verse', pos: 10 * sr }, { name: 'Chorus', pos: 30 * sr }], 50 * sr, sr);
+  ok('learn: markers make sections that run to the next marker and the end, with a Start section before the first', secs.map((s) => s.name).join() === 'Start,Verse,Chorus' && secs[0].b === 10 * sr && secs[2].b === 50 * sr);
+  ok('learn: a first marker near the very start has no Start section, and no markers is one whole-song section', sectionsFromMarkers([{ name: 'A', pos: sr }], 20 * sr, sr).map((s) => s.name).join() === 'A' && sectionsFromMarkers([], 20 * sr, sr).map((s) => s.name).join() === 'Whole song');
+  const beats = Array.from({ length: 80 }, (_, i) => 1 + i * 0.5); // 120 BPM, first bar at 1.0 s
+  const bars = barStarts(beats, 0, 4, sr);
+  ok('learn: bar starts come from the beat grid, every perBar beats from the first bar', bars.length === 20 && bars[0] === sr && bars[1] === 3 * sr && barStarts(beats, 2, 4, sr)[0] === 2 * sr && barStarts([], 0, 4, sr).length === 0);
+  const sec = { name: 'Verse', a: 1 * sr, b: 17 * sr }; // 8 bars of 2 s
+  const two = chunksOf(sec, 2, bars, sr);
+  ok('learn: a section of 8 bars in 2-bar chunks is 4 chunks that start on bar lines and cover it exactly', two.length === 4 && two[0].a === sec.a && two[3].b === sec.b && two.every((c, i) => i === 0 || c.a === two[i - 1].b) && two[1].a === 5 * sr);
+  ok('learn: chunk sizes of 1 bar and 4 bars, and 0 for the whole section', chunksOf(sec, 1, bars, sr).length === 8 && chunksOf(sec, 4, bars, sr).length === 2 && chunksOf(sec, 0, bars, sr).length === 1);
+  const odd = chunksOf({ name: 'Odd', a: sr, b: 15 * sr }, 2, bars, sr); // 7 bars: 2,2,2 and a 1-bar leftover (exactly half a chunk, kept)
+  const odd2 = chunksOf({ name: 'Odd', a: sr, b: 13 * sr }, 4, bars, sr); // 6 bars: 4 and a 2-bar leftover (exactly half)
+  const sliver = chunksOf({ name: 'S', a: sr, b: 20 * sr - sr * 1.2 }, 4, bars, sr);
+  ok('learn: a leftover under half a chunk joins the chunk before it, and the chunks still cover the section', odd.length === 4 && odd2.length === 2 && sliver.every((c) => c.b > c.a) && sliver[sliver.length - 1].b === 20 * sr - sr * 1.2 - 0);
+  const noGrid = chunksOf({ name: 'N', a: 0, b: 10 * sr }, 2, [], sr);
+  ok('learn: with no tempo a bar is taken as 2 seconds, so 2-bar chunks are 4 seconds', noGrid.length === 3 && noGrid[0].b === 4 * sr && noGrid[2].b === 10 * sr);
+  ok('learn: stitching joins chunks into one stretch, in either order', stitch(two, 0, 1).b === two[1].b && stitch(two, 2, 1).a === two[1].a && stitch(two, 0, 99).b === two[3].b);
+  ok('learn: a stretch has a steady key and loops a few samples off are the same stretch', spanKey(two[0], sr) === spanKey({ a: two[0].a + 40, b: two[0].b - 30 }, sr) && sameSpan(two[0], { a: two[0].a + 40, b: two[0].b - 30 }, sr) && !sameSpan(two[0], two[1], sr));
+
+  let p = newProgress();
+  p = addPass(p); p = addPass(p);
+  const r1 = addClean(p, 3);
+  const r2 = addClean(r1.progress, 3);
+  const r3 = addClean(r2.progress, 3);
+  ok('learn: clean passes in a row build a streak and the chunk is done exactly when the target is reached', r1.progress.streak === 1 && !r1.reached && r2.progress.streak === 2 && !r2.progress.done && r3.progress.done && r3.reached && r3.progress.passes === 2);
+  const miss = addMiss(r2.progress);
+  ok('learn: a miss starts the run again but keeps the best and the passes', miss.streak === 0 && miss.best === 2 && addClean(miss, 3).progress.streak === 1);
+  const after = addClean(r3.progress, 3);
+  ok('learn: going past the target does not finish it a second time, and a done chunk stays done after a miss', !after.reached && addMiss(after.progress).done === true);
+  const prog: Record<string, ReturnType<typeof newProgress>> = {};
+  ok('learn: a section is new until something is played, learning while chunks are unfinished, solid when all are done', sectionStatus(two, prog, sr) === 'new');
+  prog[spanKey(two[0], sr)] = { passes: 3, streak: 1, best: 1, done: false };
+  ok('learn: one played chunk makes the section learning', sectionStatus(two, prog, sr) === 'learning');
+  for (const c of two) prog[spanKey(c, sr)] = { passes: 20, streak: 20, best: 20, done: true };
+  ok('learn: all chunks done is solid, and marking it solid by hand does too', sectionStatus(two, prog, sr) === 'solid' && sectionStatus(two, {}, sr, true) === 'solid');
+  prog[spanKey(two[1], sr)].done = false;
+  ok('learn: the first chunk not done is where to carry on, or the start if all are done', firstUnfinished(two, prog, sr) === 1 && firstUnfinished(two, {}, sr) === 0);
+  const rl = readLearn({ size: 4, target: 9999, auto: false, advance: 'no', progress: { a: { passes: 'x', streak: 2, best: 5, done: true }, b: 7 }, solid: { k: true, j: 1 } });
+  ok('learn: saved state is read tolerantly: odd values are repaired, junk entries dropped', rl.size === 4 && rl.target === 200 && rl.auto === false && rl.advance === true && rl.progress.a.passes === 0 && rl.progress.a.done === true && !('b' in rl.progress) && rl.solid.k === true && !('j' in rl.solid));
+  ok('learn: no saved state, or nonsense, gives the defaults', JSON.stringify(readLearn(undefined)) === JSON.stringify(DEFAULT_LEARN) && JSON.stringify(readLearn('junk')) === JSON.stringify(DEFAULT_LEARN) && readLearn({ size: 7 }).size === DEFAULT_LEARN.size);
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

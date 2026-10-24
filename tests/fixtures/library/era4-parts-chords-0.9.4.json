@@ -187,6 +187,21 @@
     "bass": "bass",
     "drums": "drums"
    }
+  },
+  "learn": {
+   "size": 2,
+   "target": 20,
+   "auto": true,
+   "advance": true,
+   "progress": {
+    "4-20": {
+     "passes": 24,
+     "streak": 20,
+     "best": 20,
+     "done": true
+    }
+   },
+   "solid": {}
   }
  }
 }

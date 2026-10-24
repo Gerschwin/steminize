@@ -9,6 +9,8 @@ import { gateStep, type Trainer } from '../player/transport.ts';
 import { extensionFor, mimeFor } from '../encode/meta.ts';
 import { stemColour, MODELS } from '../models.ts';
 import { openSink, safeName, saveFile } from '../platform.ts';
+import { barStarts, type LearnState } from '../learn/learn.ts';
+import { LearnPanel } from './learnPanel.ts';
 import { ardourSession } from '../export/ardour.ts';
 import { dawprojectAudioPath, dawprojectMetadata, dawprojectXml } from '../export/dawproject.ts';
 import { zipSync } from 'fflate';
@@ -130,6 +132,8 @@ export interface DeckState {
   tx?: TxState;
   /** Lyrics, tab, drum tab and free notes, per song. */
   scratch?: ScratchState;
+  /** Learn drawer: which chunks have been practised, and how well. */
+  learn?: LearnState;
   /** Practice log: cumulative seconds this song has actually spent playing (not just open), and
    * when it was last played. Both persist alongside the rest of the song's saved state. */
   practiceSeconds?: number;
@@ -495,6 +499,9 @@ export class Deck {
    * speed, and a line about the last pass for the Practice pane. */
   private trainerClean = 0;
   private gateStatus = '';
+  /** The Learn drawer, and the loop-pass count it was last told about. */
+  private learn!: LearnPanel;
+  private lastLearnPasses = 0;
   private scratchAreas!: { lyrics: HTMLTextAreaElement; tab: HTMLTextAreaElement; drums: HTMLTextAreaElement; notes: HTMLTextAreaElement };
   // ---- a live recording being drawn in as its own track while it's captured ----
   private recordLane: Lane | null = null;
@@ -520,6 +527,8 @@ export class Deck {
         this.showTempoPitch();
         this.emit();
       }
+      if (s.passes > this.lastLearnPasses) this.learn.onPass();
+      this.lastLearnPasses = s.passes;
       this.updateTrainerInfo(s.passes, s.countingIn);
       this.updateEarHide();
       this.dirty = true;
@@ -634,6 +643,25 @@ export class Deck {
       },
     };
     this.tx = new Transcribe(host);
+    this.learn = new LearnPanel({
+      sr: SR,
+      length: () => this.length,
+      markers: () => this.markers,
+      bars: () => {
+        const a = this.r?.analysis;
+        return a ? barStarts(a.beats, this.downbeat(), this.pr.perBar, SR) : [];
+      },
+      loop: () => this.loop,
+      playLoop: (a, b) => {
+        this.loop.a = a;
+        this.loop.b = b;
+        this.setLoop(true);
+        this.player.seek(a);
+        if (!this.player.state.playing) void this.player.play();
+      },
+      trainerJudging: () => !!this.scratch.tabTrainer && !$('tabStrip').hidden && this.player.monitoring,
+      changed: () => this.emit(),
+    });
     new ResizeObserver(() => this.invalidateLayers()).observe($('deck'));
     const frame = () => {
       if (this.r && this.tx.stripShown) this.tx.drawStrip(); // the chord timeline moves every screen frame, like the tab strip
@@ -1208,6 +1236,7 @@ export class Deck {
     this.renderMarkers();
     this.setView(0, this.length);
     this.setAnalysis(r.analysis);
+    this.learn.open(state?.learn);
     this.tx.open(r, state?.tx);
     this.applyScratch(state?.scratch);
     this.invalidateLayers();
@@ -1244,6 +1273,7 @@ export class Deck {
       tempo: this.tempo,
       pitch: this.pitch,
       practice: structuredClone({ ...this.pr, trainer: { ...this.pr.trainer, on: false } }),
+      learn: structuredClone(this.learn.getState()),
       markers: this.markers.map((m) => ({ ...m })),
       tx: this.tx.getState(),
       scratch: { ...this.scratch },
@@ -1287,6 +1317,7 @@ export class Deck {
   setAnalysis(a?: Analysis) {
     if (this.r) this.r.analysis = a;
     $('deck').classList.toggle('no-beats', !a?.beats.length);
+    this.learn?.refresh();
     this.updateBpmInfo();
     this.sendPractice();
     this.invalidateLayers();
@@ -1890,9 +1921,13 @@ export class Deck {
    * the note still being judged as finished, since the jump back is what ends it. */
   private finishTrainerPass() {
     const t = this.pr.trainer;
-    if (!t.on || !t.gate) return;
+    const forLearn = this.learn.wantsJudging();
+    if ((!t.on || !t.gate) && !forLearn) return;
     if (this.trainerGroupStart !== null) this.tallyGroup(this.trainerGroupHit);
     this.commitBar(this.barTally.flush());
+    // The Learn drawer's clean-pass streak is judged from the same tally, whether or not the speed trainer is gated.
+    if (forLearn && this.trainerTotal > 0) this.learn.onJudged(this.trainerHit / this.trainerTotal, t.gate || 0.9);
+    if (!t.on || !t.gate) return;
     const res = gateStep(this.trainerClean, this.trainerHit, this.trainerTotal, t.gate, t.every);
     this.trainerClean = res.clean;
     const pct = this.trainerTotal ? Math.round((100 * this.trainerHit) / this.trainerTotal) : null;
@@ -3692,6 +3727,7 @@ export class Deck {
   }
 
   private markersChanged() {
+    this.learn?.refresh();
     this.renderMarkers();
     this.invalidateLayers();
     this.emit();
@@ -3885,6 +3921,7 @@ export class Deck {
     $('toStartBtn').title = toStart;
     $('toStartBtn').setAttribute('aria-label', toStart);
     $('clearLoop').hidden = !(this.loop.b > this.loop.a);
+    this.learn?.loopChanged();
     $('loopInfo').textContent =
       this.loop.b > this.loop.a
         ? `${fmtTime(this.loop.a / SR)} – ${fmtTime(this.loop.b / SR)}${this.loop.on ? '' : ' (off)'}`
@@ -4020,6 +4057,10 @@ export class Deck {
       else if (e.code === 'Space' || k === 'PageDown' || k === 'MediaPlayPause' || (this.pedal && ['ArrowRight', 'ArrowDown', 'Enter'].includes(k))) this.toggle();
       else if (k === 'PageUp' || k === 'Home' || (this.pedal && ['ArrowLeft', 'ArrowUp'].includes(k))) this.restart();
       else if (k === 'm' || k === 'M') this.addMarker();
+      else if (this.learn.isOpen() && (k === 'n' || k === 'N')) this.learn.nailed();
+      else if (this.learn.isOpen() && (k === 'x' || k === 'X')) this.learn.missed();
+      else if (this.learn.isOpen() && k === ',') this.learn.prev();
+      else if (this.learn.isOpen() && k === '.') this.learn.next();
       else if (e.shiftKey && (k === '+' || k === '=')) this.resizeLanes(20);
       else if (e.shiftKey && (k === '-' || k === '_')) this.resizeLanes(-20);
       else if (k === '+' || k === '=') this.zoom(2);
