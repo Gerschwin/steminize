@@ -127,6 +127,10 @@ export function initNativeAudio(player: Player) {
       const pick = list.find((d) => d.recommended) ?? list.find((d) => d.is_default);
       if (pick) dd.value = pick.name;
     }
+    // With JACK the input choice already names one channel of the interface (capture_AUX0, capture_AUX1), so this has no say.
+    const jack = host.startsWith('JACK');
+    chanSel.disabled = jack;
+    chanSel.title = jack ? 'Not used with JACK: pick the input port itself (for example capture_AUX1 is the second input)' : 'Input channel';
     showRoute();
   };
 
