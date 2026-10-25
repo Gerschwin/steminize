@@ -1829,7 +1829,8 @@ export class Deck {
             : '';
       } catch (e) {
         status.textContent = "Couldn't start.";
-        toast(`Live input: ${(e as Error).message}`, true);
+        // The native engine rejects with a plain string, not an Error.
+        toast(`Live input: ${e instanceof Error ? e.message : String(e)}`, true);
       } finally {
         btn.disabled = false;
       }
