@@ -947,6 +947,50 @@ mod tests {
         assert!(best.0.abs() < 132, "take is {:.1} ms off the song", best.0 as f64 / 44.1);
     }
 
+    /// The monitor through JACK end to end, with nothing but a test tone: a second JACK client plays a sine into the engine's input, the
+    /// monitor is on, and the same client listens to the engine's output. Checks the tone arrives at the right level and counts how many
+    /// frames after it started it was heard (the engine itself adds none, so this is the other client's own cycle).
+    ///   pw-jack cargo test jack_monitor_passes_audio -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn jack_monitor_passes_audio() {
+        start_engine(Box::new(|_| {}), Box::new(|_| {}), crate::native_jack::JACK_HOST.into(), String::new(), 0, false, 0).expect("start");
+        input_start_blocking(String::new(), 0, 0, false).expect("input");
+        native_input_set(true, 1.0, 1.0).expect("monitor on"); // hard right, so the right output carries the whole tone
+        let (c, _) = jack::Client::new("tester", jack::ClientOptions::NO_START_SERVER).expect("test client");
+        let mut tone = c.register_port("tone", jack::AudioOut::default()).unwrap();
+        let cap = c.register_port("cap", jack::AudioIn::default()).unwrap();
+        let heard = Arc::new(Mutex::new(Vec::<f32>::new()));
+        let h2 = heard.clone();
+        let mut phase = 0.0f32;
+        let rate = c.sample_rate() as f32;
+        let handler = jack::contrib::ClosureProcessHandler::new(move |_: &jack::Client, ps: &jack::ProcessScope| {
+            for v in tone.as_mut_slice(ps) {
+                *v = 0.5 * phase.sin();
+                phase += 2.0 * std::f32::consts::PI * 440.0 / rate;
+            }
+            h2.lock().unwrap().extend_from_slice(cap.as_slice(ps));
+            jack::Control::Continue
+        });
+        let ac = c.activate_async((), handler).expect("activate");
+        let cl = ac.as_client();
+        for mine in ["Steminize:in", "Steminize:out_l", "Steminize:out_r"] {
+            if let Some(port) = cl.port_by_name(mine) {
+                let _ = cl.disconnect(&port);
+            }
+        }
+        cl.connect_ports_by_name("tester:tone", "Steminize:in").expect("tone in");
+        cl.connect_ports_by_name("Steminize:out_r", "tester:cap").expect("listen");
+        std::thread::sleep(Duration::from_millis(1500));
+        let got = heard.lock().unwrap().clone();
+        let tail = &got[got.len().saturating_sub(24000)..];
+        let peak = tail.iter().fold(0f32, |m, v| m.max(v.abs()));
+        println!("monitor: peak {peak:.3} after {} frames", got.len());
+        drop(ac);
+        stop_engine();
+        assert!((peak - 0.5).abs() < 0.05, "the tone should come through at its own level (0.5), got {peak}");
+    }
+
     /// Prints the round trip JACK reports for the real sound card (the first capture port and the first two playback ports). Run under
     /// `pw-jack`, optionally with PIPEWIRE_QUANTUM=128/48000 to ask for a smaller period.
     #[test]
