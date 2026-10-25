@@ -56,15 +56,31 @@ pub fn create(
                     }
                 }
             }
+            // A folder chosen in the chooser is loaded straight away.
+            let picked = shared.picked.lock().ok().and_then(|mut p| p.take());
+            if let Some(folder) = picked {
+                let path = folder.to_string_lossy().into_owned();
+                if let Ok(mut saved) = params.song_path.write() {
+                    *saved = path.clone();
+                }
+                ui_state.path = path;
+                crate::spawn_load(&shared, folder, true);
+            }
             egui::CentralPanel::default().show(ctx, |ui| {
                 ui.heading("Steminize Player");
                 ui.add_space(6.0);
 
                 ui.horizontal(|ui| {
                     ui.label("Song folder");
-                    let width = ui.available_width() - 70.0;
+                    let width = ui.available_width() - 150.0;
                     ui.add(egui::TextEdit::singleline(&mut ui_state.path).desired_width(width).hint_text("the folder Send to DAW wrote"));
                     let busy = shared.loading.load(Ordering::Acquire);
+                    let choosing = shared.choosing.load(Ordering::Acquire);
+                    if ui.add_enabled(!busy && !choosing, egui::Button::new("Browse…")).on_hover_text("Choose the folder with the file manager").clicked() {
+                        let start = PathBuf::from(ui_state.path.trim());
+                        let start = if start.is_dir() { Some(start) } else { start.parent().map(|p| p.to_path_buf()) };
+                        crate::choose_folder(&shared, start);
+                    }
                     if ui.add_enabled(!busy && !ui_state.path.trim().is_empty(), egui::Button::new("Load")).clicked() {
                         let path = ui_state.path.trim().to_string();
                         if let Ok(mut saved) = params.song_path.write() {

@@ -128,6 +128,9 @@ pub struct Shared {
     pub loading: AtomicBool,
     /// Set when a song has just been loaded from the window, so the window applies the song's mute and solo.
     pub apply_song_mix: AtomicBool,
+    /// The folder chosen in the folder chooser, waiting for the window to take it; and whether the chooser is open.
+    pub picked: Mutex<Option<PathBuf>>,
+    pub choosing: AtomicBool,
 }
 
 impl Shared {
@@ -141,6 +144,8 @@ impl Shared {
             status: Mutex::new(String::new()),
             loading: AtomicBool::new(false),
             apply_song_mix: AtomicBool::new(false),
+            picked: Mutex::new(None),
+            choosing: AtomicBool::new(false),
         }
     }
 }
@@ -169,6 +174,27 @@ pub fn spawn_load(shared: &Arc<Shared>, path: PathBuf, from_window: bool) {
             }
         }
         shared.loading.store(false, Ordering::Release);
+    });
+}
+
+/// Opens the system's folder chooser on its own thread (a dialog must never hold up the window or the audio) and leaves the folder chosen,
+/// if any, in `picked`. `start` is where it opens.
+pub fn choose_folder(shared: &Arc<Shared>, start: Option<PathBuf>) {
+    if shared.choosing.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    let shared = shared.clone();
+    std::thread::spawn(move || {
+        let mut dialog = rfd::FileDialog::new().set_title("Choose the folder Send to DAW wrote");
+        if let Some(dir) = start.filter(|d| d.is_dir()) {
+            dialog = dialog.set_directory(dir);
+        }
+        if let Some(folder) = dialog.pick_folder() {
+            if let Ok(mut p) = shared.picked.lock() {
+                *p = Some(folder);
+            }
+        }
+        shared.choosing.store(false, Ordering::Release);
     });
 }
 

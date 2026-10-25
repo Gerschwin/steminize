@@ -14,7 +14,7 @@ the mix and each stem on its own output, and has a window to choose the song and
   tempo skips the stretcher and plays untouched. The **Follow tempo** switch turns this off (the song then plays at its own speed from the
   DAW's clock). The stretcher's delay (about 120 ms) is cancelled by feeding it that far ahead, so the plugin reports **no latency** and
   monitoring is not delayed.
-- **A window.** Paste the folder Send to DAW wrote and press **Load**; the window then shows the song's title, its tempo against the DAW's
+- **A window.** Press **Browse…** and choose the folder Send to DAW wrote (the system's own folder chooser; it loads at once), or paste the path and press **Load**; the window then shows the song's title, its tempo against the DAW's
   (and whether it is playing straight, following the DAW at some speed, or stopped), the Master, Offset, Key shift and Follow tempo
   controls, and a row per stem with its Steminize colour, name, level, **M**ute, **S**olo and which output it is on. A song loaded from the
   window starts with the mute and solo it had in Steminize (**Use the mute and solo from Steminize** puts them back). The folder is saved
@@ -64,7 +64,7 @@ packages (see `.github/workflows/plugin.yml` for the list).
 ## Not yet (in the order I would do them)
 1. **A window**: choose the song, see the stems with their names and faders, the host tempo against the song's, and apply Steminize's
    mute / solo settings (the song file records them; the plugin does not apply them yet, so every stem starts unmuted).
-2. A folder chooser button in the window (today you paste the path), a level meter per stem.
+2. A level meter per stem.
 3. Markers as a list to jump to, and awareness of the DAW's loop.
 4. CLAP as well as VST3, Windows and macOS builds in CI, an installer.
 5. Loading a song straight from the Steminize app's library.
