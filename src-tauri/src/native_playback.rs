@@ -386,11 +386,12 @@ enum Backend {
 }
 
 /// Starts the one JACK client that plays and listens.
-fn jack_setup(rx: Receiver<Cmd>, shared: Arc<Shared>, buffer: u32) -> Result<(Backend, String, u32, Arc<InputShared>), String> {
+fn jack_setup(rx: Receiver<Cmd>, shared: Arc<Shared>, output: &str, buffer: u32) -> Result<(Backend, String, u32, Arc<InputShared>), String> {
     // The input's own state is made once the rate is known; it is told the stream is shared, so nothing queues.
     let input_cell: Arc<Mutex<Option<Arc<InputShared>>>> = Arc::new(Mutex::new(None));
     let cell = input_cell.clone();
     let run = crate::native_jack::start(
+        output,
         buffer,
         move |hz| {
             let input = Arc::new(InputShared::new(hz));
@@ -468,7 +469,7 @@ fn start_engine(report: Box<dyn Fn(StateReport) + Send>, on_failure: Box<dyn Fn(
     let thread = std::thread::spawn(move || {
         let setup = || -> Result<(Backend, String, u32, Arc<InputShared>), String> {
             if host == crate::native_jack::JACK_HOST {
-                return jack_setup(rx, shared.clone(), if fixed { buffer } else { 0 });
+                return jack_setup(rx, shared.clone(), &output, if fixed { buffer } else { 0 });
             }
             let host = crate::native_audio::host_by_name(&host)?;
             let dev = crate::native_audio::find_device(&host, &output, false)?;
@@ -952,8 +953,8 @@ mod tests {
     #[ignore]
     fn jack_reports_latency() {
         println!("JACK devices: {:?}", crate::native_jack::devices());
-        println!("{}", start_engine(Box::new(|_| {}), Box::new(|_| {}), crate::native_jack::JACK_HOST.into(), String::new(), 0, false, 0).expect("start"));
-        println!("{}", input_start_blocking(String::new(), 0, 0, false).expect("input"));
+        println!("{}", start_engine(Box::new(|_| {}), Box::new(|_| {}), crate::native_jack::JACK_HOST.into(), std::env::var("NA_JACK_OUT").unwrap_or_default(), 0, false, 0).expect("start"));
+        println!("{}", input_start_blocking(std::env::var("NA_JACK_IN").unwrap_or_default(), 0, 0, false).expect("input"));
         std::thread::sleep(Duration::from_millis(500));
         println!("JACK reports {:.2} ms round trip for the card", crate::native_jack::reported_ms());
         stop_engine();

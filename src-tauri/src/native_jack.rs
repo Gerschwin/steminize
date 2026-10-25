@@ -17,22 +17,39 @@ use crate::native_playback::Engine;
 
 /// The name this audio system has in the list of hosts.
 pub const JACK_HOST: &str = "JACK (one stream)";
-pub const JACK_OUTPUT: &str = "JACK system playback";
 
 fn open_client(name: &str) -> Result<Client, String> {
     Client::new(name, ClientOptions::NO_START_SERVER).map(|(c, _)| c).map_err(|e| format!("No JACK server to talk to ({e}). Start jackd, or on PipeWire make sure its JACK support is installed (the pipewire-jack package)."))
 }
 
-/// What the device list shows for JACK: the system's capture ports as inputs (named as JACK names them) and one output.
-/// Empty when there is no JACK server, or libjack is not installed.
+const AUDIO: &str = "32 bit float mono audio";
+
+/// The part of a port's name before the colon: the device or program that owns it.
+fn owner(port: &str) -> &str {
+    port.split(':').next().unwrap_or(port)
+}
+
+/// Orders a device's ports left to right by the channel name at the end (FL, FR / AUX0, AUX1 / 1, 2).
+fn by_channel(ports: &mut [String]) {
+    ports.sort_by_key(|p| p.rsplit(|c| c == '_' || c == ':').next().unwrap_or("").to_string());
+}
+
+/// What the device list shows for JACK: each capture port as an input (named as JACK names it) and each owner of playback ports as an
+/// output. Empty when there is no JACK server, or libjack is not installed.
 pub fn devices() -> Vec<(String, bool, u32, u32)> {
     let Ok(client) = open_client("Steminize-scan") else {
         return Vec::new();
     };
     let rate = client.sample_rate() as u32;
     let buffer = client.buffer_size();
-    let mut out = vec![(JACK_OUTPUT.to_string(), false, rate, buffer)];
-    for p in client.ports(None, Some("32 bit float mono audio"), PortFlags::IS_PHYSICAL | PortFlags::IS_OUTPUT) {
+    let mut out: Vec<(String, bool, u32, u32)> = Vec::new();
+    for p in client.ports(None, Some(AUDIO), PortFlags::IS_PHYSICAL | PortFlags::IS_INPUT) {
+        let o = owner(&p).to_string();
+        if !out.iter().any(|(n, input, _, _)| !*input && *n == o) {
+            out.push((o, false, rate, buffer));
+        }
+    }
+    for p in client.ports(None, Some(AUDIO), PortFlags::IS_PHYSICAL | PortFlags::IS_OUTPUT) {
         out.push((p, true, rate, buffer));
     }
     out
@@ -90,20 +107,35 @@ pub struct JackRun {
 }
 
 impl JackRun {
-    /// Connects the engine's outputs to the first two physical playback ports.
-    fn connect_outputs(&self) {
+    /// Connects the engine's outputs to the first two playback ports of `device` (a name from the output list; empty means the first
+    /// device there is). One port gets both sides.
+    fn connect_outputs(&self, device: &str) -> Result<(), String> {
         let c = self.client.as_client();
-        let playback = c.ports(None, Some("32 bit float mono audio"), PortFlags::IS_PHYSICAL | PortFlags::IS_INPUT);
-        for (mine, theirs) in ["Steminize:out_l", "Steminize:out_r"].iter().zip(playback.iter()) {
-            let _ = c.connect_ports_by_name(mine, theirs);
+        let all = c.ports(None, Some(AUDIO), PortFlags::IS_PHYSICAL | PortFlags::IS_INPUT);
+        let device = if device.is_empty() { all.first().map(|p| owner(p).to_string()).unwrap_or_default() } else { device.to_string() };
+        let mut ports: Vec<String> = all.into_iter().filter(|p| owner(p) == device).collect();
+        if ports.is_empty() {
+            return Err(format!("JACK has no playback device called {device}"));
         }
+        by_channel(&mut ports);
+        let (left, right) = (ports[0].clone(), ports.get(1).unwrap_or(&ports[0]).clone());
+        c.connect_ports_by_name("Steminize:out_l", &left).map_err(|e| format!("Couldn't connect to {left}: {e}"))?;
+        c.connect_ports_by_name("Steminize:out_r", &right).map_err(|e| format!("Couldn't connect to {right}: {e}"))?;
+        Ok(())
     }
 
     /// Connects the instrument input to a capture port (by JACK's name for it; empty means the first one). Returns a description.
     pub fn connect_input(&self, port: &str) -> Result<String, String> {
         let c = self.client.as_client();
-        let capture = c.ports(None, Some("32 bit float mono audio"), PortFlags::IS_PHYSICAL | PortFlags::IS_OUTPUT);
-        let chosen = if port.is_empty() { capture.first().cloned() } else { Some(port.to_string()) }.ok_or("JACK has no capture ports")?;
+        let capture = c.ports(None, Some(AUDIO), PortFlags::IS_PHYSICAL | PortFlags::IS_OUTPUT);
+        // The name may be one JACK knows, or a device name left over from another audio system: take the capture port that contains it.
+        let wanted = port.to_lowercase();
+        let chosen = if port.is_empty() {
+            capture.first().cloned()
+        } else {
+            capture.iter().find(|p| p.as_str() == port).or_else(|| capture.iter().find(|p| p.to_lowercase().contains(&wanted))).cloned()
+        };
+        let chosen = chosen.ok_or_else(|| format!("JACK has no input called {port}. Its inputs are: {}", capture.join(", ")))?;
         // Only one instrument at a time.
         if let Some(mine) = c.port_by_name("Steminize:in") {
             let _ = c.disconnect(&mine);
@@ -134,7 +166,7 @@ impl JackRun {
 }
 
 /// Opens the JACK client and starts it running `engine`'s audio. The engine is built by `make` for JACK's sample rate.
-pub fn start(buffer: u32, make: impl FnOnce(u32) -> Engine, on_failure: Box<dyn Fn(String) + Send + Sync>) -> Result<JackRun, String> {
+pub fn start(output: &str, buffer: u32, make: impl FnOnce(u32) -> Engine, on_failure: Box<dyn Fn(String) + Send + Sync>) -> Result<JackRun, String> {
     // PipeWire's JACK library takes the period a client would like from this variable (jackd ignores it: its server sets the period).
     if buffer > 0 {
         std::env::set_var("PIPEWIRE_LATENCY", format!("{buffer}/48000"));
@@ -152,7 +184,7 @@ pub fn start(buffer: u32, make: impl FnOnce(u32) -> Engine, on_failure: Box<dyn 
     RT_US.store(0, Ordering::Relaxed);
     RUNNING.store(true, Ordering::Relaxed);
     let run = JackRun { client, xruns, rate, period };
-    run.connect_outputs();
+    run.connect_outputs(output)?;
     Ok(run)
 }
 
