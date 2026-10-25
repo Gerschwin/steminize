@@ -111,6 +111,8 @@ pub struct StreamFailure {
 
 enum Cmd {
     Load(Box<Transport>),
+    /// Drop the song: sound stops now, while the next one is still being read.
+    Unload,
     Play,
     Pause,
     Seek(f64),
@@ -206,6 +208,15 @@ impl Engine {
                 t.set_loop(self.looping.0, self.looping.1, self.looping.2);
                 t.set_practice(self.practice.clone());
                 if let Some(old) = self.t.replace(t) {
+                    let _ = self.garbage.send(Box::new(old));
+                }
+                self.playing = false;
+                if let Some(rs) = &mut self.rs {
+                    rs.reset();
+                }
+            }
+            Cmd::Unload => {
+                if let Some(old) = self.t.take() {
                     let _ = self.garbage.send(Box::new(old));
                 }
                 self.playing = false;
@@ -613,7 +624,11 @@ fn song_files(meta: &serde_json::Value) -> Result<Vec<(String, f32)>, String> {
 }
 
 /// Reads a saved song's files, builds the transport and hands it to the running engine; returns the song's length in frames.
+/// Counts song loads, so that when a second song is opened while the first is still being read, only the newest one is used.
+static LOAD_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 fn load_song(dir: &std::path::Path, gains: Vec<f32>) -> Result<usize, String> {
+    let gen = LOAD_GEN.fetch_add(1, Ordering::SeqCst) + 1;
     let meta: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("meta.json")).map_err(|e| format!("meta.json: {e}"))?).map_err(|e| e.to_string())?;
     let mut loaded: Vec<Stereo> = Vec::new();
     for (name, scale) in song_files(&meta)? {
@@ -628,6 +643,9 @@ fn load_song(dir: &std::path::Path, gains: Vec<f32>) -> Result<usize, String> {
     }
     let mut src = MixSource::new(loaded, gains, len);
     src.pad_end = 32768;
+    if LOAD_GEN.load(Ordering::SeqCst) != gen {
+        return Err("a newer song was opened while this one was loading".into());
+    }
     send(Cmd::Load(Box::new(Transport::new(Renderer::new(src)))))?;
     Ok(len)
 }
@@ -648,6 +666,12 @@ pub fn native_engine_track(request: tauri::ipc::Request) -> Result<(), String> {
         Some("replace") => send(Cmd::ReplaceTrack(h("index").and_then(|i| i.parse().ok()).ok_or("missing track index")?, stem)),
         _ => Err("mode must be add or replace".into()),
     }
+}
+
+/// Stops the sound and drops the current song straight away (called when another song is about to load).
+#[tauri::command]
+pub fn native_engine_unload() -> Result<(), String> {
+    send(Cmd::Unload)
 }
 
 #[tauri::command]
@@ -957,8 +981,9 @@ mod tests {
         let r2 = reports.clone();
         let out = std::env::var("NA_JACK_OUT").unwrap_or_default();
         println!("{}", start_engine(Box::new(move |r| r2.lock().unwrap().push(r)), Box::new(|_| {}), crate::native_jack::JACK_HOST.into(), out, 0, false, 0).expect("start"));
+        let t0 = Instant::now();
         let len = load_song(&dir, vec![1.0; 6]).expect("load");
-        println!("loaded {len} frames");
+        println!("loaded {len} frames in {:.2} s", t0.elapsed().as_secs_f64());
         send(Cmd::Play).unwrap();
         std::thread::sleep(Duration::from_millis(2000));
         let last = reports.lock().unwrap().last().cloned().unwrap();

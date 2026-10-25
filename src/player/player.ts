@@ -257,7 +257,10 @@ export class Player {
     if (this.nativeRunning && libId) {
       this.nativeSong = true;
       this.state = { ...this.state, pos: 0, playing: false, passes: 0 };
+      // The song that was playing stops at once instead of carrying on while the new one is read from disk.
+      this.nativeCall('native_engine_unload');
       this.nativeInvoke('native_engine_load', { id: libId, gains }).catch((e) => {
+        if (String(e).includes('a newer song was opened')) return; // another song was opened while this one loaded; that one counts
         // Couldn't load it natively (files missing, say): play it in the webview instead.
         this.onNativeError(`Native playback couldn't load this song, using the web player: ${e}`);
         this.nativeSong = false;
