@@ -44,8 +44,8 @@ cd plugin
 cargo test                                  # the logic: mixing, loading, the song file
 cargo xtask bundle steminize_player --release   # builds target/bundled/steminize_player.vst3 and .clap
 ```
-Copy `target/bundled/steminize_player.vst3` (or the `.clap`, for hosts that use CLAP such as Reaper and Bitwig; Ardour uses VST3) to `~/.vst3/` (Linux), `~/Library/Audio/Plug-Ins/VST3/` (macOS) or
-`C:\Program Files\Common Files\VST3\` (Windows), and rescan plugins in the DAW. Needs a recent Rust toolchain and, for the window and the stretcher, libclang plus on Linux the X11 / xcb / OpenGL development
+Copy `target/bundled/steminize_player.vst3` to `~/.vst3/` (Linux), `~/Library/Audio/Plug-Ins/VST3/` (macOS) or
+`C:\Program Files\Common Files\VST3\` (Windows), and rescan plugins in the DAW. The `.clap` goes in `~/.clap/` (Linux), `~/Library/Audio/Plug-Ins/CLAP/` (macOS) or `C:\Program Files\Common Files\CLAP\` (Windows), for hosts that use CLAP such as Reaper and Bitwig (Ardour uses VST3). Needs a recent Rust toolchain and, for the window and the stretcher, libclang plus on Linux the X11 / xcb / OpenGL development
 packages (see `.github/workflows/plugin.yml` for the list).
 
 ## How it was checked
