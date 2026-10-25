@@ -415,11 +415,15 @@ canvas, img, svg { -webkit-user-drag: none; user-drag: none; }
 .tools-sliders { display: flex; flex-wrap: wrap; gap: 10px; }
 .tool { display: flex; align-items: center; gap: 8px; background: var(--panel-2); border-radius: 9px; padding: 8px 10px; }
 .tool.loop, .tool.practice, .tool.beat, .tool.live, .tool.tuner, .tool.scratch-tabs { flex-wrap: wrap; grid-column: 1 / -1; }
-.tuner-display { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; min-width: 160px; }
-.tuner-note { font-size: 26px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
-.tuner-meter { position: relative; width: 100%; max-width: 220px; height: 8px; background: var(--panel); border-radius: 4px; }
+.tuner-display { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1; min-width: 200px; padding: 12px 18px; border-radius: 14px; box-shadow: 0 0 0 2px transparent; transition: background-color 0.12s, box-shadow 0.12s; }
+.tuner-note { font-size: 44px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; transition: color 0.12s; }
+.tuner-meter { position: relative; width: 100%; max-width: 320px; height: 12px; background: var(--panel); border-radius: 6px; }
+/* In tune: the whole display turns green (background, outline, note and message), not just the needle. */
+.tuner-display.in-tune { background: color-mix(in srgb, var(--ok) 26%, transparent); box-shadow: 0 0 0 2px var(--ok), 0 0 22px color-mix(in srgb, var(--ok) 45%, transparent); }
+.tuner-display.in-tune .tuner-note { color: var(--ok); }
+#tunerStatus.tuner-ok { color: var(--ok); font-weight: 700; font-size: 1.15em; }
 .tuner-mid { position: absolute; left: 50%; top: -3px; bottom: -3px; width: 2px; background: var(--line); transform: translateX(-50%); }
-.tuner-meter i { position: absolute; top: -4px; width: 10px; height: 16px; border-radius: 3px; background: var(--warn); left: 50%; transform: translateX(-50%); transition: left 0.08s linear; }
+.tuner-meter i { position: absolute; top: -5px; width: 14px; height: 22px; border-radius: 4px; background: var(--warn); left: 50%; transform: translateX(-50%); transition: left 0.08s linear; }
 .tuner-meter i.in-tune { background: var(--ok); }
 #tunerHz { min-height: 1.4em; }
 .scratch-area {

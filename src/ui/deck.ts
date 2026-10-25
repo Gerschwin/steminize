@@ -1880,6 +1880,7 @@ export class Deck {
     const hz = $('tunerHz');
     const status = $('tunerStatus');
     const sel = $<HTMLSelectElement>('tunerSource');
+    const display = needle.closest<HTMLElement>('.tuner-display')!;
     const N = 4096;
 
     const clear = () => {
@@ -1890,6 +1891,8 @@ export class Deck {
       hz.textContent = ' ';
       needle.style.left = '50%';
       needle.classList.remove('in-tune');
+      display.classList.remove('in-tune');
+      status.classList.remove('tuner-ok');
     };
 
     const tick = () => {
@@ -1923,8 +1926,12 @@ export class Deck {
         noteEl.textContent = noteName(note + shift);
         hz.textContent = `${result.freq.toFixed(1)} Hz`;
         needle.style.left = `${50 + Math.max(-50, Math.min(50, cents))}%`;
-        needle.classList.toggle('in-tune', Math.abs(cents) <= 5);
-        if (!status.textContent) status.textContent = Math.abs(cents) <= 5 ? 'In tune' : cents < 0 ? 'Flat' : 'Sharp';
+        const tuned = Math.abs(cents) <= 5;
+        needle.classList.toggle('in-tune', tuned);
+        // The whole display goes green when in tune, so it reads from across the room.
+        display.classList.toggle('in-tune', tuned);
+        status.classList.toggle('tuner-ok', tuned);
+        if (!status.textContent) status.textContent = tuned ? 'In tune' : cents < 0 ? 'Flat' : 'Sharp';
       } else {
         clear();
         if (!status.textContent) status.textContent = 'Play a single note';
