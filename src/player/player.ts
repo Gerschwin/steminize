@@ -55,6 +55,8 @@ export class Player {
   onNativeError: (message: string) => void = () => {};
   /** Something worth saying that isn't an error (shown by whoever sets this). */
   onNativeNote: (message: string) => void = () => {};
+  /** The native engine has just been switched on (so a song that is already open can be handed over to it). */
+  onNativeStarted: () => void = () => {};
   /** The native engine's sound device went away, so it has been shut down; the deck carries on in the webview engine. */
   onNativeLost: (message: string) => void = () => {};
   /** How busy the native audio callback is (1 = a whole block's time) and how many glitches there have been. */

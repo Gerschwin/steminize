@@ -607,6 +607,12 @@ export class Deck {
       this.fallbackToWeb();
     };
     initNativeAudio(this.player);
+    // Switching native playback on moves the open song (if it is saved in the library) over to it, with its settings, so there is no
+    // need to open it again by hand.
+    this.player.onNativeStarted = () => {
+      const r = this.r;
+      if (r?.libId) this.open(r, this.getState());
+    };
     this.initTuner();
     this.initTrainer();
     this.initScratchpad();

@@ -947,6 +947,26 @@ mod tests {
         assert!(best.0.abs() < 132, "take is {:.1} ms off the song", best.0 as f64 / 44.1);
     }
 
+    /// Song playback through JACK: load a saved song, play, and check the position reports advance and the engine says it is playing.
+    ///   NA_SONG_DIR=<library/song-id> pw-jack cargo test jack_playback_moves -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn jack_playback_moves() {
+        let dir = std::path::PathBuf::from(std::env::var("NA_SONG_DIR").expect("NA_SONG_DIR"));
+        let reports = Arc::new(Mutex::new(Vec::<StateReport>::new()));
+        let r2 = reports.clone();
+        let out = std::env::var("NA_JACK_OUT").unwrap_or_default();
+        println!("{}", start_engine(Box::new(move |r| r2.lock().unwrap().push(r)), Box::new(|_| {}), crate::native_jack::JACK_HOST.into(), out, 0, false, 0).expect("start"));
+        let len = load_song(&dir, vec![1.0; 6]).expect("load");
+        println!("loaded {len} frames");
+        send(Cmd::Play).unwrap();
+        std::thread::sleep(Duration::from_millis(2000));
+        let last = reports.lock().unwrap().last().cloned().unwrap();
+        println!("after 2 s: pos {:.0}, playing {}, load {:.3}, dropouts {}", last.pos, last.playing, last.load, last.dropouts);
+        stop_engine();
+        assert!(last.playing && last.pos > 44100.0, "the song did not move: {:.0}", last.pos);
+    }
+
     /// The monitor through JACK end to end, with nothing but a test tone: a second JACK client plays a sine into the engine's input, the
     /// monitor is on, and the same client listens to the engine's output. Checks the tone arrives at the right level and counts how many
     /// frames after it started it was heard (the engine itself adds none, so this is the other client's own cycle).

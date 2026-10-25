@@ -180,7 +180,7 @@ export function initNativeAudio(player: Player) {
   outSel.el.addEventListener('click', () => setTimeout(syncCfg, 0));
   /** The running engine keeps the host, output and buffer it started with; say so when the choices no longer match it. */
   const warnIfChanged = () => {
-    if (playbackBox.checked) status.textContent = 'Changed: the running engine keeps its old choices. Untick and tick "Use native playback" again, then reopen the song.';
+    if (playbackBox.checked) status.textContent = 'Changed: the running engine keeps its old choices. Untick and tick "Use native playback" again.';
   };
   for (const el of [hostSel, bufSel, rateSel]) el.addEventListener('change', warnIfChanged);
   outSel.el.addEventListener('click', () => setTimeout(warnIfChanged, 0));
@@ -255,7 +255,8 @@ export function initNativeAudio(player: Player) {
     const a = args();
     try {
       const summary = await player.startNative({ host: a.host, output: a.output, buffer: a.buffer, fixed: a.fixed, rate: a.rate });
-      status.textContent = `Native playback on: ${summary}. Reopen the song to play it natively.`;
+      status.textContent = `Native playback on: ${summary}.`;
+      player.onNativeStarted(); // a song that is already open moves over to the native engine, keeping its settings
       clearInterval(audioStatsTimer);
       audioStatsTimer = window.setInterval(showAudioStats, 1000);
       stats.hidden = false;
