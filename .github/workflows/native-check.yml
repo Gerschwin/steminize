@@ -23,7 +23,8 @@ jobs:
         run: |
           sudo apt-get update
           # libasound2-dev: the audio library (ALSA). libclang-dev: the time-stretch library's build generates bindings.
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev libclang-dev
+          # libjack-jackd2-dev: only its pkg-config file, which the JACK crate wants at build time (the program loads libjack when it runs, so it is not needed to run).
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev libclang-dev libjack-jackd2-dev
       - run: npm ci
       - run: npx tsc --noEmit -p .
       - run: npm run build
