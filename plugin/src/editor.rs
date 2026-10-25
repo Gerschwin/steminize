@@ -8,12 +8,14 @@ use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-pub const WIDTH: u32 = 600;
+pub const WIDTH: u32 = 640;
 pub const HEIGHT: u32 = 520;
 
 struct Ui {
     path: String,
     seeded: bool,
+    /// What each stem's meter shows now: the last peak, falling away between readings.
+    meters: [f32; crate::mix::MAX_STEMS],
 }
 
 fn set_bool(setter: &ParamSetter, p: &BoolParam, v: bool) {
@@ -32,6 +34,7 @@ pub fn create(
         Ui {
             path: String::new(),
             seeded: false,
+            meters: [0.0; crate::mix::MAX_STEMS],
         },
         |ctx, _| {
             ctx.set_visuals(egui::Visuals::dark());
@@ -55,6 +58,10 @@ pub fn create(
                         set_bool(setter, &p.solo, s.is_some_and(|s| s.solo));
                     }
                 }
+            }
+            for (m, peak) in ui_state.meters.iter_mut().zip(shared.peaks.iter()) {
+                let now = f32::from_bits(peak.swap(0, Ordering::Relaxed));
+                *m = now.max(*m * 0.9);
             }
             // A folder chosen in the chooser is loaded straight away.
             let picked = shared.picked.lock().ok().and_then(|mut p| p.take());
@@ -138,7 +145,7 @@ pub fn create(
                 ui.separator();
 
                 if let Some(song) = song.as_ref() {
-                    egui::Grid::new("stems").num_columns(5).spacing([10.0, 6.0]).show(ui, |ui| {
+                    egui::Grid::new("stems").num_columns(6).spacing([10.0, 6.0]).show(ui, |ui| {
                         for (i, stem) in song.stems.iter().enumerate() {
                             let Some(p) = params.stems.get(i) else { break };
                             ui.horizontal(|ui| {
@@ -148,7 +155,7 @@ pub fn create(
                                 ui.painter().rect_filled(rect, 2.0, egui::Color32::from_rgb(r, g, b));
                                 ui.add(egui::Label::new(&stem.name).truncate());
                             });
-                            ui.add(ParamSlider::for_param(&p.gain, setter).with_width(230.0));
+                            ui.add(ParamSlider::for_param(&p.gain, setter).with_width(200.0));
                             let mut mute = p.mute.value();
                             if ui.toggle_value(&mut mute, "M").on_hover_text("Mute").changed() {
                                 set_bool(setter, &p.mute, mute);
@@ -157,6 +164,15 @@ pub fn create(
                             if ui.toggle_value(&mut solo, "S").on_hover_text("Solo").changed() {
                                 set_bool(setter, &p.solo, solo);
                             }
+                            // The meter: -60 dB to 0 dB across, green and then amber and red near the top.
+                            let (rect, _) = ui.allocate_exact_size(egui::vec2(64.0, 8.0), egui::Sense::hover());
+                            ui.painter().rect_filled(rect, 2.0, egui::Color32::from_gray(40));
+                            let db = 20.0 * ui_state.meters[i].max(1e-6).log10();
+                            let level = ((db + 60.0) / 60.0).clamp(0.0, 1.0);
+                            let colour = if db > -1.0 { egui::Color32::from_rgb(0xf0, 0x55, 0x55) } else if db > -9.0 { egui::Color32::from_rgb(0xe8, 0xb8, 0x40) } else { egui::Color32::from_rgb(0x4c, 0xc0, 0x7a) };
+                            let mut filled = rect;
+                            filled.set_width(rect.width() * level);
+                            ui.painter().rect_filled(filled, 2.0, colour);
                             ui.label(egui::RichText::new(format!("out {}", i + 1)).weak());
                             ui.end_row();
                         }

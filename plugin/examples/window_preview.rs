@@ -43,6 +43,17 @@ fn main() {
         .speed
         .store((100.0f64 / 120.0).to_bits(), Ordering::Relaxed);
     shared.mode.store(MODE_STRETCH, Ordering::Relaxed);
+    // Some made-up levels, so the meters have something to show.
+    let feeder = shared.clone();
+    std::thread::spawn(move || loop {
+        for (i, p) in feeder.peaks.iter().enumerate() {
+            p.store(
+                (0.9f32 / (1.0 + i as f32 * 1.5)).to_bits(),
+                Ordering::Relaxed,
+            );
+        }
+        std::thread::sleep(std::time::Duration::from_millis(30));
+    });
     let editor = editor::create(params.clone(), shared, params.editor_state_arc()).expect("editor");
     let _window = editor.spawn(ParentWindowHandle::X11Window(root), Arc::new(Dummy));
     std::thread::sleep(std::time::Duration::from_secs(60));

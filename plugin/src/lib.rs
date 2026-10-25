@@ -131,6 +131,8 @@ pub struct Shared {
     /// The folder chosen in the folder chooser, waiting for the window to take it; and whether the chooser is open.
     pub picked: Mutex<Option<PathBuf>>,
     pub choosing: AtomicBool,
+    /// The loudest sample of each stem's output since the window last asked (a float's bits), for the meters.
+    pub peaks: [AtomicU32; MAX_STEMS],
 }
 
 impl Shared {
@@ -146,6 +148,7 @@ impl Shared {
             apply_song_mix: AtomicBool::new(false),
             picked: Mutex::new(None),
             choosing: AtomicBool::new(false),
+            peaks: std::array::from_fn(|_| AtomicU32::new(0)),
         }
     }
 }
@@ -405,6 +408,13 @@ impl Plugin for SteminizePlayer {
             (&mut *ml[0], &mut *mr[0]),
             &mut stem_bufs,
         );
+        for (peak, (l, r)) in self.shared.peaks.iter().zip(stem_bufs.iter()) {
+            let block = l.iter().chain(r.iter()).fold(0.0f32, |m, x| m.max(x.abs()));
+            // Keep the loudest until the window has read it.
+            if block > f32::from_bits(peak.load(Ordering::Relaxed)) {
+                peak.store(block.to_bits(), Ordering::Relaxed);
+            }
+        }
         ProcessStatus::Normal
     }
 }
@@ -415,4 +425,18 @@ impl Vst3Plugin for SteminizePlayer {
         &[Vst3SubCategory::Instrument, Vst3SubCategory::Tools];
 }
 
+impl ClapPlugin for SteminizePlayer {
+    const CLAP_ID: &'static str = "io.github.gerschwin.steminize-player";
+    const CLAP_DESCRIPTION: Option<&'static str> =
+        Some("Plays a Steminize song's stems in time with the DAW, following its tempo");
+    const CLAP_MANUAL_URL: Option<&'static str> = Some(Self::URL);
+    const CLAP_SUPPORT_URL: Option<&'static str> = Some(Self::URL);
+    const CLAP_FEATURES: &'static [ClapFeature] = &[
+        ClapFeature::Instrument,
+        ClapFeature::Utility,
+        ClapFeature::Stereo,
+    ];
+}
+
 nih_export_vst3!(SteminizePlayer);
+nih_export_clap!(SteminizePlayer);

@@ -16,7 +16,7 @@ the mix and each stem on its own output, and has a window to choose the song and
   monitoring is not delayed.
 - **A window.** Press **Browse…** and choose the folder Send to DAW wrote (the system's own folder chooser; it loads at once), or paste the path and press **Load**; the window then shows the song's title, its tempo against the DAW's
   (and whether it is playing straight, following the DAW at some speed, or stopped), the Master, Offset, Key shift and Follow tempo
-  controls, and a row per stem with its Steminize colour, name, level, **M**ute, **S**olo and which output it is on. A song loaded from the
+  controls, and a row per stem with its Steminize colour, name, level, **M**ute, **S**olo, a level meter and which output it is on. A song loaded from the
   window starts with the mute and solo it had in Steminize (**Use the mute and solo from Steminize** puts them back). The folder is saved
   with the DAW project, so the song comes back when the project is opened.
 - **Key shift.** ±12 semitones, without changing speed.
@@ -42,9 +42,9 @@ the mix and each stem on its own output, and has a window to choose the song and
 ```sh
 cd plugin
 cargo test                                  # the logic: mixing, loading, the song file
-cargo xtask bundle steminize_player --release   # builds target/bundled/steminize_player.vst3
+cargo xtask bundle steminize_player --release   # builds target/bundled/steminize_player.vst3 and .clap
 ```
-Copy `target/bundled/steminize_player.vst3` to `~/.vst3/` (Linux), `~/Library/Audio/Plug-Ins/VST3/` (macOS) or
+Copy `target/bundled/steminize_player.vst3` (or the `.clap`, for hosts that use CLAP such as Reaper and Bitwig; Ardour uses VST3) to `~/.vst3/` (Linux), `~/Library/Audio/Plug-Ins/VST3/` (macOS) or
 `C:\Program Files\Common Files\VST3\` (Windows), and rescan plugins in the DAW. Needs a recent Rust toolchain and, for the window and the stretcher, libclang plus on Linux the X11 / xcb / OpenGL development
 packages (see `.github/workflows/plugin.yml` for the list).
 
@@ -64,7 +64,6 @@ packages (see `.github/workflows/plugin.yml` for the list).
 ## Not yet (in the order I would do them)
 1. **A window**: choose the song, see the stems with their names and faders, the host tempo against the song's, and apply Steminize's
    mute / solo settings (the song file records them; the plugin does not apply them yet, so every stem starts unmuted).
-2. A level meter per stem.
-3. Markers as a list to jump to, and awareness of the DAW's loop.
-4. CLAP as well as VST3, Windows and macOS builds in CI, an installer.
-5. Loading a song straight from the Steminize app's library.
+2. Markers as a list to jump to, and awareness of the DAW's loop.
+3. Windows and macOS builds in CI, an installer.
+4. Loading a song straight from the Steminize app's library.
