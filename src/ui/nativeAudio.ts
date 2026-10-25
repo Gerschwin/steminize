@@ -178,6 +178,12 @@ export function initNativeAudio(player: Player) {
   for (const el of [hostSel, chanSel, bufSel, rateSel]) el.addEventListener('change', syncCfg);
   inSel.el.addEventListener('click', () => setTimeout(syncCfg, 0));
   outSel.el.addEventListener('click', () => setTimeout(syncCfg, 0));
+  /** The running engine keeps the host, output and buffer it started with; say so when the choices no longer match it. */
+  const warnIfChanged = () => {
+    if (playbackBox.checked) status.textContent = 'Changed: the running engine keeps its old choices. Untick and tick "Use native playback" again, then reopen the song.';
+  };
+  for (const el of [hostSel, bufSel, rateSel]) el.addEventListener('change', warnIfChanged);
+  outSel.el.addEventListener('click', () => setTimeout(warnIfChanged, 0));
   hostSel.onchange = () => {
     fillDevices();
     syncCfg();
