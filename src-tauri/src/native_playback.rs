@@ -138,7 +138,7 @@ struct Shared {
     dropouts: AtomicU32,
 }
 
-struct Engine {
+pub(crate) struct Engine {
     t: Option<Box<Transport>>,
     playing: bool,
     rs: Option<StreamResampler>,
@@ -157,9 +157,48 @@ struct Engine {
     /// Output rate, and when the previous block was asked for, to spot blocks that came late.
     hz: u32,
     last_block: Option<Instant>,
+    /// Input and output are in one callback (JACK): this block's input, mixed in directly instead of through the queue.
+    duplex: bool,
+    direct_in: Vec<f32>,
 }
 
 impl Engine {
+    /// An engine at output rate `hz` that takes its commands from `rx`. Old songs are freed on a thread of its own.
+    fn new(rx: Receiver<Cmd>, shared: Arc<Shared>, input: Arc<InputShared>, hz: u32) -> Engine {
+        let (garbage_tx, garbage_rx) = channel::<Box<dyn std::any::Any + Send>>();
+        std::thread::spawn(move || while garbage_rx.recv().is_ok() {});
+        Engine {
+            t: None,
+            playing: false,
+            rs: if hz == 44100 { None } else { Some(StreamResampler::new(44100, hz)) },
+            rx,
+            shared,
+            garbage: garbage_tx,
+            looping: (false, 0, 0),
+            tempo: (1.0, 0.0),
+            practice: Practice::default(),
+            volume: 1.0,
+            input,
+            mon_primed: false,
+            hz,
+            last_block: None,
+            duplex: false,
+            direct_in: Vec::new(),
+        }
+    }
+
+    /// One block when input and output arrive together: this block's input (mono) goes to the live input's meter, snapshot and
+    /// recording, and straight into the monitor, then the output is filled.
+    pub(crate) fn fill_duplex(&mut self, input: &[f32], l: &mut [f32], r: &mut [f32]) {
+        self.duplex = true;
+        if self.input.active.load(Ordering::Relaxed) {
+            self.input.on_input(input);
+        }
+        self.direct_in.clear();
+        self.direct_in.extend_from_slice(input);
+        self.fill(l, r);
+    }
+
     fn apply(&mut self, c: Cmd) {
         match c {
             Cmd::Load(mut t) => {
@@ -235,7 +274,7 @@ impl Engine {
     }
 
     /// Fills one block of output.
-    fn fill(&mut self, l: &mut [f32], r: &mut [f32]) {
+    pub(crate) fn fill(&mut self, l: &mut [f32], r: &mut [f32]) {
         let started = Instant::now();
         let block_secs = l.len() as f64 / self.hz as f64;
         // Blocks are asked for at a steady pace; one that comes far later than that means the audio glitched.
@@ -289,7 +328,11 @@ impl Engine {
                 *v *= self.volume;
             }
         }
-        self.input.mix_into(l, r, &mut self.mon_primed);
+        if self.duplex {
+            self.input.mix_direct(&self.direct_in[..n], l, r);
+        } else {
+            self.input.mix_into(l, r, &mut self.mon_primed);
+        }
         let sh = &self.shared;
         if let Some(t) = &self.t {
             sh.pos.store(t.r.audible().to_bits(), Ordering::Relaxed);
@@ -333,6 +376,34 @@ where
         None,
     )
     .map_err(|e| e.to_string())
+}
+
+/// What is making the sound: the sound card's output stream (with its input stream opened separately), or one JACK client.
+enum Backend {
+    #[allow(dead_code)] // held only to keep the stream running
+    Cpal(Stream),
+    Jack(crate::native_jack::JackRun),
+}
+
+/// Starts the one JACK client that plays and listens.
+fn jack_setup(rx: Receiver<Cmd>, shared: Arc<Shared>, buffer: u32) -> Result<(Backend, String, u32, Arc<InputShared>), String> {
+    // The input's own state is made once the rate is known; it is told the stream is shared, so nothing queues.
+    let input_cell: Arc<Mutex<Option<Arc<InputShared>>>> = Arc::new(Mutex::new(None));
+    let cell = input_cell.clone();
+    let run = crate::native_jack::start(
+        buffer,
+        move |hz| {
+            let input = Arc::new(InputShared::new(hz));
+            input.direct.store(true, Ordering::Relaxed);
+            *cell.lock().unwrap() = Some(input.clone());
+            Engine::new(rx, shared, input, hz)
+        },
+        Box::new(|_| crate::native_audio::err_fn(cpal::StreamError::DeviceNotAvailable)),
+    )?;
+    let input = input_cell.lock().unwrap().take().ok_or("JACK didn't start")?;
+    let summary = format!("JACK at {} Hz, {} frames a period; one stream for input and output", run.rate, run.period);
+    let hz = run.rate;
+    Ok((Backend::Jack(run), summary, hz, input))
 }
 
 /// Things only the thread that owns the streams can do.
@@ -395,7 +466,10 @@ fn start_engine(report: Box<dyn Fn(StateReport) + Send>, on_failure: Box<dyn Fn(
     let shared = Arc::new(Shared::default());
     let reporter_shared = shared.clone();
     let thread = std::thread::spawn(move || {
-        let setup = || -> Result<(Stream, String, u32, Arc<InputShared>), String> {
+        let setup = || -> Result<(Backend, String, u32, Arc<InputShared>), String> {
+            if host == crate::native_jack::JACK_HOST {
+                return jack_setup(rx, shared.clone(), if fixed { buffer } else { 0 });
+            }
             let host = crate::native_audio::host_by_name(&host)?;
             let dev = crate::native_audio::find_device(&host, &output, false)?;
             let def = dev.default_output_config().map_err(|e| e.to_string())?;
@@ -410,24 +484,7 @@ fn start_engine(report: Box<dyn Fn(StateReport) + Send>, on_failure: Box<dyn Fn(
             };
             let cfg = StreamConfig { channels: def.channels(), sample_rate: SampleRate(hz), buffer_size };
             let input = Arc::new(InputShared::new(hz));
-            let (garbage_tx, garbage_rx) = channel::<Box<dyn std::any::Any + Send>>();
-            std::thread::spawn(move || while garbage_rx.recv().is_ok() {});
-            let engine = Engine {
-                t: None,
-                playing: false,
-                rs: if hz == 44100 { None } else { Some(StreamResampler::new(44100, hz)) },
-                rx,
-                shared: shared.clone(),
-                garbage: garbage_tx,
-                looping: (false, 0, 0),
-                tempo: (1.0, 0.0),
-                practice: Practice::default(),
-                volume: 1.0,
-                input: input.clone(),
-                mon_primed: false,
-                hz,
-                last_block: None,
-            };
+            let engine = Engine::new(rx, shared.clone(), input.clone(), hz);
             let stream = match def.sample_format() {
                 SampleFormat::F32 => build_stereo_out::<f32>(&dev, &cfg, engine),
                 SampleFormat::I16 => build_stereo_out::<i16>(&dev, &cfg, engine),
@@ -436,10 +493,10 @@ fn start_engine(report: Box<dyn Fn(StateReport) + Send>, on_failure: Box<dyn Fn(
                 f => Err(format!("Unsupported sample format {f:?}")),
             }?;
             stream.play().map_err(|e| e.to_string())?;
-            Ok((stream, format!("{hz} Hz, {} output channels", cfg.channels), hz, input))
+            Ok((Backend::Cpal(stream), format!("{hz} Hz, {} output channels", cfg.channels), hz, input))
         };
         match setup() {
-            Ok((stream, summary, hz, input)) => {
+            Ok((backend, summary, hz, input)) => {
                 let _ = ready_tx.send(Ok((summary, hz, input.clone())));
                 let mut input_stream: Option<Stream> = None;
                 // Report position about 30 times a second until told to stop.
@@ -453,10 +510,14 @@ fn start_engine(report: Box<dyn Fn(StateReport) + Send>, on_failure: Box<dyn Fn(
                             Ctl::OpenInput { input: name, channel, buffer, fixed, reply } => {
                                 input_stream = None;
                                 input.active.store(false, Ordering::Relaxed);
-                                let opened = open_input(&host_name, &name, channel, buffer, fixed, hz, &input);
+                                let opened = match &backend {
+                                    // In JACK the input is a port connection on the one client, not a stream of its own.
+                                    Backend::Jack(j) => j.connect_input(&name).map(|summary| (None, summary)),
+                                    Backend::Cpal(_) => open_input(&host_name, &name, channel, buffer, fixed, hz, &input).map(|(s, summary)| (Some(s), summary)),
+                                };
                                 let _ = reply.send(match opened {
                                     Ok((stream, summary)) => {
-                                        input_stream = Some(stream);
+                                        input_stream = stream;
                                         input.active.store(true, Ordering::Relaxed);
                                         Ok(summary)
                                     }
@@ -465,6 +526,9 @@ fn start_engine(report: Box<dyn Fn(StateReport) + Send>, on_failure: Box<dyn Fn(
                             }
                             Ctl::CloseInput => {
                                 input_stream = None;
+                                if let Backend::Jack(j) = &backend {
+                                    j.disconnect_input();
+                                }
                                 input.active.store(false, Ordering::Relaxed);
                             }
                         }
@@ -472,11 +536,17 @@ fn start_engine(report: Box<dyn Fn(StateReport) + Send>, on_failure: Box<dyn Fn(
                     if let Some(p) = crate::native_audio::take_stream_error() {
                         on_failure(StreamFailure { fatal: p.fatal, message: p.message });
                     }
+                    if let Backend::Jack(j) = &backend {
+                        j.refresh_reported_latency();
+                    }
                     let sh = &reporter_shared;
                     report(StateReport {
                         level: input.take_level(),
                         load: f32::from_bits(sh.load.swap(0, Ordering::Relaxed)),
-                        dropouts: sh.dropouts.load(Ordering::Relaxed),
+                        dropouts: match &backend {
+                            Backend::Jack(j) => j.xruns.load(Ordering::Relaxed),
+                            Backend::Cpal(_) => sh.dropouts.load(Ordering::Relaxed),
+                        },
                         pos: f64::from_bits(sh.pos.load(Ordering::Relaxed)),
                         playing: sh.playing.load(Ordering::Relaxed),
                         ended: sh.ended.swap(false, Ordering::Relaxed),
@@ -486,7 +556,7 @@ fn start_engine(report: Box<dyn Fn(StateReport) + Send>, on_failure: Box<dyn Fn(
                     });
                 }
                 drop(input_stream);
-                drop(stream);
+                drop(backend);
             }
             Err(e) => {
                 let _ = ready_tx.send(Err(crate::native_audio::friendly_error(&e)));
@@ -565,7 +635,9 @@ fn load_song(dir: &std::path::Path, gains: Vec<f32>) -> Result<usize, String> {
 /// is "add" or "replace", and `index` is the track slot to replace. Used for takes recorded or switched while a song plays.
 #[tauri::command]
 pub fn native_engine_track(request: tauri::ipc::Request) -> Result<(), String> {
-    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else { return Err("expected raw audio bytes".into()) };
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("expected raw audio bytes".into());
+    };
     let h = |name: &str| request.headers().get(name).and_then(|v| v.to_str().ok()).map(str::to_string);
     let floats: Vec<f32> = bytes.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
     let half = floats.len() / 2;
@@ -703,8 +775,10 @@ pub fn native_record_start(rt_ms: f64) -> Result<(), String> {
     if !sh.active.load(Ordering::Relaxed) {
         return Err("Start monitoring first.".into());
     }
+    // Under JACK the round trip is what JACK reports for the connected ports, not the stored value (which is for the other path).
+    let rt = if crate::native_jack::running() { crate::native_jack::reported_ms() } else { rt_ms.max(0.0) };
     let capacity = sh.rate as usize * MAX_TAKE_SECS;
-    *sh.rec.lock().unwrap() = Some(RecState { samples: Vec::with_capacity(capacity), rt_secs: rt_ms.max(0.0) / 1000.0, start_pos: None });
+    *sh.rec.lock().unwrap() = Some(RecState { samples: Vec::with_capacity(capacity), rt_secs: rt / 1000.0, start_pos: None });
     Ok(())
 }
 
@@ -869,6 +943,91 @@ mod tests {
             }
         }
         println!("take starts at song frame {start}, {} samples; best lag {} samples = {:.2} ms", take.len(), best.0, best.0 as f64 / 44.1);
+        assert!(best.0.abs() < 132, "take is {:.1} ms off the song", best.0 as f64 / 44.1);
+    }
+
+    /// Prints the round trip JACK reports for the real sound card (the first capture port and the first two playback ports). Run under
+    /// `pw-jack`, optionally with PIPEWIRE_QUANTUM=128/48000 to ask for a smaller period.
+    #[test]
+    #[ignore]
+    fn jack_reports_latency() {
+        println!("JACK devices: {:?}", crate::native_jack::devices());
+        println!("{}", start_engine(Box::new(|_| {}), Box::new(|_| {}), crate::native_jack::JACK_HOST.into(), String::new(), 0, false, 0).expect("start"));
+        println!("{}", input_start_blocking(String::new(), 0, 0, false).expect("input"));
+        std::thread::sleep(Duration::from_millis(500));
+        println!("JACK reports {:.2} ms round trip for the card", crate::native_jack::reported_ms());
+        stop_engine();
+    }
+
+    /// The same check through JACK as one stream: the engine's own output is wired back to its own input inside JACK, so the take is the
+    /// song delayed by what JACK itself adds, and the round trip JACK reports should place it. Also prints the period and the reported
+    /// latencies. Run under PipeWire's JACK:
+    ///   NA_SONG_DIR=~/.local/share/app.steminize.desktop/library/<id> pw-jack cargo test jack_take_lines_up -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn jack_take_lines_up() {
+        let dir = std::path::PathBuf::from(std::env::var("NA_SONG_DIR").expect("NA_SONG_DIR"));
+        let summary = start_engine(Box::new(|_| {}), Box::new(|_| {}), crate::native_jack::JACK_HOST.into(), String::new(), 0, false, 0).expect("start");
+        println!("{summary}");
+        println!("input: {}", input_start_blocking(String::new(), 0, 0, false).expect("input"));
+        // Wire the engine's output through a PipeWire null sink and back into its input (a perfect loopback). A client's own output can't be
+        // linked to its own input under PipeWire, so it goes out through another node.
+        let (c, _) = jack::Client::new("tester", jack::ClientOptions::NO_START_SERVER).expect("test client");
+        for mine in ["Steminize:in", "Steminize:out_l", "Steminize:out_r"] {
+            if let Some(port) = c.port_by_name(mine) {
+                let _ = c.disconnect(&port);
+            }
+        }
+        let sink = std::env::var("NA_SINK").unwrap_or_else(|_| "natest Audio/Sink sink".into());
+        c.connect_ports_by_name("Steminize:out_l", &format!("{sink}:playback_FL")).expect("to the sink");
+        c.connect_ports_by_name(&format!("{sink}:monitor_FL"), "Steminize:in").expect("from the sink");
+        let rt_ms = {
+            std::thread::sleep(Duration::from_millis(300));
+            // Through the null sink the loop takes one more period than JACK reports (the output is only read back a cycle later).
+            crate::native_jack::reported_ms() + 512.0 * 1000.0 / 48000.0
+        };
+        println!("the test uses {rt_ms:.2} ms for this loop (JACK reports the rest as 0)");
+        let len = load_song(&dir, vec![1.0, 1.0, 1.0]).expect("load");
+        send(Cmd::Seek(44100.0 * 2.0)).unwrap();
+        send(Cmd::Play).unwrap();
+        std::thread::sleep(Duration::from_millis(600));
+        *input_shared().unwrap().rec.lock().unwrap() = Some(RecState { samples: Vec::with_capacity(48000 * 10), rt_secs: rt_ms / 1000.0, start_pos: None });
+        std::thread::sleep(Duration::from_millis(5000));
+        let bytes = record_stop_bytes().expect("take");
+        send(Cmd::Pause).unwrap();
+        stop_engine();
+
+        let start = f64::from_le_bytes(bytes[..8].try_into().unwrap());
+        let take: Vec<f32> = bytes[8..].chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
+        let meta: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("meta.json")).unwrap()).unwrap();
+        let mut mix = vec![0f32; len];
+        for (name, scale) in song_files(&meta).unwrap() {
+            let (l, _) = decode_flac(&std::fs::read(dir.join(format!("{name}.flac"))).unwrap(), scale).unwrap();
+            for (i, v) in l.iter().enumerate() {
+                mix[i] += v;
+            }
+        }
+        let rms = (take.iter().map(|v| (*v as f64).powi(2)).sum::<f64>() / take.len().max(1) as f64).sqrt();
+        let first = take.iter().position(|v| v.abs() > 1e-4);
+        println!("take rms {rms:.5}, first sound at {first:?}, mix rms {:.5}", (mix.iter().map(|v| (*v as f64).powi(2)).sum::<f64>() / mix.len() as f64).sqrt());
+        // A take is handed back at the song's rate (44.1 kHz) whatever JACK runs at.
+        let hz = 44100.0f64;
+        let start = start.round() as i64;
+        let (from, to) = (hz as usize, take.len().min(hz as usize * 4));
+        let mut best = (0i64, f64::MIN);
+        for lag in -9000i64..=9000 {
+            let mut dot = 0.0f64;
+            for i in from..to {
+                let j = start + i as i64 + lag;
+                if j >= 0 && (j as usize) < mix.len() {
+                    dot += take[i] as f64 * mix[j as usize] as f64;
+                }
+            }
+            if dot > best.1 {
+                best = (lag, dot);
+            }
+        }
+        println!("take starts at song frame {start}, {} samples; best lag {} song frames = {:.2} ms", take.len(), best.0, best.0 as f64 / 44.1);
         assert!(best.0.abs() < 132, "take is {:.1} ms off the song", best.0 as f64 / 44.1);
     }
 

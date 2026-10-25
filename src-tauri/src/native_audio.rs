@@ -42,6 +42,12 @@ pub struct DeviceInfo {
 }
 
 pub(crate) fn host_by_name(name: &str) -> Result<Host, String> {
+    if name == crate::native_jack::JACK_HOST {
+        return Err(
+            "JACK (one stream) works for playing, practising and recording with the song. The quick monitor and the loopback test are not available with it: JACK reports its own round trip instead."
+                .to_string(),
+        );
+    }
     let id = cpal::available_hosts()
         .into_iter()
         .find(|h| h.name() == name)
@@ -70,7 +76,9 @@ fn describe_device(host: &str, name: &str) -> String {
         "pulse" => pulse_via.into(),
         "jack" => "JACK (needs a JACK server running)".into(),
         "default" => match user_default_pcm() {
-            Some(target) if target == "pulse" => format!("ALSA default, set in ~/.asoundrc to {pulse_via}"),
+            Some(target) if target == "pulse" => {
+                format!("ALSA default, set in ~/.asoundrc to {pulse_via}")
+            }
             Some(target) if target == "pipewire" => "ALSA default, set in ~/.asoundrc to PipeWire directly".into(),
             Some(target) => format!("ALSA default, set in ~/.asoundrc to {target}"),
             None if std::path::Path::new("/usr/share/alsa/alsa.conf.d/99-pipewire-default.conf").exists() => "ALSA default, routed to PipeWire directly".into(),
@@ -124,7 +132,9 @@ fn user_default_pcm() -> Option<String> {
 pub fn native_audio_devices() -> Result<Vec<DeviceInfo>, String> {
     let mut out = Vec::new();
     for id in cpal::available_hosts() {
-        let Ok(host) = cpal::host_from_id(id) else { continue };
+        let Ok(host) = cpal::host_from_id(id) else {
+            continue;
+        };
         let default_in = host.default_input_device().and_then(|d| d.name().ok());
         let default_out = host.default_output_device().and_then(|d| d.name().ok());
         if let Ok(devs) = host.input_devices() {
@@ -133,7 +143,9 @@ pub fn native_audio_devices() -> Result<Vec<DeviceInfo>, String> {
                 if !is_real_endpoint(id.name(), &name) {
                     continue;
                 }
-                let Ok(cfg) = d.default_input_config() else { continue };
+                let Ok(cfg) = d.default_input_config() else {
+                    continue;
+                };
                 let (lo, hi) = buffer_range(cfg.buffer_size());
                 let note = describe_device(id.name(), &name);
                 let recommended = if id.name() == "ALSA" { recommended_alsa_device().map_or(default_in.as_deref() == Some(name.as_str()), |r| r == name) } else { default_in.as_deref() == Some(name.as_str()) };
@@ -157,7 +169,9 @@ pub fn native_audio_devices() -> Result<Vec<DeviceInfo>, String> {
                 if !is_real_endpoint(id.name(), &name) {
                     continue;
                 }
-                let Ok(cfg) = d.default_output_config() else { continue };
+                let Ok(cfg) = d.default_output_config() else {
+                    continue;
+                };
                 let (lo, hi) = buffer_range(cfg.buffer_size());
                 let note = describe_device(id.name(), &name);
                 let recommended = if id.name() == "ALSA" { recommended_alsa_device().map_or(default_out.as_deref() == Some(name.as_str()), |r| r == name) } else { default_out.as_deref() == Some(name.as_str()) };
@@ -175,6 +189,21 @@ pub fn native_audio_devices() -> Result<Vec<DeviceInfo>, String> {
                 });
             }
         }
+    }
+    // JACK, as one stream for input and output (only if a JACK server can be reached).
+    for (name, is_input, rate, period) in crate::native_jack::devices() {
+        out.push(DeviceInfo {
+            host: crate::native_jack::JACK_HOST.to_string(),
+            kind: if is_input { "input" } else { "output" },
+            is_default: false,
+            name,
+            channels: if is_input { 1 } else { 2 },
+            sample_rate: rate,
+            buffer_min: Some(32),
+            buffer_max: Some(2048),
+            note: format!("Input and output share one callback, so monitoring has no extra queue. The server sets the sample rate and period (now {period} frames); on PipeWire the buffer size you choose is asked for, with jackd it is whatever jackd runs at"),
+            recommended: false,
+        });
     }
     Ok(out)
 }

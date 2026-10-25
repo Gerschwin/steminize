@@ -7,6 +7,7 @@ mod library;
 mod links;
 mod native_audio;
 mod native_input;
+mod native_jack;
 mod native_playback;
 mod updater;
 mod ytdlp;

@@ -30,6 +30,8 @@ pub struct InputShared {
     /// An input stream is open.
     pub active: AtomicBool,
     pub monitor: AtomicBool,
+    /// Input and output share one callback (JACK): the monitor takes this block's input directly and nothing is queued.
+    pub direct: AtomicBool,
     /// Left and right monitor gains (level times the pan law), as f32 bits.
     gain_l: AtomicU32,
     gain_r: AtomicU32,
@@ -52,6 +54,7 @@ impl InputShared {
             rate,
             active: AtomicBool::new(false),
             monitor: AtomicBool::new(false),
+            direct: AtomicBool::new(false),
             gain_l: AtomicU32::new(0),
             gain_r: AtomicU32::new(0),
             ring: Ring::new(1 << 15),
@@ -108,8 +111,10 @@ impl InputShared {
         }
         // Always queued; the output callback uses it while monitoring and throws it away otherwise, so turning the
         // monitor on never starts with old audio in the queue.
-        for v in s {
-            self.ring.push(*v);
+        if !self.direct.load(Ordering::Relaxed) {
+            for v in s {
+                self.ring.push(*v);
+            }
         }
         if let Ok(mut sn) = self.snap.try_lock() {
             sn.extend_from_slice(s);
@@ -122,14 +127,28 @@ impl InputShared {
             if let Some(r) = rec.as_mut() {
                 if r.start_pos.is_none() {
                     // The first sample of this block was captured a block ago, and what was being heard then had been
-                    // rendered a round trip before that.
-                    let tau = now - s.len() as f64 / self.rate as f64 - r.rt_secs;
+                    // rendered a round trip before that. Under JACK the round trip is the one JACK reports (it already
+                    // counts the period the input waited for), measured from the start of this callback.
+                    let block = if self.direct.load(Ordering::Relaxed) { 0.0 } else { s.len() as f64 / self.rate as f64 };
+                    let tau = now - block - r.rt_secs;
                     r.start_pos = Some(self.song_position_at(tau));
                 }
                 if r.samples.len() + s.len() <= r.samples.capacity() {
                     r.samples.extend_from_slice(s);
                 }
             }
+        }
+    }
+
+    /// Single-callback version of `mix_into`: adds this block's own input to the output, with nothing in between.
+    pub fn mix_direct(&self, input: &[f32], l: &mut [f32], r: &mut [f32]) {
+        if !self.active.load(Ordering::Relaxed) || !self.monitor.load(Ordering::Relaxed) {
+            return;
+        }
+        let (gl, gr) = (f32::from_bits(self.gain_l.load(Ordering::Relaxed)), f32::from_bits(self.gain_r.load(Ordering::Relaxed)));
+        for ((v, l), r) in input.iter().zip(l.iter_mut()).zip(r.iter_mut()) {
+            *l += v * gl;
+            *r += v * gr;
         }
     }
 
@@ -193,6 +212,21 @@ mod tests {
         sh.mix_into(&mut l, &mut r, &mut primed);
         assert!(l.iter().all(|v| (*v - 0.5 * std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-5), "centre pan is -3 dB each side: {}", l[0]);
         assert_eq!(l, r);
+    }
+
+    #[test]
+    fn direct_monitor_passes_the_same_block_straight_through() {
+        let sh = InputShared::new(44100);
+        sh.active.store(true, Ordering::Relaxed);
+        sh.direct.store(true, Ordering::Relaxed);
+        sh.set_monitor(true, 1.0, 1.0);
+        let (mut l, mut r) = (vec![0.0; 8], vec![0.0; 8]);
+        let input = block(0.25, 8);
+        sh.on_input(&input);
+        sh.mix_direct(&input, &mut l, &mut r);
+        assert!(r.iter().all(|v| (*v - 0.25).abs() < 1e-5) && l.iter().all(|v| v.abs() < 1e-5), "first block already sounds, hard right");
+        // And nothing is left waiting in the queue.
+        assert_eq!(sh.ring.len(), 0);
     }
 
     #[test]
