@@ -523,7 +523,8 @@ export class Deck {
       else if (s.playing) this.onNearEnd((this.length - s.pos) / SR);
       this.trackPractice(s.playing);
       // The speed trainer changes tempo inside the player; mirror it here.
-      if (Math.abs(s.tempo - this.tempo) > 1e-6) {
+      // (A report with no real tempo, as the native engine sends before a song is in it, must not overwrite the song's tempo.)
+      if (s.tempo >= 0.25 && Math.abs(s.tempo - this.tempo) > 1e-6) {
         this.tempo = s.tempo;
         this.showTempoPitch();
         this.emit();
@@ -1306,7 +1307,8 @@ export class Deck {
 
   private applyState(s: DeckState) {
     this.pr = { ...structuredClone(DEFAULT_PR), ...s.practice, trainer: { ...DEFAULT_PR.trainer, ...s.practice?.trainer, on: false } };
-    this.tempo = s.tempo ?? 1;
+    // A tempo far outside what the slider offers is damage (an earlier version could save 0.01): play at normal speed instead.
+    this.tempo = s.tempo != null && s.tempo >= 0.25 && s.tempo <= 4 ? s.tempo : 1;
     this.pitch = s.pitch ?? 0;
     this.practiceSeconds = s.practiceSeconds ?? 0;
     this.lastPracticed = s.lastPracticed;

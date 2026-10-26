@@ -129,7 +129,7 @@ enum Cmd {
 #[derive(Default)]
 struct Shared {
     pos: AtomicU64, // f64 bits
-    tempo: AtomicU64,
+    tempo: AtomicU64, // f64 bits; starts at 1.0
     playing: AtomicBool,
     counting_in: AtomicBool,
     ended: AtomicBool, // set when a song plays to its end, cleared by the reporter once it has said so
@@ -345,6 +345,8 @@ impl Engine {
             self.input.mix_into(l, r, &mut self.mon_primed);
         }
         let sh = &self.shared;
+        // With no song in, report the tempo that will be used for the next one, never 0 (the page saves what it is told).
+        sh.tempo.store(self.tempo.0.to_bits(), Ordering::Relaxed);
         if let Some(t) = &self.t {
             sh.pos.store(t.r.audible().to_bits(), Ordering::Relaxed);
             sh.tempo.store(t.r.tempo.to_bits(), Ordering::Relaxed);
@@ -477,7 +479,7 @@ fn start_engine(report: Box<dyn Fn(StateReport) + Send>, on_failure: Box<dyn Fn(
     let host_name = host.clone();
     let (stop_tx, stop_rx) = channel::<()>();
     let (tx, rx) = channel::<Cmd>();
-    let shared = Arc::new(Shared::default());
+    let shared = Arc::new(Shared { tempo: AtomicU64::new(1f64.to_bits()), ..Default::default() });
     let reporter_shared = shared.clone();
     let thread = std::thread::spawn(move || {
         let setup = || -> Result<(Backend, String, u32, Arc<InputShared>), String> {
