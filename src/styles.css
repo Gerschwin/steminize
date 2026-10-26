@@ -983,3 +983,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .tool.live-setup:not(:has(> :not([hidden]))) { display: none; }
 .tool.live-setup .live-grp:not(:has(> :not([hidden]))) { display: none; }
 .dpane { gap: 6px; }
+/* Readouts keep a fixed width, so a longer value (R100 against CTR) doesn't push the controls beside them around. */
+.mini output, .tool label output { display: inline-block; min-width: 5ch; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lane-ctl .mini output { min-width: 0; width: 34px; overflow: hidden; }
+.lane-ctl .mini { grid-template-columns: 26px 1fr 34px; }
