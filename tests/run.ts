@@ -1368,7 +1368,7 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   mem.delete(NATIVE_TIP_KEY);
   ok('native tip: not in the browser, and not once native audio is on', nativeTipVisible(store, false, false) === false && nativeTipVisible(store, true, true) === false);
   ok('native tip: unreadable storage shows it rather than hiding the feature', nativeTipVisible({ getItem: () => { throw new Error('blocked'); } }, true, false) === true);
-  ok('native tip: the words say it is experimental and off by default', /experimental/i.test(NATIVE_TIP) && /off by default/i.test(NATIVE_TIP) && /off by default/i.test(NATIVE_INFO) && /experimental/i.test(NATIVE_WELCOME) && /Live input/.test(NATIVE_INFO));
+  ok('native tip: the words say it is experimental and off by default', /experimental/i.test(NATIVE_TIP) && /off by default/i.test(NATIVE_TIP) && /off by default/i.test(NATIVE_INFO) && /experimental/i.test(NATIVE_WELCOME) && /Settings/.test(NATIVE_INFO));
   ok('native tip: Reset app preferences brings the tip back', (APP_PREFERENCE_KEYS as readonly string[]).includes(NATIVE_TIP_KEY));
 }
 

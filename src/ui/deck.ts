@@ -4012,6 +4012,7 @@ export class Deck {
       this.loop.b > this.loop.a
         ? `${fmtTime(this.loop.a / SR)} – ${fmtTime(this.loop.b / SR)}${this.loop.on ? '' : ' (off)'}`
         : 'Drag to scrub · Shift-drag to pick a section';
+    $('loopInfo').title = 'Drag the song overview to scrub; Shift-drag to pick a section';
     this.dirty = true;
   }
 

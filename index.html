@@ -213,6 +213,60 @@
           </div>
           <p class="muted small" id="sizeNote"></p>
         </section>
+        <section class="card settings" id="audioCard">
+          <div class="card-head">
+            <h2>Audio input &amp; latency</h2>
+          </div>
+          <p class="muted small">Set these once. Monitor, level and Record are in the Live input drawer under the song.</p>
+          <div class="tool live live-setup">
+                  <select id="liveDevice" title="Input device" hidden></select>
+                  <select id="liveChannel" title="Which input channel to use. An instrument in input 1 of an interface leaves the other channel silent, which halves the level in Stereo; pick Input 1 (or 2) to use just that one." hidden>
+                    <option value="stereo">Stereo</option>
+                    <option value="left">Input 1</option>
+                    <option value="right">Input 2</option>
+                    <option value="sum">Inputs 1+2 summed</option>
+                  </select>
+                  <div class="live-grp">
+                    <label class="mini latency" id="liveLatencyWrap" hidden title="How late a take lands behind the song (the delay of what you hear plus the delay of what is recorded). It is taken off the take when you stop, so it lines up. Press Measure to find it.">Latency <input type="number" id="liveLatency" min="0" max="500" step="1" value="0" /> ms</label>
+                    <button class="btn tiny ghost" id="liveLatencyBtn" type="button" hidden title="Plays clicks and listens for them on the input to measure the delay. Needs the speakers near the microphone, or a cable from the output to the input. With headphones and no cable, record a take against the click and use Line up under it instead.">Measure</button>
+                    <label class="mini" id="liveLowLatWrap" hidden title="Ask the audio system for its smallest buffers and run at the sound card's own sample rate, so what you play and hear is less delayed. Some computers may crackle; turn it off if so. Takes effect the next time you open Steminize."><input type="checkbox" id="liveLowLat" /> Low-latency audio</label>
+                  </div>
+          </div>
+                <div class="tool live native-audio" id="nativeAudioBox" hidden>
+                  <strong class="small" title="Experimental: opens the sound card directly instead of through the webview, to see how low the delay can go. Use headphones when monitoring (feedback), and stop the Monitor above first.">Native audio (experimental)</strong>
+                  <select id="naHost" title="Audio system"></select>
+                  <span class="na-dd" id="naInputMount" title="Input device"></span>
+                  <span class="na-dd" id="naOutputMount" title="Output device"></span>
+                  <select id="naChannel" title="Input channel">
+                    <option value="0">Input 1</option>
+                    <option value="1">Input 2</option>
+                    <option value="2">Input 3</option>
+                    <option value="3">Input 4</option>
+                  </select>
+                  <select id="naBuffer" title="Buffer size in frames: smaller is lower delay but may crackle">
+                    <option value="0">Default buffer</option>
+                    <option value="32">32 frames</option>
+                    <option value="64">64 frames</option>
+                    <option value="128" selected>128 frames</option>
+                    <option value="256">256 frames</option>
+                    <option value="512">512 frames</option>
+                    <option value="1024">1024 frames</option>
+                  </select>
+                  <select id="naRate" title="Sample rate. Auto uses the chosen device's own rate, which for the pipewire / pulse devices is 44100 Hz unless the system says otherwise; if your system runs at 48000, choosing it avoids a conversion that adds delay">
+                    <option value="0">Auto rate</option>
+                    <option value="44100">44100 Hz</option>
+                    <option value="48000">48000 Hz</option>
+                    <option value="96000">96000 Hz</option>
+                  </select>
+                  <label class="mini" title="Play saved songs through the native engine on the chosen output instead of the webview. A song that is already open moves over when you switch it on; songs not saved to the library still play in the webview."><input type="checkbox" id="naPlayback" /> Use native playback</label>
+                  <button class="btn tiny ghost" id="naRefresh" type="button" title="List the devices again">Refresh</button>
+                  <button class="btn tiny toggle" id="naMonitor" type="button" aria-pressed="false">Native monitor</button>
+                  <button class="btn tiny ghost" id="naLoopback" type="button" title="Plays clicks out of the chosen output and listens for them on the chosen input: patch the output to the input with a cable (gain low) and read the round trip">Loopback test</button>
+                  <span class="muted small" id="naStatus"></span>
+                  <span class="muted small na-route" id="naRoute"></span>
+                  <span class="muted small na-stats" id="naStats" hidden title="Load is how much of each audio block's time the engine uses (near 100% means it may glitch). A dropout is a block that arrived late. If either climbs, try a larger buffer."></span>
+                </div>
+        </section>
         <section class="card settings" id="desktopCard" hidden>
           <div class="card-head">
             <h2>Desktop app</h2>
@@ -308,7 +362,7 @@
                   <button class="btn tiny ghost" id="setA" title="Loop start at playhead ([)">Set A</button>
                   <button class="btn tiny ghost" id="setB" title="Loop end at playhead (])">Set B</button>
                   <button class="btn tiny ghost" id="clearLoop" title="Remove the loop section (A and B)" hidden>Clear</button>
-                  <span class="muted small" id="loopInfo">Drag to scrub · Shift-drag to pick a section</span>
+                  <span class="muted small" id="loopInfo" title="Drag the song overview to scrub; Shift-drag to pick a section">Drag to scrub · Shift-drag to pick a section</span>
                   <label class="snap">Snap
                     <select id="snap"><option value="off">Off</option><option value="beat">Beat</option><option value="bar">Bar</option></select>
                   </label>
@@ -462,21 +516,11 @@
                 </div>
                 <div class="tool live">
                   <button class="btn tiny toggle" id="liveBtn" type="button" aria-pressed="false" title="Play a real instrument or mic live alongside the tracks">Monitor</button>
-                  <select id="liveDevice" title="Input device" hidden></select>
-                  <select id="liveChannel" title="Which input channel to use. An instrument in input 1 of an interface leaves the other channel silent, which halves the level in Stereo; pick Input 1 (or 2) to use just that one." hidden>
-                    <option value="stereo">Stereo</option>
-                    <option value="left">Input 1</option>
-                    <option value="right">Input 2</option>
-                    <option value="sum">Inputs 1+2 summed</option>
-                  </select>
+                  <span class="muted small live-sum" id="liveSummary"></span>
+                  <button class="linkish" id="liveSetup" type="button" title="Input device, channel, latency and the native audio engine are in Settings">Input settings…</button>
                   <div class="live-meter" id="liveMeter" hidden><i id="liveMeterBar"></i></div>
                   <label class="mini vol" id="liveVolWrap" hidden><span>Level</span><input type="range" id="liveVol" min="0" max="4" step="0.01" value="0.8" /></label>
                   <label class="mini pan" id="livePanWrap" hidden title="Pan (double-click to centre)"><span>Pan</span><input type="range" id="livePan" min="-1" max="1" step="0.05" value="0" /><output id="livePanOut">CTR</output></label>
-                  <div class="live-grp">
-                    <label class="mini latency" id="liveLatencyWrap" hidden title="How late a take lands behind the song (the delay of what you hear plus the delay of what is recorded). It is taken off the take when you stop, so it lines up. Press Measure to find it.">Latency <input type="number" id="liveLatency" min="0" max="500" step="1" value="0" /> ms</label>
-                    <button class="btn tiny ghost" id="liveLatencyBtn" type="button" hidden title="Plays clicks and listens for them on the input to measure the delay. Needs the speakers near the microphone, or a cable from the output to the input. With headphones and no cable, record a take against the click and use Line up under it instead.">Measure</button>
-                    <label class="mini" id="liveLowLatWrap" hidden title="Ask the audio system for its smallest buffers and run at the sound card's own sample rate, so what you play and hear is less delayed. Some computers may crackle; turn it off if so. Takes effect the next time you open Steminize."><input type="checkbox" id="liveLowLat" /> Low-latency audio</label>
-                  </div>
                   <div class="live-grp live-rec">
                     <select id="liveRecordTarget" title="Which track to record into" hidden></select>
                     <label class="mini punch" id="livePunchWrap" hidden title="Record only across the marked loop section: playback starts a bar before it, recording runs from A to B, then stops."><input type="checkbox" id="livePunch" /> Punch in on loop</label>
@@ -485,40 +529,6 @@
                   </div>
                   <label class="mini takes" title="Oldest take is dropped once you go over this, both here and from the library">Keep last <input type="number" id="liveMaxTakes" min="1" max="20" step="1" value="5" /> takes</label>
                   <span class="muted small" id="liveStatus"></span>
-                </div>
-                <div class="tool live native-audio" id="nativeAudioBox" hidden>
-                  <strong class="small" title="Experimental: opens the sound card directly instead of through the webview, to see how low the delay can go. Use headphones when monitoring (feedback), and stop the Monitor above first.">Native audio (experimental)</strong>
-                  <select id="naHost" title="Audio system"></select>
-                  <span class="na-dd" id="naInputMount" title="Input device"></span>
-                  <span class="na-dd" id="naOutputMount" title="Output device"></span>
-                  <select id="naChannel" title="Input channel">
-                    <option value="0">Input 1</option>
-                    <option value="1">Input 2</option>
-                    <option value="2">Input 3</option>
-                    <option value="3">Input 4</option>
-                  </select>
-                  <select id="naBuffer" title="Buffer size in frames: smaller is lower delay but may crackle">
-                    <option value="0">Default buffer</option>
-                    <option value="32">32 frames</option>
-                    <option value="64">64 frames</option>
-                    <option value="128" selected>128 frames</option>
-                    <option value="256">256 frames</option>
-                    <option value="512">512 frames</option>
-                    <option value="1024">1024 frames</option>
-                  </select>
-                  <select id="naRate" title="Sample rate. Auto uses the chosen device's own rate, which for the pipewire / pulse devices is 44100 Hz unless the system says otherwise; if your system runs at 48000, choosing it avoids a conversion that adds delay">
-                    <option value="0">Auto rate</option>
-                    <option value="44100">44100 Hz</option>
-                    <option value="48000">48000 Hz</option>
-                    <option value="96000">96000 Hz</option>
-                  </select>
-                  <label class="mini" title="Play saved songs through the native engine on the chosen output instead of the webview. A song that is already open moves over when you switch it on; songs not saved to the library still play in the webview."><input type="checkbox" id="naPlayback" /> Use native playback</label>
-                  <button class="btn tiny ghost" id="naRefresh" type="button" title="List the devices again">Refresh</button>
-                  <button class="btn tiny toggle" id="naMonitor" type="button" aria-pressed="false">Native monitor</button>
-                  <button class="btn tiny ghost" id="naLoopback" type="button" title="Plays clicks out of the chosen output and listens for them on the chosen input: patch the output to the input with a cable (gain low) and read the round trip">Loopback test</button>
-                  <span class="muted small" id="naStatus"></span>
-                  <span class="muted small na-route" id="naRoute"></span>
-                  <span class="muted small na-stats" id="naStats" hidden title="Load is how much of each audio block's time the engine uses (near 100% means it may glitch). A dropout is a block that arrived late. If either climbs, try a larger buffer."></span>
                 </div>
               </div>
               <div class="dpane" data-pane="tuner" hidden>

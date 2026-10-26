@@ -4,12 +4,12 @@
 export const NATIVE_TIP_KEY = 'steminize.nativeTipSeen';
 
 export const NATIVE_TIP =
-  'New and experimental: Native audio talks to your sound card directly for lower delay when you play along or record. It is off by default. Switch it on in the Native audio row below, then reopen the song.';
+  'New and experimental: Native audio talks to your sound card directly for lower delay when you play along or record. It is off by default. Switch it on in Settings, under Audio input & latency (the Show me button takes you there).';
 
 export const NATIVE_INFO =
-  'Native audio (experimental, desktop only) opens your sound card directly for lower delay when you play along or record. It is off by default while it is tested on more computers. You find it under a song\'s Live input drawer.';
+  'Native audio (experimental, desktop only) opens your sound card directly for lower delay when you play along or record. It is off by default while it is tested on more computers. You find it in Settings, under Audio input & latency.';
 
-export const NATIVE_WELCOME = 'Playing along or recording? Try Native audio (experimental) under Live input once a song is open: lower delay, off by default.';
+export const NATIVE_WELCOME = 'Playing along or recording? Try Native audio (experimental) in Settings, under Audio input & latency: lower delay, off by default.';
 
 interface Store {
   getItem(key: string): string | null;

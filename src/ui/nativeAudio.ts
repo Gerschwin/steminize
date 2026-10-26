@@ -52,16 +52,22 @@ const loadSaved = (): Saved | null => {
   }
 };
 
-/** Opens the Live input drawer at the Native audio row and draws the eye to it. Returns false if no song is open (the drawer isn't there yet). */
+/** Opens Settings at the Native audio block and draws the eye to it. Returns false if it isn't there (the browser version has none). */
 export function revealNativeAudio(): boolean {
-  const box = document.getElementById('nativeAudioBox');
-  const deck = document.getElementById('deck');
-  const tab = document.getElementById('liveTab');
-  if (!box || !deck || deck.hidden || !tab) return false;
-  if (tab.getAttribute('aria-expanded') !== 'true') tab.click();
-  box.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  box.classList.add('attention');
-  setTimeout(() => box.classList.remove('attention'), 3000);
+  const native = document.getElementById('nativeAudioBox');
+  // Without the native engine (the browser version) the audio block itself is what to show.
+  const box = native && !native.hidden ? native : document.getElementById('audioCard');
+  const tab = document.querySelector<HTMLElement>('.stab[data-side="settings"]');
+  if (!box || !tab) return false;
+  const layout = document.querySelector('.layout');
+  tab.click();
+  // On the narrow rail a click on the tab toggles the panel; make sure it ended up open.
+  if (layout?.classList.contains('side-rail') && !layout.classList.contains('side-peek')) tab.click();
+  setTimeout(() => {
+    box.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    box.classList.add('attention');
+    setTimeout(() => box.classList.remove('attention'), 3000);
+  }, 50);
   return true;
 }
 
@@ -347,9 +353,24 @@ export function initNativeAudio(player: Player) {
     lostBefore(message);
   };
 
+  /** The one line in the Live input drawer saying what the input is set to now, so the settings can stay out of the way in Settings. */
+  const updateSummary = () => {
+    const el = document.getElementById('liveSummary');
+    if (!el) return;
+    if (!playbackBox.checked || !started) {
+      el.textContent = '';
+      return;
+    }
+    const where = started.host.startsWith('JACK') ? 'JACK' : started.host;
+    const input = started.input.includes(':') ? started.input.slice(started.input.lastIndexOf(':') + 1) : started.input;
+    const { load, dropouts } = player.nativeStats;
+    el.textContent = `Native · ${where} · ${started.buffer ? `${started.buffer} frames` : 'default buffer'} · ${input} · load ${Math.round(load * 100)}%${dropouts ? ` · ${dropouts} dropouts` : ''}`;
+  };
+
   /** While native playback runs: how busy the audio callback is and whether it has glitched. */
   const showAudioStats = () => {
     const { load, dropouts } = player.nativeStats;
+    updateSummary();
     stats.textContent = `Audio load ${Math.round(load * 100)}%, ${dropouts} dropout${dropouts === 1 ? '' : 's'}`;
     stats.classList.toggle('bad', dropouts > 0 || load > 0.8);
   };

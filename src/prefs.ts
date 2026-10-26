@@ -4,6 +4,7 @@
 
 export const APP_PREFERENCE_KEYS = [
   'steminize.theme',
+  'steminize.sideRail',
   'steminize.drawer',
   'steminize.showPan',
   'steminize.scratchFloat',

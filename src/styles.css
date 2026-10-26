@@ -929,3 +929,54 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .learn-suggest-list .learn-row { background: transparent; padding: 2px 0; }
 .learn-suggest-list input { width: 12em; }
 .learn-time { min-width: 3.5em; font-variant-numeric: tabular-nums; }
+
+/* ---- Tighter layout (screen space is at a premium) ----
+   The same controls with less padding and fewer gaps, so more lanes fit without scrolling. Kept together at the end so it is easy to
+   see what was changed and to turn down. */
+.top { padding-top: 6px; padding-bottom: 6px; gap: 4px 14px; }
+.layout { padding: 10px 12px 10px 0; gap: 10px; }
+.deck { padding: 12px; gap: 8px; }
+.deck-top { gap: 8px; }
+.transport { gap: 6px; }
+.transport-bar { gap: 8px; }
+.play { width: 40px; height: 40px; }
+.play svg { width: 20px; height: 20px; }
+.tbtn { width: 32px; height: 32px; }
+.overview { height: 48px; }
+.tools { gap: 6px; }
+.tool { padding: 5px 8px; }
+.dtab { height: 26px; padding: 0 10px; }
+.lanes { gap: 4px; }
+.lane { gap: 8px; }
+.lane-ctl { padding: 4px 8px; gap: 4px; }
+.shortcuts-row { flex-wrap: nowrap; gap: 8px; }
+.shortcuts { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The drag handle under each track no longer takes a row of its own: it straddles the gap between tracks. */
+.lane { position: relative; }
+.lane-resize { position: absolute; left: 0; right: 0; bottom: -7px; height: 10px; z-index: 2; }
+/* Title and details on one line. */
+.deck-head { align-items: center; gap: 8px; }
+.deck-head > div:first-child { display: flex; align-items: baseline; gap: 4px 12px; flex-wrap: wrap; min-width: 0; }
+.deck-head h1 { margin: 0; font-size: 19px; }
+.deck-head p { margin: 0; }
+/* The hint beside Loop is in its tooltip instead. */
+#loopInfo:not(:empty) { max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- The left panel as a rail while a song is open (see ui/sideRail.ts) ---- */
+.side { position: relative; }
+.side-pin { margin-left: auto; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 16px; padding: 0 8px; border-radius: 8px; }
+.side-pin:hover { color: var(--text); background: var(--panel-2); }
+.layout.side-rail { grid-template-columns: 52px 1fr; }
+.layout.side-rail .side { padding: 0 0 0 8px; overflow: visible; }
+.layout.side-rail .side-tabs { flex-direction: column; align-items: stretch; align-self: stretch; width: auto; box-sizing: border-box; padding: 3px; gap: 3px; }
+.layout.side-rail .stab { writing-mode: vertical-rl; transform: rotate(180deg); padding: 12px 4px; }
+.layout.side-rail .side-pin { margin: 4px 0 0; padding: 4px 0; }
+.layout.side-rail .side-pane { display: none; }
+.layout.side-rail.side-peek .side-pane:not([hidden]) {
+  display: flex; position: absolute; left: 56px; top: 0; width: 360px; max-height: calc(100vh - 80px); overflow-y: auto;
+  z-index: 20; padding: 10px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.live-sum { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 140px; }
+.tool.live-setup:not(:has(> :not([hidden]))) { display: none; }
+.tool.live-setup .live-grp:not(:has(> :not([hidden]))) { display: none; }
+.dpane { gap: 6px; }

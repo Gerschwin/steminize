@@ -10,6 +10,7 @@ import { cancelDownloads, ensureDownloaded, initModelsDialog, onModelsChanged } 
 import { initWelcome } from './ui/welcome.ts';
 import { NATIVE_INFO, NATIVE_TIP, NATIVE_TIP_KEY, NATIVE_WELCOME, nativeTipVisible } from './nativeHint.ts';
 import { nativeIsOn, revealNativeAudio } from './ui/nativeAudio.ts';
+import { initSideRail } from './ui/sideRail.ts';
 import { ZOOM_STEPS, loadZoom, saveZoom, stepZoom, zoomLabel } from './textSize.ts';
 import { YOUTUBE_NOTICE, YOUTUBE_REMINDER, setYoutubeEnabled, youtubeEnabled } from './youtubeOptIn.ts';
 import { SettingsPanel } from './ui/settingsPanel.ts';
@@ -267,6 +268,8 @@ function showSide(name: string) {
 }
 for (const t of document.querySelectorAll<HTMLElement>('.stab')) t.onclick = () => showSide(t.dataset.side!);
 $('changeSettings').onclick = () => showSide('settings');
+initSideRail();
+$('liveSetup').onclick = () => void revealNativeAudio();
 function updateUseSummary() {
   const s = settings.s;
   $('useSum').textContent = `${summary(s)} · ${s.format.toUpperCase()}`;
@@ -519,7 +522,7 @@ if (isTauri) {
   $('nativeInfoCard').hidden = false;
   $('nativeInfoText').textContent = NATIVE_INFO;
   $('nativeInfoShow').onclick = () => {
-    if (!revealNativeAudio()) toast("Open a song first: Native audio is in its Live input drawer.");
+    if (!revealNativeAudio()) toast('Native audio is only in the desktop app.');
   };
   const wn = $('welcomeNative');
   wn.hidden = false;
