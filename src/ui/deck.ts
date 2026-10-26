@@ -1763,16 +1763,44 @@ export class Deck {
     const finishRecording = async () => {
       if (!this.player.recording) return;
       recordUi(false);
-      const take = await this.player.stopRecording();
-      await this.finishRecordLane(take);
+      // The take ends at this moment, and the song stops with it, before the (slower) saving of the take below.
+      const pending = this.player.stopRecording();
       if (stopAfterTake.checked) this.player.pause();
+      const take = await pending;
+      await this.finishRecordLane(take);
       resumeLoop();
       if (restoreTempo != null) {
         this.setTempoPitch(restoreTempo, this.pitch);
         restoreTempo = null;
       }
     };
+    /** Between pressing Record and the take starting (the pre-roll or lead-in): the button counts down and pressing it again cancels. */
+    let arming = false;
+    let cancelArm = false;
+    let armTimer = 0;
+    const armUi = (on: boolean, beats = 0, beatMs = 0) => {
+      arming = on;
+      recordBtn.classList.toggle('arming', on);
+      clearInterval(armTimer);
+      if (!on) {
+        if (!this.player.recording) recordBtn.textContent = '● Rec'; // while a take is running recordUi owns the text
+        return;
+      }
+      let left = beats;
+      recordBtn.textContent = beats ? `● ${left}…` : '● Ready…';
+      if (beats && beatMs) {
+        armTimer = window.setInterval(() => {
+          left = Math.max(1, left - 1);
+          recordBtn.textContent = `● ${left}…`;
+        }, beatMs);
+      }
+    };
     recordBtn.onclick = () => {
+      if (arming) {
+        cancelArm = true; // pressed again during the lead-in: don't record after all
+        status.textContent = '';
+        return;
+      }
       if (this.player.recording) {
         void finishRecording();
         return;
@@ -1786,7 +1814,8 @@ export class Deck {
         return;
       }
       void (async () => {
-        recordBtn.disabled = true;
+        cancelArm = false;
+        armUi(true);
         try {
           // A recorded take is raw mic/instrument audio in real wall-clock time; it never goes
           // through the song's own time-stretcher. Placing it against the song's native timeline
@@ -1819,7 +1848,7 @@ export class Deck {
             this.player.seek(from);
             await this.player.play();
             const arrived = await this.waitForPlayhead(a, ((a - from) / SR) * 1000 + 3000);
-            if (!arrived || !this.player.monitoring) {
+            if (!arrived || !this.player.monitoring || cancelArm) {
               status.textContent = '';
               return; // cancelled, or the playhead never got there
             }
@@ -1828,11 +1857,17 @@ export class Deck {
             if (!this.player.state.playing) await this.player.play();
             const leadInMs = bpm ? Math.max(800, Math.min(4000, (60 / bpm) * this.pr.perBar * 1000)) : 1500;
             status.textContent = 'Get ready…';
+            const beats = bpm ? this.pr.perBar : 3;
+            armUi(true, beats, leadInMs / beats);
             await new Promise((res) => setTimeout(res, leadInMs));
-            if (!this.player.monitoring) return; // monitoring stopped during the lead-in
+            if (!this.player.monitoring || cancelArm) {
+              status.textContent = '';
+              return; // monitoring stopped, or Record was pressed again, during the lead-in
+            }
           }
           status.textContent = '';
           this.recordPunchEnd = punchEnd;
+          armUi(false);
           this.player.startRecording();
           this.beginRecordLane(target);
           refreshRecordTargets();
@@ -1848,6 +1883,7 @@ export class Deck {
         } catch (e) {
           toast(`Couldn't start recording: ${(e as Error).message}`, true);
         } finally {
+          armUi(false);
           recordBtn.disabled = !this.player.monitoring;
           // Didn't end up recording after all (lead-in cancelled, or it failed to start): put
           // the tempo back rather than leave it stuck at 100% with nothing to show for it.
