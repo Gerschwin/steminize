@@ -47,7 +47,7 @@ are desktop only and are marked **[desktop]**.
 - **Live input:** play an instrument or mic alongside the tracks, with level, pan and a meter; pick the device. Released.
 - **Input channel choice** (Stereo, Input 1, Input 2, both summed), which fixes a quiet signal from interfaces that leave one channel empty; the Level slider goes up to 4. Released in 0.9.2.
 - **Level 0 for direct monitoring:** recording, the meter, the tuner and the trainer still work with the app's own level turned down. Released in 0.9.2.
-- **Record** a take onto a new or existing track, with a lead-in; **Keep last** takes per track, switch between them, add notes, delete; saved with the song. Released.
+- **Record** a take onto a new or existing track, with a lead-in; **Keep last** takes per track, switch between them, add notes, delete; saved with the song. Released. The take being played can be deleted too (× on its row); when it is the only take, **× Delete track** removes the whole recorded track. Added after 0.9.6.
 - **Punch in on loop:** record only across the marked section. Released.
 - **Latency tools:** Measure (output patched to an input, or speakers near a mic), a typed value, and **Line up** (nudge a take against the beat lines, then Use as latency). **Low-latency audio** option. Released in 0.9.2.
 

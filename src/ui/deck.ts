@@ -1082,7 +1082,13 @@ export class Deck {
       ...takes.map((t) => {
         const active = t.id === lane.activeTakeId;
         if (active) {
-          return h('div', { class: 'take-block' }, h('div', { class: 'take-row active' }, h('span', { class: 'take-chip current' }, t.id), this.takeNoteEditor(lane, t)), this.takeNudger(lane, t));
+          // Even the take being played can be deleted; when it is the only one, that deletes the whole recorded track.
+          const delActive = h('button', { class: 'take-del', type: 'button', title: takes.length > 1 ? `Delete ${t.id}` : 'Delete this recorded track' }, takes.length > 1 ? '×' : '× Delete track');
+          delActive.onclick = (e) => {
+            e.stopPropagation();
+            void this.deleteTake(lane, t);
+          };
+          return h('div', { class: 'take-block' }, h('div', { class: 'take-row active' }, h('span', { class: 'take-chip current' }, t.id), this.takeNoteEditor(lane, t), delActive), this.takeNudger(lane, t));
         }
         const switchBtn = h('button', { class: 'take-chip', type: 'button', title: `Switch to ${t.id}` }, t.id);
         switchBtn.onclick = () => {
@@ -1151,9 +1157,18 @@ export class Deck {
   }
 
   private async deleteTake(lane: Lane, take: Take) {
-    if (!confirm(`Delete ${take.id}? This can't be undone.`)) return;
+    const only = (lane.takes ?? []).length <= 1;
+    if (!confirm(only ? `Delete this recorded track (${take.id})? This can't be undone.` : `Delete ${take.id}? This can't be undone.`)) return;
+    const wasActive = lane.activeTakeId === take.id;
     lane.takes = (lane.takes ?? []).filter((t) => t.id !== take.id);
-    this.renderTakeStrip(lane);
+    if (wasActive && lane.takes.length) {
+      // The take being played is going: carry on with the most recent of the others.
+      const next = lane.takes[lane.takes.length - 1];
+      this.selectTake(lane, next);
+      this.onTakeSelected(lane.groupId!, next.id);
+    } else {
+      this.renderTakeStrip(lane);
+    }
     try {
       await this.onTakeRemoved(lane.groupId!, take.id);
     } catch (e) {
