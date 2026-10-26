@@ -988,7 +988,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .lane-ctl .mini output { min-width: 0; width: 34px; overflow: hidden; }
 .lane-ctl .mini { grid-template-columns: 26px 1fr 34px; }
 /* The Record button in the transport bar, beside Play. */
-.recbtn { margin-left: 2px; min-width: 76px; text-align: center; white-space: nowrap; }
+.recbtn { margin-left: 2px; flex: none; box-sizing: border-box; width: 96px; padding-left: 6px; padding-right: 6px; text-align: center; white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
 .recbtn:disabled { opacity: 0.4; cursor: not-allowed; }
 .rec-time { font-variant-numeric: tabular-nums; min-width: 3ch; }
 .btn.toggle.rec.arming { background: color-mix(in srgb, var(--warn) 25%, var(--panel-2)); border-color: var(--warn); color: var(--warn-text); }

@@ -1787,7 +1787,7 @@ export class Deck {
         return;
       }
       let left = beats;
-      recordBtn.textContent = beats ? `● ${left}…` : '● Ready…';
+      recordBtn.textContent = beats ? `● ${left}…` : '● …';
       if (beats && beatMs) {
         armTimer = window.setInterval(() => {
           left = Math.max(1, left - 1);
