@@ -34,6 +34,14 @@ fn by_channel(ports: &mut [String]) {
     ports.sort_by_key(|p| p.rsplit(|c| c == '_' || c == ':').next().unwrap_or("").to_string());
 }
 
+/// The engine's own client. JACK normally renames a client whose name is taken (Steminize-01), and the port names used here would then
+/// point at somebody else's ports, so insist on the exact name and say so when something else (another Steminize) already has it.
+fn open_engine_client() -> Result<Client, String> {
+    Client::new("Steminize", ClientOptions::NO_START_SERVER | ClientOptions::USE_EXACT_NAME)
+        .map(|(c, _)| c)
+        .map_err(|e| format!("Couldn't open the JACK client \"Steminize\" ({e}). Is another copy of Steminize already using JACK? If not, make sure JACK (or PipeWire's JACK support) is running."))
+}
+
 /// What the device list shows for JACK: each capture port as an input (named as JACK names it) and each owner of playback ports as an
 /// output. Empty when there is no JACK server, or libjack is not installed.
 pub fn devices() -> Vec<(String, bool, u32, u32)> {
@@ -181,7 +189,7 @@ pub fn start(output: &str, buffer: u32, make: impl FnOnce(u32) -> Engine, on_fai
     if buffer > 0 {
         std::env::set_var("PIPEWIRE_LATENCY", format!("{buffer}/48000"));
     }
-    let client = open_client("Steminize")?;
+    let client = open_engine_client()?;
     let rate = client.sample_rate() as u32;
     let period = client.buffer_size();
     let input = client.register_port("in", AudioIn::default()).map_err(|e| e.to_string())?;
