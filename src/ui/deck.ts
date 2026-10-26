@@ -16,7 +16,7 @@ import { ardourSession } from '../export/ardour.ts';
 import { dawprojectAudioPath, dawprojectMetadata, dawprojectXml } from '../export/dawproject.ts';
 import { zipSync } from 'fflate';
 import { barAlignment, beatTempos, dawReadme, markersCsv, reaperProject, songManifest, tempoMapFile, type DawProject } from '../export/daw.ts';
-import { MAX_REC_LATENCY_MS, loadLiveChannel, loadLowLatencyAudio, loadRecLatencyMs, saveLiveChannel, saveLowLatencyAudio, saveRecLatencyMs, type LiveChannel, type Settings } from '../settings.ts';
+import { MAX_REC_LATENCY_MS, loadLiveChannel, loadLowLatencyAudio, loadRecLatencyMs, loadStopAfterTake, saveLiveChannel, saveLowLatencyAudio, saveRecLatencyMs, saveStopAfterTake, type LiveChannel, type Settings } from '../settings.ts';
 import { BarTally, barColour, barCue, barTip, type BarScores, type BarVisit } from '../lyrics/barScores.ts';
 import { initNativeAudio } from './nativeAudio.ts';
 import { parseDrums, type DrumNote } from '../lyrics/drumTab.ts';
@@ -1647,6 +1647,9 @@ export class Deck {
       status.textContent = lowLat.checked ? 'Low-latency audio will be used the next time you open Steminize.' : 'Standard audio buffers will be used the next time you open Steminize.';
     };
 
+    const stopAfterTake = $<HTMLInputElement>('liveStopAfter');
+    stopAfterTake.checked = loadStopAfterTake();
+    stopAfterTake.onchange = () => saveStopAfterTake(stopAfterTake.checked);
     const maxTakesInput = $<HTMLInputElement>('liveMaxTakes');
     maxTakesInput.value = String(this.maxTakes());
     maxTakesInput.onchange = () => {
@@ -1762,6 +1765,7 @@ export class Deck {
       recordUi(false);
       const take = await this.player.stopRecording();
       await this.finishRecordLane(take);
+      if (stopAfterTake.checked) this.player.pause();
       resumeLoop();
       if (restoreTempo != null) {
         this.setTempoPitch(restoreTempo, this.pitch);

@@ -988,6 +988,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .lane-ctl .mini output { min-width: 0; width: 34px; overflow: hidden; }
 .lane-ctl .mini { grid-template-columns: 26px 1fr 34px; }
 /* The Record button in the transport bar, beside Play. */
-.recbtn { margin-left: 2px; }
+.recbtn { margin-left: 2px; min-width: 76px; text-align: center; white-space: nowrap; }
 .recbtn:disabled { opacity: 0.4; cursor: not-allowed; }
 .rec-time { font-variant-numeric: tabular-nums; min-width: 3ch; }

@@ -104,6 +104,25 @@ export function saveLowLatencyAudio(on: boolean) {
   }
 }
 
+const STOP_AFTER_TAKE_KEY = 'steminize.stopAfterTake';
+
+/** Whether the song stops when a take is stopped. On unless the person turned it off. */
+export function loadStopAfterTake(): boolean {
+  try {
+    return localStorage.getItem(STOP_AFTER_TAKE_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+export function saveStopAfterTake(on: boolean) {
+  try {
+    localStorage.setItem(STOP_AFTER_TAKE_KEY, on ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Which input channels the live input uses; see Player.setMonitorChannel. */
 const CHANNEL_KEY = 'steminize.liveChannel';
 export type LiveChannel = 'stereo' | 'left' | 'right' | 'sum';
