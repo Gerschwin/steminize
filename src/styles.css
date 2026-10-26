@@ -992,3 +992,5 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .recbtn:disabled { opacity: 0.4; cursor: not-allowed; }
 .rec-time { font-variant-numeric: tabular-nums; min-width: 3ch; }
 .btn.toggle.rec.arming { background: color-mix(in srgb, var(--warn) 25%, var(--panel-2)); border-color: var(--warn); color: var(--warn-text); }
+/* The small status words on the drawer tabs ("on", "off") keep their room, so a tab doesn't change width and move its neighbours. */
+#sumLive, #sumPractice { display: inline-block; min-width: 2.4ch; }

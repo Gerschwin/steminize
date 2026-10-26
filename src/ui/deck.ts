@@ -1861,16 +1861,22 @@ export class Deck {
             const an = this.r?.analysis;
             const bars = an && an.beats.length > this.pr.perBar ? barStarts(an.beats, this.downbeat(), this.pr.perBar, SR) : [];
             const from = this.player.state.pos;
-            const target = bars.find((f) => f >= from + 0.9 * SR);
-            if (target != null && target - from < 8 * SR) {
-              const beatFrames = an!.beats.map((b) => Math.round(b * SR));
+            const beatFrames = an ? an.beats.map((b) => Math.round(b * SR)) : [];
+            const beatsBetween = (a: number, b: number) => beatFrames.filter((f) => f > a && f <= b).length;
+            // The first bar line with a whole bar of beats before it: the count then always runs perBar ... 1, evenly, and ends on the bar.
+            const target = bars.find((f) => beatsBetween(from, f) >= this.pr.perBar);
+            if (target != null && target - from < 12 * SR) {
               const patience = performance.now() + ((target - from) / SR) * 1000 + 3000;
-              armUi(true, beatFrames.filter((f) => f > from && f <= target).length);
+              const show = (p: number) => {
+                const left = beatsBetween(p, target);
+                recordBtn.textContent = left > this.pr.perBar ? '● …' : `● ${Math.max(1, left)}…`;
+              };
+              armUi(true);
+              show(from);
               await new Promise<void>((res) => {
                 const id = window.setInterval(() => {
                   const p = this.player.state.pos;
-                  const left = beatFrames.filter((f) => f > p && f <= target).length;
-                  recordBtn.textContent = `● ${Math.max(1, left)}…`;
+                  show(p);
                   if (p >= target || cancelArm || !this.player.monitoring || performance.now() > patience) {
                     clearInterval(id);
                     res();
