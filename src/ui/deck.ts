@@ -1855,11 +1855,34 @@ export class Deck {
             punchEnd = this.loop.b;
           } else {
             if (!this.player.state.playing) await this.player.play();
-            const leadInMs = bpm ? Math.max(800, Math.min(4000, (60 / bpm) * this.pr.perBar * 1000)) : 1500;
             status.textContent = 'Get ready…';
-            const beats = bpm ? this.pr.perBar : 3;
-            armUi(true, beats, leadInMs / beats);
-            await new Promise((res) => setTimeout(res, leadInMs));
+            // With a beat grid the take starts exactly on a bar line, counting the real beats of the song down to it (so the count
+            // is even and in time with the music); without one, a fixed short count.
+            const an = this.r?.analysis;
+            const bars = an && an.beats.length > this.pr.perBar ? barStarts(an.beats, this.downbeat(), this.pr.perBar, SR) : [];
+            const from = this.player.state.pos;
+            const target = bars.find((f) => f >= from + 0.9 * SR);
+            if (target != null && target - from < 8 * SR) {
+              const beatFrames = an!.beats.map((b) => Math.round(b * SR));
+              const patience = performance.now() + ((target - from) / SR) * 1000 + 3000;
+              armUi(true, beatFrames.filter((f) => f > from && f <= target).length);
+              await new Promise<void>((res) => {
+                const id = window.setInterval(() => {
+                  const p = this.player.state.pos;
+                  const left = beatFrames.filter((f) => f > p && f <= target).length;
+                  recordBtn.textContent = `● ${Math.max(1, left)}…`;
+                  if (p >= target || cancelArm || !this.player.monitoring || performance.now() > patience) {
+                    clearInterval(id);
+                    res();
+                  }
+                }, 25);
+              });
+            } else {
+              const leadInMs = bpm ? Math.max(800, Math.min(4000, (60 / bpm) * this.pr.perBar * 1000)) : 1500;
+              const beats = bpm ? this.pr.perBar : 3;
+              armUi(true, beats, leadInMs / beats);
+              await new Promise((res) => setTimeout(res, leadInMs));
+            }
             if (!this.player.monitoring || cancelArm) {
               status.textContent = '';
               return; // monitoring stopped, or Record was pressed again, during the lead-in
