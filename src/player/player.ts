@@ -111,6 +111,14 @@ export class Player {
     return 1;
   }
 
+  /** The input device or channel was changed while the native monitor is running: point the engine's input at the new one without stopping the song or the monitor. Not while a take is being recorded. */
+  async retargetNativeInput(): Promise<boolean> {
+    if (!this.monitorNative || !this.nativeCfg || this.recording) return false;
+    const c = this.nativeCfg;
+    await this.nativeInvoke('native_input_start', { input: c.input, channel: c.channel, buffer: c.buffer, fixed: c.fixed });
+    return true;
+  }
+
   private async pollSnapshot() {
     if (this.snapBusy || !this.monitorNative) return;
     this.snapBusy = true;

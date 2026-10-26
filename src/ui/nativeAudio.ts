@@ -115,8 +115,14 @@ export function initNativeAudio(player: Player) {
     route.textContent = [line('input', inSel.value), line('output', outSel.value)].filter(Boolean).join('  ·  ');
     syncCfg();
   };
-  inSel.onChange = showRoute;
-  outSel.onChange = showRoute;
+  inSel.onChange = () => {
+    showRoute();
+    scheduleApply();
+  };
+  outSel.onChange = () => {
+    showRoute();
+    scheduleApply();
+  };
 
   const fillDevices = () => {
     const host = hostSel.value;
@@ -182,12 +188,51 @@ export function initNativeAudio(player: Player) {
   for (const el of [hostSel, chanSel, bufSel, rateSel]) el.addEventListener('change', syncCfg);
   inSel.el.addEventListener('click', () => setTimeout(syncCfg, 0));
   outSel.el.addEventListener('click', () => setTimeout(syncCfg, 0));
-  /** The running engine keeps the host, output and buffer it started with; say so when the choices no longer match it. */
-  const warnIfChanged = () => {
-    if (playbackBox.checked) status.textContent = 'Changed: the running engine keeps its old choices. Untick and tick "Use native playback" again.';
+  // What the running engine was started with. A change of input or channel is applied at once (the monitor carries on with the new
+  // input); a change of host, output, buffer or rate needs the engine started again, which is done here too, so there is no
+  // unticking and reticking.
+  let started: ReturnType<typeof args> | null = null;
+  let applyTimer = 0;
+  let applying = false;
+  const applyChange = async () => {
+    if (!playbackBox.checked || !started || applying) return;
+    const a = args();
+    const engineChanged = a.host !== started.host || a.output !== started.output || a.buffer !== started.buffer || a.rate !== started.rate;
+    if (engineChanged) {
+      if (player.monitorIsNative) {
+        status.textContent = 'Changed: stop the Live input monitor, then untick and tick "Use native playback" to apply the new host, output or buffer.';
+        return;
+      }
+      applying = true;
+      try {
+        status.textContent = 'Applying the change…';
+        await player.stopNative().catch(() => {});
+        clearInterval(audioStatsTimer);
+        playbackBox.checked = await startPlayback();
+      } finally {
+        applying = false;
+      }
+    } else if (a.input !== started.input || a.inChannel !== started.inChannel) {
+      applying = true;
+      try {
+        if (player.monitorIsNative && !(await player.retargetNativeInput())) {
+          status.textContent = 'Input changed: it takes effect when the take being recorded is finished and the monitor is started again.';
+        } else if (player.monitorIsNative) {
+          status.textContent = `Input changed to ${a.input}.`;
+        }
+        started = a;
+      } catch (e) {
+        status.textContent = `Couldn't switch the input: ${e}`;
+      } finally {
+        applying = false;
+      }
+    }
   };
-  for (const el of [hostSel, bufSel, rateSel]) el.addEventListener('change', warnIfChanged);
-  outSel.el.addEventListener('click', () => setTimeout(warnIfChanged, 0));
+  function scheduleApply() {
+    clearTimeout(applyTimer);
+    applyTimer = window.setTimeout(() => void applyChange(), 300);
+  }
+  for (const el of [hostSel, chanSel, bufSel, rateSel]) el.addEventListener('change', scheduleApply);
   hostSel.onchange = () => {
     fillDevices();
     syncCfg();
@@ -260,6 +305,7 @@ export function initNativeAudio(player: Player) {
     try {
       const summary = await player.startNative({ host: a.host, output: a.output, buffer: a.buffer, fixed: a.fixed, rate: a.rate });
       status.textContent = `Native playback on: ${summary}.`;
+      started = a;
       player.onNativeStarted(); // a song that is already open moves over to the native engine, keeping its settings
       clearInterval(audioStatsTimer);
       audioStatsTimer = window.setInterval(showAudioStats, 1000);
