@@ -969,7 +969,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .layout.side-rail { grid-template-columns: 52px 1fr; }
 .layout.side-rail .side { padding: 0 0 0 8px; overflow: visible; }
 .layout.side-rail .side-tabs { flex-direction: column; align-items: stretch; align-self: stretch; width: auto; box-sizing: border-box; padding: 3px; gap: 3px; }
-.layout.side-rail .stab { writing-mode: vertical-rl; transform: rotate(180deg); padding: 12px 4px; }
+.layout.side-rail .stab { font-size: 0; padding: 8px 0; line-height: 1; }
+.layout.side-rail .stab::before { font-size: 20px; }
+.layout.side-rail .stab[data-side='songs']::before { content: '♫'; }
+.layout.side-rail .stab[data-side='settings']::before { content: '⚙'; }
 .layout.side-rail .side-pin { margin: 4px 0 0; padding: 4px 0; }
 .layout.side-rail .side-pane { display: none; }
 .layout.side-rail.side-peek .side-pane:not([hidden]) {
