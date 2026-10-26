@@ -2,6 +2,8 @@
 
 (nothing waiting)
 
+**JACK buffer size changes live (2026-10-26):** with the JACK host a change of the buffer choice calls `native_jack_set_buffer` (`JackRun::set_buffer_size`, `Ctl::SetBuffer`), so it applies while the monitor and the song run, no restart (works through PipeWire: ignored test `jack_buffer_changes_live` went 128 -> 64 -> 256 -> 128 with the song still moving). Other audio systems still restart the engine for a buffer change, and refuse while the monitor is on.
+
 **Native audio panel applies changes by itself (2026-10-26):** changing the input or input channel while native playback is on re-points the running engine's input (`Player.retargetNativeInput`, `native_input_start` again; the monitor carries on, refused during a take); changing host, output, buffer or rate restarts the engine and hands the open song back (not while the monitor is on: it says to stop it first). Debounced 300 ms in `nativeAudio.ts` (`applyChange`). Not run in the app yet.
 
 **Native playback now takes over the open song (2026-10-25):** switching "Use native playback" on reopens the current library song in the native engine with its settings (`Deck.open(r, getState())` via `Player.onNativeStarted`), instead of asking the user to reopen it by hand. Untested with a recording in progress; only for songs saved in the library.

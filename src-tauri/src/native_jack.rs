@@ -144,6 +144,16 @@ impl JackRun {
         Ok(format!("{chosen} through JACK, no queue between input and output"))
     }
 
+    /// Asks the JACK server for a different period (frames per cycle). The engine carries on: its callback takes whatever size arrives.
+    /// Returns the period now in force, which the server may have kept different from the one asked for.
+    pub fn set_buffer_size(&self, frames: u32) -> Result<u32, String> {
+        let c = self.client.as_client();
+        c.set_buffer_size(frames).map_err(|e| format!("JACK would not change the buffer size to {frames}: {e}"))?;
+        // The change takes a moment to reach the client.
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        Ok(c.buffer_size())
+    }
+
     pub fn disconnect_input(&self) {
         let c = self.client.as_client();
         if let Some(mine) = c.port_by_name("Steminize:in") {

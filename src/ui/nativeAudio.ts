@@ -197,8 +197,23 @@ export function initNativeAudio(player: Player) {
   const applyChange = async () => {
     if (!playbackBox.checked || !started || applying) return;
     const a = args();
-    const engineChanged = a.host !== started.host || a.output !== started.output || a.buffer !== started.buffer || a.rate !== started.rate;
-    if (engineChanged) {
+    const jack = a.host.startsWith('JACK');
+    // With JACK the period can be changed while everything keeps running; other audio systems need the engine started again for it.
+    const bufferOnly = jack && a.buffer !== started.buffer && a.buffer > 0 && a.host === started.host && a.output === started.output && a.rate === started.rate;
+    const engineChanged = !bufferOnly && (a.host !== started.host || a.output !== started.output || a.buffer !== started.buffer || a.rate !== started.rate);
+    if (bufferOnly) {
+      applying = true;
+      try {
+        const now = await call<string>('native_jack_set_buffer', { frames: a.buffer });
+        started = { ...started, buffer: a.buffer, fixed: a.fixed };
+        player.nativeCfg = { ...(player.nativeCfg ?? { host: a.host, input: a.input, output: a.output, channel: a.inChannel, rate: a.rate }), buffer: a.buffer, fixed: a.fixed };
+        status.textContent = `Buffer changed: ${now}.`;
+      } catch (e) {
+        status.textContent = `Couldn't change the buffer: ${e}`;
+      } finally {
+        applying = false;
+      }
+    } else if (engineChanged) {
       if (player.monitorIsNative) {
         status.textContent = 'Changed: stop the Live input monitor, then untick and tick "Use native playback" to apply the new host, output or buffer.';
         return;

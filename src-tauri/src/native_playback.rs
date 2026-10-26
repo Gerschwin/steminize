@@ -422,6 +422,8 @@ fn jack_setup(rx: Receiver<Cmd>, shared: Arc<Shared>, output: &str, buffer: u32)
 enum Ctl {
     OpenInput { input: String, channel: usize, buffer: u32, fixed: bool, reply: Sender<Result<String, String>> },
     CloseInput,
+    /// JACK only: change the period without restarting the engine.
+    SetBuffer { frames: u32, reply: Sender<Result<String, String>> },
 }
 
 struct Handle {
@@ -534,6 +536,12 @@ fn start_engine(report: Box<dyn Fn(StateReport) + Send>, on_failure: Box<dyn Fn(
                                         Ok(summary)
                                     }
                                     Err(e) => Err(e),
+                                });
+                            }
+                            Ctl::SetBuffer { frames, reply } => {
+                                let _ = reply.send(match &backend {
+                                    Backend::Jack(j) => j.set_buffer_size(frames).map(|now| format!("{now} frames a period")),
+                                    Backend::Cpal(_) => Err("This audio system needs the engine started again to change the buffer".to_string()),
                                 });
                             }
                             Ctl::CloseInput => {
@@ -666,6 +674,22 @@ pub fn native_engine_track(request: tauri::ipc::Request) -> Result<(), String> {
         Some("replace") => send(Cmd::ReplaceTrack(h("index").and_then(|i| i.parse().ok()).ok_or("missing track index")?, stem)),
         _ => Err("mode must be add or replace".into()),
     }
+}
+
+/// JACK only: changes the period (frames per cycle) while everything keeps running. Returns a short description of the period now in force.
+#[tauri::command]
+pub async fn native_jack_set_buffer(frames: u32) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || jack_set_buffer_blocking(frames)).await.map_err(|e| e.to_string())?
+}
+
+fn jack_set_buffer_blocking(frames: u32) -> Result<String, String> {
+    let (reply, answer) = channel_pair();
+    {
+        let g = ENGINE.lock().unwrap();
+        let h = g.as_ref().ok_or("The native engine isn't running")?;
+        h.ctl.send(Ctl::SetBuffer { frames, reply }).map_err(|e| e.to_string())?;
+    }
+    answer.recv_timeout(Duration::from_secs(5)).map_err(|_| "Timed out changing the buffer size".to_string())?
 }
 
 /// Stops the sound and drops the current song straight away (called when another song is about to load).
@@ -1034,6 +1058,29 @@ mod tests {
         drop(ac);
         stop_engine();
         assert!((peak - 0.5).abs() < 0.05, "the tone should come through at its own level (0.5), got {peak}");
+    }
+
+    /// Changing the JACK period while the engine runs: the song keeps moving and the monitor keeps passing a tone.
+    ///   NA_SONG_DIR=<library/song-id> pw-jack cargo test jack_buffer_changes_live -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn jack_buffer_changes_live() {
+        let dir = std::path::PathBuf::from(std::env::var("NA_SONG_DIR").expect("NA_SONG_DIR"));
+        let reports = Arc::new(Mutex::new(Vec::<StateReport>::new()));
+        let r2 = reports.clone();
+        println!("{}", start_engine(Box::new(move |r| r2.lock().unwrap().push(r)), Box::new(|_| {}), crate::native_jack::JACK_HOST.into(), "Built-in Audio Analogue Stereo".into(), 0, false, 0).expect("start"));
+        load_song(&dir, vec![1.0; 6]).expect("load");
+        send(Cmd::Play).unwrap();
+        for frames in [128u32, 64, 256, 128] {
+            let before = reports.lock().unwrap().last().cloned().unwrap().pos;
+            let now = jack_set_buffer_blocking(frames);
+            println!("asked for {frames}: {now:?}");
+            std::thread::sleep(Duration::from_millis(800));
+            let after = reports.lock().unwrap().last().cloned().unwrap();
+            println!("  position {before:.0} -> {:.0}, playing {}", after.pos, after.playing);
+            assert!(after.playing && after.pos > before + 20000.0, "the song stopped moving after the change to {frames}");
+        }
+        stop_engine();
     }
 
     /// Prints the round trip JACK reports for the real sound card (the first capture port and the first two playback ports). Run under
