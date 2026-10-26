@@ -16,8 +16,16 @@ export function h<K extends keyof HTMLElementTagNameMap>(
   return el;
 }
 
-export function toast(msg: string, bad = false, ms = 4000) {
+export function toast(msg: string, bad = false, ms = 4000, action?: { label: string; run: () => void }) {
   const t = h('div', { class: `toast${bad ? ' bad' : ''}` }, msg);
+  if (action) {
+    const b = h('button', { class: 'btn tiny toast-action', type: 'button' }, action.label);
+    b.onclick = () => {
+      t.remove();
+      action.run();
+    };
+    t.append(' ', b);
+  }
   $('toasts').append(t);
   setTimeout(() => t.remove(), bad ? ms * 2 : ms);
   return t;

@@ -1156,12 +1156,25 @@ export class Deck {
     );
   }
 
-  private async deleteTake(lane: Lane, take: Take) {
-    const only = (lane.takes ?? []).length <= 1;
-    if (!confirm(only ? `Delete this recorded track (${take.id})? This can't be undone.` : `Delete ${take.id}? This can't be undone.`)) return;
+  /** Takes deleted a moment ago that can still be brought back. The audio file is only removed from the library when the time is up (or another song is opened). */
+  private pendingDeletes: { lane: Lane; take: Take; index: number; wasActive: boolean; lastOne: boolean; timer: number; done: boolean }[] = [];
+  private static readonly UNDO_MS = 10000;
+
+  /** Deletes a take at once, with an Undo for ten seconds. The take being played can go too; when it is the only one, the whole recorded track goes. */
+  private deleteTake(lane: Lane, take: Take) {
+    const takes = lane.takes ?? [];
+    const index = takes.indexOf(take);
     const wasActive = lane.activeTakeId === take.id;
-    lane.takes = (lane.takes ?? []).filter((t) => t.id !== take.id);
-    if (wasActive && lane.takes.length) {
+    const lastOne = takes.length <= 1;
+    lane.takes = takes.filter((t) => t.id !== take.id);
+    if (lastOne) {
+      // Nothing left at this slot: silence it and hide its row, but keep both so that Undo can put it back.
+      this.player.replaceTrack(this.lanes.indexOf(lane), [new Float32Array(this.length), new Float32Array(this.length)]);
+      lane.el.hidden = true;
+      this.refreshRecordTargetsUi();
+      this.dirty = true;
+      this.emit();
+    } else if (wasActive) {
       // The take being played is going: carry on with the most recent of the others.
       const next = lane.takes[lane.takes.length - 1];
       this.selectTake(lane, next);
@@ -1169,15 +1182,39 @@ export class Deck {
     } else {
       this.renderTakeStrip(lane);
     }
+    const entry = { lane, take, index, wasActive, lastOne, timer: 0, done: false };
+    entry.timer = window.setTimeout(() => void this.finishDelete(entry, true), Deck.UNDO_MS);
+    this.pendingDeletes.push(entry);
+    toast(lastOne ? `Deleted the track (${take.id}).` : `Deleted ${take.id}.`, false, Deck.UNDO_MS, { label: 'Undo', run: () => this.undoDelete(entry) });
+  }
+
+  private undoDelete(e: (typeof this.pendingDeletes)[number]) {
+    if (e.done) return;
+    e.done = true;
+    clearTimeout(e.timer);
+    this.pendingDeletes = this.pendingDeletes.filter((p) => p !== e);
+    const { lane, take } = e;
+    lane.takes = lane.takes ?? [];
+    lane.takes.splice(Math.min(e.index, lane.takes.length), 0, take);
+    lane.el.hidden = false;
+    this.selectTake(lane, e.wasActive || e.lastOne ? take : (lane.takes.find((t) => t.id === lane.activeTakeId) ?? take));
+    this.onTakeSelected(lane.groupId!, lane.activeTakeId ?? take.id);
+    this.refreshRecordTargetsUi();
+  }
+
+  /** The time for Undo is up: remove the take from the library, and if it was the only one, the empty track from the song. `tidy` is false when another song is being opened (this song's rows are about to be replaced anyway). */
+  private async finishDelete(e: (typeof this.pendingDeletes)[number], tidy: boolean) {
+    if (e.done) return;
+    e.done = true;
+    clearTimeout(e.timer);
+    this.pendingDeletes = this.pendingDeletes.filter((p) => p !== e);
+    const { lane, take } = e;
     try {
       await this.onTakeRemoved(lane.groupId!, take.id);
-    } catch (e) {
-      toast(`Couldn't delete ${take.id}: ${(e as Error).message}`, true);
+    } catch (err) {
+      toast(`Couldn't delete ${take.id}: ${(err as Error).message}`, true);
     }
-    if (!lane.takes.length) {
-      // Nothing left at this slot. There's no message to remove a track from the player outright,
-      // so silence it in place (a zeroed stem is inaudible either way) and drop its row.
-      this.player.replaceTrack(this.lanes.indexOf(lane), [new Float32Array(this.length), new Float32Array(this.length)]);
+    if (tidy && e.lastOne && this.lanes.includes(lane)) {
       lane.takesEl?.remove();
       lane.el.remove();
       this.lanes.splice(this.lanes.indexOf(lane), 1);
@@ -1221,6 +1258,8 @@ export class Deck {
   }
 
   open(r: Result, state?: DeckState) {
+    // Anything deleted a moment ago is removed for good now, from the song it belonged to, before this one takes its place.
+    for (const e of [...this.pendingDeletes]) void this.finishDelete(e, false);
     this.stopLiveInputUi();
     this.quiet = true;
     this.player.pause();
