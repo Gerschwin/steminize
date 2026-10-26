@@ -357,6 +357,8 @@
                 <button class="btn tbtn" id="toEndBtn" type="button" title="Jump to the end" aria-label="Jump to the end">
                   <svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM5 5v14l11-7z"/></svg>
                 </button>
+                <button class="btn toggle rec recbtn" id="liveRecordBtn" type="button" aria-pressed="false" disabled hidden title="Record your own take (R). Start the monitor first, in the Live input drawer.">● Rec</button>
+                <span class="muted small rec-time" id="liveRecordTime" hidden>0:00</span>
                 <div class="tool loop">
                   <button class="btn toggle" id="loopBtn" aria-pressed="false" title="Loop (L)">Loop</button>
                   <button class="btn tiny ghost" id="setA" title="Loop start at playhead ([)">Set A</button>
@@ -524,8 +526,6 @@
                   <div class="live-grp live-rec">
                     <select id="liveRecordTarget" title="Which track to record into" hidden></select>
                     <label class="mini punch" id="livePunchWrap" hidden title="Record only across the marked loop section: playback starts a bar before it, recording runs from A to B, then stops."><input type="checkbox" id="livePunch" /> Punch in on loop</label>
-                    <button class="btn tiny toggle rec" id="liveRecordBtn" type="button" aria-pressed="false" title="Record your own take while monitoring, saved as a local audio file" hidden>● Record</button>
-                    <span class="muted small" id="liveRecordTime" hidden>0:00</span>
                   </div>
                   <label class="mini takes" title="Oldest take is dropped once you go over this, both here and from the library">Keep last <input type="number" id="liveMaxTakes" min="1" max="20" step="1" value="5" /> takes</label>
                   <span class="muted small" id="liveStatus"></span>
@@ -667,7 +667,7 @@
           <div class="lanes xlanes" id="xlanes"></div>
           <div class="lanes" id="lanes"></div>
           <div class="shortcuts-row">
-            <p class="muted small shortcuts">Space / PageDown play · PageUp restart section · M marker · + − 0 zoom · Shift + − track height · ← → skip 5 s · L loop · [ ] loop points · F freeze · 1–6 mute · Ctrl/Cmd+Z undo mixer · +Shift redo</p>
+            <p class="muted small shortcuts">Space / PageDown play · R record · PageUp restart section · M marker · + − 0 zoom · Shift + − track height · ← → skip 5 s · L loop · [ ] loop points · F freeze · 1–6 mute · Ctrl/Cmd+Z undo mixer · +Shift redo</p>
             <button class="btn tiny ghost toggle" id="pedalBtn" aria-pressed="false" title="For page-turner pedals that send arrow keys: right/down = play/pause, left/up = restart section">Foot pedal mode</button>
           </div>
         </div>

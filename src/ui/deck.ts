@@ -1586,6 +1586,7 @@ export class Deck {
   private initLiveInput() {
     if (!navigator.mediaDevices?.getUserMedia) return; // liveTab stays hidden: not available here
     $('liveTab').hidden = false;
+    $('liveRecordBtn').hidden = false; // the record button lives in the transport bar; greyed until the monitor is on
     const btn = $<HTMLButtonElement>('liveBtn');
     const deviceSel = $<HTMLSelectElement>('liveDevice');
     const channelSel = $<HTMLSelectElement>('liveChannel');
@@ -1635,7 +1636,7 @@ export class Deck {
         status.textContent = `Couldn't measure: ${(e as Error).message}`;
       } finally {
         latencyBtn.disabled = false;
-        recordBtn.disabled = false;
+        recordBtn.disabled = !this.player.monitoring;
       }
     };
 
@@ -1705,7 +1706,8 @@ export class Deck {
       channelSel.hidden = !on;
       panWrap.hidden = !on;
       meter.hidden = !on;
-      recordBtn.hidden = !on;
+      recordBtn.disabled = !on;
+      recordBtn.title = on ? 'Record your own take (R)' : 'Record your own take (R). Start the monitor first, in the Live input drawer.';
       latencyWrap.hidden = !on;
       punchWrap.hidden = !on;
       latencyBtn.hidden = !on;
@@ -1842,7 +1844,7 @@ export class Deck {
         } catch (e) {
           toast(`Couldn't start recording: ${(e as Error).message}`, true);
         } finally {
-          recordBtn.disabled = false;
+          recordBtn.disabled = !this.player.monitoring;
           // Didn't end up recording after all (lead-in cancelled, or it failed to start): put
           // the tempo back rather than leave it stuck at 100% with nothing to show for it.
           if (!this.player.recording) {
@@ -4144,6 +4146,7 @@ export class Deck {
       else if (e.code === 'Space' || k === 'PageDown' || k === 'MediaPlayPause' || (this.pedal && ['ArrowRight', 'ArrowDown', 'Enter'].includes(k))) this.toggle();
       else if (k === 'PageUp' || k === 'Home' || (this.pedal && ['ArrowLeft', 'ArrowUp'].includes(k))) this.restart();
       else if (k === 'm' || k === 'M') this.addMarker();
+      else if (k === 'r' || k === 'R') this.recordShortcut();
       else if (this.learn.isOpen() && (k === 'n' || k === 'N')) this.learn.nailed();
       else if (this.learn.isOpen() && (k === 'x' || k === 'X')) this.learn.missed();
       else if (this.learn.isOpen() && k === ',') this.learn.prev();
@@ -4164,6 +4167,14 @@ export class Deck {
       else return;
       e.preventDefault();
     });
+  }
+
+  /** R: start or stop a take, the same as the Record button in the transport bar. */
+  private recordShortcut() {
+    const b = $<HTMLButtonElement>('liveRecordBtn');
+    if (b.hidden) return;
+    if (b.disabled) toast('Start the monitor first, in the Live input drawer.');
+    else b.click();
   }
 
   // ---------- drawing ----------
