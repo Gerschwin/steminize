@@ -6,10 +6,12 @@ import { hasModel } from '../modelstore.ts';
 import type { Settings } from '../settings.ts';
 import { $ } from './dom.ts';
 
-export function initWelcome(settings: () => Settings) {
+export function initWelcome(settings: () => Settings, openSample: () => void) {
   const choose = (id: string) => () => $<HTMLInputElement>(id).click();
   $('welcomeChoose').onclick = choose('fileInput');
   $('welcomeTracks').onclick = choose('multiFiles');
+  $('welcomeSample').hidden = false;
+  $('welcomeSample').onclick = openSample;
   const render = async () => {
     const s = settings();
     const m = MODELS[s.model];

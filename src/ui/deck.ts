@@ -87,6 +87,8 @@ export interface Result {
   libId?: string;
   /** Opened from existing track files rather than separated. */
   kind?: 'separated' | 'multitrack';
+  /** Which bundled sample song this is, if it is one (see src/sample.ts). */
+  sample?: string;
   analysis?: Analysis;
   /** Onset envelopes, kept in memory for quick tempo corrections. */
   onsets?: { env: Float32Array; low: Float32Array };

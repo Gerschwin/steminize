@@ -73,6 +73,7 @@ are desktop only and are marked **[desktop]**.
 - **Lyrics:** plain, or synced (LRC) with Follow along, click a line to jump, a timing nudge, and Import .lrc. Released.
 - **Chords over the lyrics:** with synced lyrics in Follow along, a **Chords** button writes each chord above the word where it changes, like a chord sheet; the chord sounding now is lit. It uses the same names as the timeline (Simple, pitch shift, capo) and redraws when you correct a chord. Chords are placed by their time within each line (lyrics are timed by line, not by word), so they are close, not exact. Released in 0.9.4.
 - **Float** the Scratchpad as a movable, resizable window. Released.
+- **Sample song:** the welcome screen's **Try a sample song** opens a short original piece (synthesised guitar, bass and drums) with a finished guitar tab that is already timed, so Follow along, the Staff, bar loops and the full-window view can be tried straight away. Opens the copy in the library if there is one. Not yet released.
 - **Full window** (`T`, or the button next to Float): the Scratchpad fills the whole window with the notation drawn larger (**A−** / **A+**, or `-` / `+`; remembered), and a play bar along the bottom (back, skip, play, loop, tempo, **Edit tab** which is Follow along turned off). `Esc` or **Close** goes back to where the Scratchpad was. One part at a time (Guitar, Bass, Drums), with the Staff under it if it is on (scroll down to it). Not yet released.
 
 ## Steminize Player plugin (early, in development)

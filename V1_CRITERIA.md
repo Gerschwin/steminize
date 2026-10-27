@@ -23,7 +23,7 @@ needed for 1.0.
 
 ### 3. A good first run
 - [x] A short welcome (the panel shown when no song is open): what the app is for, three ways to start, what the first split downloads (model name and size, whether it is already here), and that nothing is uploaded. A "Try a sample song" button is built in and hidden until a sample exists.
-- [ ] A bundled sample song (royalty-free) so a new user can try the player before importing or downloading a model. Needs a song with a usable licence. (Neil to choose, Claude to add)
+- [x] A bundled sample song so a new user can try the player before importing or downloading a model: an original, synthesised piece with a finished, timed guitar tab (`public/sample/example-tab`, made by `tools/make-example-song.py`; three small MP3 stems, under 1 MB), opened by the welcome screen's "Try a sample song" button. Added 2026-10-27; it is a demo of the tab view rather than of separation, since the stems are synthesised.
 - [x] A clear message when a song is too long or the machine too small: a warning before separating a long file, and the out-of-memory message already in place.
 - [x] The model download explains itself (the welcome panel and Models say the size, that it is one-off and works offline afterwards), can be stopped (Stop in Models, or cancelling the song in the queue) and carries on from where it got to (Resume in Models, or just separate again).
 

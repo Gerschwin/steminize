@@ -1706,6 +1706,20 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('plugin manifest: markers are on the DAW timeline, and no tempo is written as 0', m.markers[0].name === 'Verse' && m.markers[0].timeSec === 3.2 && JSON.parse(songManifest({ ...proj, bpm: 0 }, ['a', 'b'])).bpm === 0);
 }
 
+// ---- the bundled sample song (public/sample/example-tab, made by tools/make-example-song.py)
+{
+  const dir = new URL('../public/sample/example-tab/', import.meta.url);
+  const doc = JSON.parse(readFileSync(new URL('song.json', dir), 'utf8'));
+  const files = doc.stems.map((s: { file: string }) => s.file);
+  const sizes = files.map((f: string) => (existsSync(new URL(f, dir)) ? readFileSync(new URL(f, dir)).length : -1));
+  ok('sample song: three stems that exist, kept small', files.length === 3 && sizes.every((n: number) => n > 10_000) && sizes.reduce((a: number, b: number) => a + b, 0) < 1_500_000);
+  const tab = doc.state.scratch.tab as string;
+  const { notes } = parseScore(tab);
+  const anchors = doc.state.scratch.tabAnchors as { charOffset: number; time: number }[];
+  ok('sample song: the tab is read in full and opens with Follow along on', notes.length === 99 && doc.state.scratch.tabFollow === true);
+  ok('sample song: taps are inside the tab, in order, and match the tempo', anchors.length >= 2 && anchors.every((a, i) => a.charOffset < tab.length && (i === 0 || (a.time > anchors[i - 1].time && a.charOffset > anchors[i - 1].charOffset))) && doc.analysis.bpm === 100 && doc.analysis.beats[1] === 0.6);
+}
+
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');
 
 process.exit(failed ? 1 : 0);

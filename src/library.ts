@@ -50,6 +50,8 @@ export interface LibMeta {
   state?: unknown; // player state (mixer, EQ, loop, practice), owned by the deck
   /** Live-recorded takes (see the Live input drawer), saved as extra files alongside the stems. */
   takeGroups?: TakeGroupMeta[];
+  /** Set on a copy of the bundled sample song (its id in src/sample.ts), so opening the sample again finds it here instead of making another. */
+  sample?: string;
 }
 
 export const libraryAvailable = () => isTauri || opfsAvailable();

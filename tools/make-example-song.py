@@ -5,9 +5,12 @@ Everything is generated here (nothing is sampled or copied), so the song can be 
 tab text come from the same list of notes, so they agree to the sample.
 
     python3 tools/make-example-song.py <library folder> [--check notes.json]
+    python3 tools/make-example-song.py --sample public/sample/example-tab
 
 <library folder> is the app's library (for example ~/.local/share/app.steminize.desktop/library); the song goes in a new folder there.
---check writes the note times the tab is meant to have, for tests/check-example-song.mjs to compare with what the app reads from it.
+--check writes the note times the tab is meant to have, for tools/check-example-song.mjs to compare with what the app reads from it.
+--sample writes the copy the app ships (src/sample.ts): mono MP3 stems (the three parts are the same on both sides, and the noise in a
+plucked string does not compress as FLAC: about 2.7 MB as FLAC, about 0.8 MB as MP3) and a song.json with the tab, the taps and the beat grid.
 """
 import json, math, os, subprocess, sys, time
 import numpy as np
@@ -227,34 +230,30 @@ def drum_track(total):
     return np.tanh(d * 1.1) * 0.8
 
 
-def write_flac(path, mono):
+def write_flac(path, mono, channels=2):
     mono = np.clip(mono, -0.98, 0.98)
     pcm = (mono * 32767).astype("<i2")
-    stereo = np.repeat(pcm[:, None], 2, axis=1).tobytes()
-    p = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "s16le", "-ar", str(SR), "-ac", "2", "-i", "-", "-c:a", "flac", path], input=stereo)
+    data = (np.repeat(pcm[:, None], 2, axis=1) if channels == 2 else pcm).tobytes()
+    p = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "s16le", "-ar", str(SR), "-ac", str(channels), "-i", "-", "-compression_level", "12", "-c:a", "flac", path], input=data)
+    if p.returncode:
+        sys.exit("ffmpeg failed")
+
+
+MP3_DELAY = 1105  # what an MP3 decoder adds at the start (576 from the encoder, 529 of its own) when the file has no gapless header
+
+
+def write_mp3(path, mono):
+    """Mono MP3, written without the gapless header and started 1105 samples early, so every decoder puts the sound back where it was."""
+    pcm = (np.clip(mono, -0.98, 0.98) * 32767).astype("<i2")[MP3_DELAY:]
+    p = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "s16le", "-ar", str(SR), "-ac", "1", "-i", "-", "-c:a", "libmp3lame", "-q:a", "4", "-write_xing", "0", path], input=pcm.tobytes())
     if p.returncode:
         sys.exit("ffmpeg failed")
 
 
 # ---------------------------------------------------------------- the song
-def main():
-    if len(sys.argv) < 2:
-        sys.exit(__doc__)
-    lib = os.path.expanduser(sys.argv[1])
-    text, notes = build_tab()
+def song(notes):
+    """Everything about the song except its audio: the tab, the taps that time it, the beat grid, markers and the title."""
     total = LEAD + 16 * BAR + 3.0
-    # times each note should sound at, for the check
-    for nt in notes:
-        nt["time"] = round(LEAD + nt["bar"] * BAR + nt["start"] * S16, 4)
-    if "--check" in sys.argv:
-        json.dump({"text": text, "notes": notes, "bpm": BPM, "lead": LEAD}, open(sys.argv[sys.argv.index("--check") + 1], "w"))
-        return
-    sid = "2026-10-27-example-tab"
-    folder = os.path.join(lib, sid)
-    os.makedirs(folder, exist_ok=True)
-    stems = [("Guitar", guitar_track(total, notes)), ("Bass", bass_track(total)), ("Drums", drum_track(total))]
-    for name, sig in stems:
-        write_flac(os.path.join(folder, name + ".flac"), sig)
     # A tap at the first note of each block of four bars, all exact. (One tap would do, with the song's own tempo; several make it hold if the song is retimed.)
     anchors = []
     for b0 in range(0, 16, 4):
@@ -263,7 +262,59 @@ def main():
     # and one on the last note, so that nothing lies beyond the final tap (the app holds the last tap's time past it)
     last = max(notes, key=lambda n: (n["bar"], n["start"]))
     anchors.append({"charOffset": last["offset"], "time": last["time"]})
-    beats = [round(i * BEAT, 4) for i in range(int(total / BEAT))]
+    return {
+        "title": "Example: Am arpeggio and lead (tab filled in and timed)",
+        "seconds": round(total, 2),
+        "analysis": {"bpm": BPM, "beats": [round(i * BEAT, 4) for i in range(int(total / BEAT))], "downbeat": 0, "key": {"tonic": 9, "mode": "minor", "confidence": 0.9}},
+        "anchors": anchors,
+        "markers": [{"name": "Arpeggio", "pos": int(LEAD * SR)}, {"name": "Lead", "pos": int((LEAD + 8 * BAR) * SR)}],
+    }
+
+
+def state_of(info, text, template):
+    state = json.loads(json.dumps(template))
+    state["lanes"] = [{"vol": 1, "pan": 0, "mute": False, "solo": False} for _ in STEMS]
+    state["loop"] = {"on": False, "a": 0, "b": 0}
+    state["tempo"] = 1
+    state["pitch"] = 0
+    state["markers"] = info["markers"]
+    state["scratch"] = {"lyrics": "", "tab": text, "notes": "", "tabAnchors": info["anchors"], "tabFollow": True, "tabStaff": False}
+    state.pop("practiceSeconds", None)
+    state.pop("lastPracticed", None)
+    return state
+
+
+STEMS = ["Guitar", "Bass", "Drums"]
+
+
+def main():
+    if len(sys.argv) < 2:
+        sys.exit(__doc__)
+    text, notes = build_tab()
+    total = LEAD + 16 * BAR + 3.0
+    # times each note should sound at, for the check
+    for nt in notes:
+        nt["time"] = round(LEAD + nt["bar"] * BAR + nt["start"] * S16, 4)
+    if "--check" in sys.argv:
+        json.dump({"text": text, "notes": notes, "bpm": BPM, "lead": LEAD}, open(sys.argv[sys.argv.index("--check") + 1], "w"))
+        return
+    tracks = dict(zip(STEMS, (guitar_track(total, notes), bass_track(total), drum_track(total))))
+    info = song(notes)
+    if "--sample" in sys.argv:
+        out = os.path.expanduser(sys.argv[sys.argv.index("--sample") + 1])
+        os.makedirs(out, exist_ok=True)
+        for name in STEMS:
+            write_mp3(os.path.join(out, name + ".mp3"), tracks[name])
+        doc = {"id": "example-tab", "title": info["title"], "seconds": info["seconds"], "analysis": info["analysis"], "stems": [{"name": n, "file": n + ".mp3"} for n in STEMS], "state": state_of(info, text, {})}
+        json.dump(doc, open(os.path.join(out, "song.json"), "w"), separators=(",", ":"))
+        print("wrote", out, f"({sum(os.path.getsize(os.path.join(out, f)) for f in os.listdir(out)) // 1024} KB)")
+        return
+    lib = os.path.expanduser(sys.argv[1])
+    sid = "2026-10-27-example-tab"
+    folder = os.path.join(lib, sid)
+    os.makedirs(folder, exist_ok=True)
+    for name in STEMS:
+        write_flac(os.path.join(folder, name + ".flac"), tracks[name])
     template = {}
     for cand in sorted(os.listdir(lib)):
         try:
@@ -272,28 +323,20 @@ def main():
                 break
         except Exception:
             pass
-    state = json.loads(json.dumps(template))
-    state["lanes"] = [{"vol": 1, "pan": 0, "mute": False, "solo": False} for _ in stems]
-    state["loop"] = {"on": False, "a": 0, "b": 0}
-    state["tempo"] = 1
-    state["pitch"] = 0
-    state["markers"] = [{"name": "Arpeggio", "pos": int(LEAD * SR)}, {"name": "Lead", "pos": int((LEAD + 8 * BAR) * SR)}]
-    state["scratch"] = {"lyrics": "", "tab": text, "notes": "", "tabAnchors": anchors, "tabFollow": True, "tabStaff": False}
-    state.pop("practiceSeconds", None)
-    state.pop("lastPracticed", None)
     meta = {
-        "title": "Example: Am arpeggio and lead (tab filled in and timed)",
-        "seconds": round(total, 2),
+        "title": info["title"],
+        "seconds": info["seconds"],
         "created": int(time.time() * 1000),
         "settings": {"model": "htdemucs_6s", "precision": "compact", "twoStems": "", "skipStems": [], "shifts": 1, "overlap": 0.25, "device": "auto", "format": "wav", "wavDepth": "16", "flacDepth": "16", "mp3Bitrate": 320, "clip": "rescale"},
         "kind": "multitrack",
-        "analysis": {"bpm": BPM, "beats": beats, "downbeat": 0, "key": {"tonic": 9, "mode": "minor", "confidence": 0.9}},
+        "analysis": info["analysis"],
         "id": sid,
         "bytes": 0,
-        "stems": [{"name": n, "scale": 1} for n, _ in stems],
-        "state": state,
+        "stems": [{"name": n, "scale": 1} for n in STEMS],
+        "state": state_of(info, text, template),
+        "sample": "example-tab",
     }
-    meta["bytes"] = sum(os.path.getsize(os.path.join(folder, n + ".flac")) for n, _ in stems)
+    meta["bytes"] = sum(os.path.getsize(os.path.join(folder, n + ".flac")) for n in STEMS)
     json.dump(meta, open(os.path.join(folder, "meta.json"), "w"))  # last: a folder without it is an incomplete save
     print("wrote", folder, f"({meta['bytes'] // 1024} KB, {total:.1f} s)")
 

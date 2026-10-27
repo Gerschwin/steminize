@@ -8,6 +8,7 @@ import { Deck, type Result } from './ui/deck.ts';
 import { $, activatable, fmtDuration, fmtEta, fmtTime, h, openDialog, toast } from './ui/dom.ts';
 import { cancelDownloads, ensureDownloaded, initModelsDialog, onModelsChanged } from './ui/modelsDialog.ts';
 import { initWelcome } from './ui/welcome.ts';
+import { SAMPLE_ID, loadSample } from './sample.ts';
 import { NATIVE_INFO, NATIVE_TIP, NATIVE_TIP_KEY, NATIVE_WELCOME, nativeTipVisible } from './nativeHint.ts';
 import { nativeIsOn, revealNativeAudio } from './ui/nativeAudio.ts';
 import { initSideRail } from './ui/sideRail.ts';
@@ -42,7 +43,10 @@ library.onOpen = () => refreshQueue();
 initSetlists(deck, library);
 const engine = new Engine();
 initModelsDialog();
-const renderWelcome = initWelcome(() => settings.s);
+const renderWelcome = initWelcome(
+  () => settings.s,
+  () => void openSample(),
+);
 initAbout();
 onModelsChanged.add(() => settings.render());
 onModelsChanged.add(() => void renderWelcome());
@@ -411,6 +415,27 @@ function friendlyError(e: Error) {
     return `The browser engine can't run part of this model: ${m.replace(/^.*ERROR_MESSAGE:\s*/, '').slice(0, 160)}`;
   if (/Failed to fetch|NetworkError|Download failed/i.test(m)) return 'Model download failed. Check your connection, or import it via Models.';
   return m;
+}
+
+// ---------------------------------------------------------------- the sample song
+/** "Try a sample song": the copy already in the library if there is one (so the practice and edits made to it are kept), otherwise the bundled one. */
+async function openSample() {
+  const have = library.songs().find((m) => m.sample === SAMPLE_ID);
+  if (have && (await library.openSong(have.id))) {
+    refreshQueue();
+    return;
+  }
+  const note = toast('Loading the sample song…', false, 60_000);
+  try {
+    const { result, state } = await loadSample(settings.s, decode);
+    deck.open(result, state);
+    refreshQueue();
+    void library.keepIfWanted(result);
+  } catch (e) {
+    toast(`Couldn't open the sample song: ${friendlyError(e as Error)}`, true);
+  } finally {
+    note.remove();
+  }
 }
 
 // ---------------------------------------------------------------- open multitrack (no separation)

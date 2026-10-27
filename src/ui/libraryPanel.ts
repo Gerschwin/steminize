@@ -306,7 +306,7 @@ export function initLibrary(deck: Deck) {
         for (const t of g.takes) takes.push({ id: t.id, data: await loadTake(m.id, g.id, t), note: t.note });
         takeGroups.push({ id: g.id, activeTake: g.activeTake, takes });
       }
-      const r: Result = { title: m.title, stems, settings: m.settings, seconds: m.seconds, took: m.took, libId: m.id, analysis: m.analysis, kind: m.kind, takeGroups: takeGroups.length ? takeGroups : undefined };
+      const r: Result = { title: m.title, stems, settings: m.settings, seconds: m.seconds, took: m.took, libId: m.id, analysis: m.analysis, kind: m.kind, sample: m.sample, takeGroups: takeGroups.length ? takeGroups : undefined };
       deck.open(r, m.state as DeckState | undefined);
       onOpen(r);
       // Songs saved before key detection existed: work it out now, keep any tempo corrections.
@@ -339,6 +339,11 @@ export function initLibrary(deck: Deck) {
     } catch (e) {
       console.warn('Tempo analysis failed', e);
     }
+    await keepIfWanted(r);
+  }
+
+  /** Saves a song that was just opened or made to the library, if the "keep new songs" switch is on and there is room. */
+  async function keepIfWanted(r: Result) {
     if (!autoSave.checked || !libraryAvailable()) return;
     // Not enough room to keep it: say so and leave the song playable, rather than start a save that would end half-written.
     const needed = spaceNeeded(r.seconds, r.stems.length);
@@ -354,7 +359,7 @@ export function initLibrary(deck: Deck) {
       // pressure); navigator.storage doesn't exist at all in WebKitGTK, so this must be optional too.
       navigator.storage?.persist?.().catch(() => {});
       const meta = await saveSong(
-        { title: r.title, seconds: r.seconds, took: r.took, created: Date.now(), settings: r.settings, kind: r.kind, analysis: r.analysis, state: deck.current === r ? deck.getState() : undefined },
+        { title: r.title, seconds: r.seconds, took: r.took, created: Date.now(), settings: r.settings, kind: r.kind, sample: r.sample, analysis: r.analysis, state: deck.current === r ? deck.getState() : undefined },
         r.stems,
       );
       metas.set(meta.id, meta);
@@ -386,6 +391,7 @@ export function initLibrary(deck: Deck) {
 
   return {
     afterSeparation,
+    keepIfWanted,
     stateFor: (r: Result) => (r.libId ? (metas.get(r.libId)?.state as DeckState | undefined) : undefined),
     set onOpen(f: (r: Result) => void) {
       onOpen = f;
