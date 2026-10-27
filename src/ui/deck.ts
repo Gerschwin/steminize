@@ -58,7 +58,7 @@ import {
 } from '../lyrics/tabSync.ts';
 import { FLAT, isFlat, sameEq, type EqParams } from '../player/eq.ts';
 import { eqPanel, type EqPanel } from './eqPanel.ts';
-import { drawStaff, drawTabScore, noteAt, staffU, staffX, type StaffLayout, type TabScoreLayout } from './staff.ts';
+import { drawStaff, drawTabScore, noteAt, staffU, staffX, zoomDrawing, type StaffLayout, type TabScoreLayout } from './staff.ts';
 import { $, activatable, fitCanvas, fmtDuration, fmtTime, h, openDialog, pressed, toast } from './dom.ts';
 import { Transcribe, type TxHost, type TxState } from './transcribePanel.ts';
 import type { Chord } from '../analysis/chords.ts';
@@ -366,6 +366,9 @@ export class Deck {
   /** Reapplies a floating Scratchpad's saved position once #deck is actually visible to measure into
    * (set by initScratchFloat(); a no-op call before then, in case something races the constructor). */
   private restoreScratchFloat: () => void = () => {};
+  /** The full-window Tab view (the Scratchpad filling the window, with a play bar along the bottom). */
+  private scratchFull = false;
+  private setScratchFull: (on: boolean) => void = () => {};
   /** OS media keys / lock-screen controls, and keeping the screen awake while a song plays. */
   private media = new MediaSessionBridge({
     play: () => void this.player.play(),
@@ -478,6 +481,10 @@ export class Deck {
   private tabPanMoved = false;
   private tabSymbolsOpen = false;
   private staffLayout: StaffLayout | null = null;
+  /** How much larger than usual the notation is drawn (1 docked; more in the full-window Tab view), and what each drawing was made at. */
+  private tabZoom = 1;
+  private stripZoom = 1;
+  private staffZoom = 1;
   private staffText: string | null = null;
   private staffToken = 0;
   private staffTimer: number | undefined;
@@ -2697,6 +2704,7 @@ export class Deck {
     $('tabEarBtn').hidden = !(onTab && canFollow);
     pressed($('tabEarBtn'), canFollow && !!this.scratch.tabEar);
     this.updateEarHide();
+    this.syncFull();
     this.lastStaffPx = NaN;
     this.lastStripPx = NaN;
     this.syncTimelineCursor(false, null); // corrected once the next frame knows where playback actually is
@@ -2755,7 +2763,7 @@ export class Deck {
    * a moment, and a token guards against two overlapping redraws (typing fast) finishing out of order. */
   private async renderTabStrip() {
     const text = this.scratchAreas.tab.value;
-    if (text === this.stripText && this.stripLayout) return;
+    if (text === this.stripText && this.stripLayout && this.stripZoom === this.tabZoom) return;
     const token = ++this.stripToken;
     const drums = this.isDrums();
     const { notes, bars } = this.parseActive(text);
@@ -2769,8 +2777,9 @@ export class Deck {
       return;
     }
     const spare = document.createElement('div');
-    const layout = await (drums ? drawDrumScore(spare, notes as DrumNote[], bars) : drawTabScore(spare, notes, bars)).catch(() => null);
+    const drawn = await (drums ? drawDrumScore(spare, notes as DrumNote[], bars) : drawTabScore(spare, notes, bars)).catch(() => null);
     if (token !== this.stripToken) return;
+    const layout = drawn && zoomDrawing(spare, drawn, this.tabZoom);
     if (!layout) {
       track.replaceChildren(h('div', { class: 'tab-staff-note' }, drums ? "Couldn't draw the drums." : "Couldn't draw the tab."));
       this.stripLayout = null;
@@ -2781,6 +2790,7 @@ export class Deck {
     track.replaceChildren(...spare.childNodes);
     this.stripLayout = layout;
     this.stripText = text;
+    this.stripZoom = this.tabZoom;
     this.stripNotes = notes;
     this.stripBars = bars;
     this.paintBarScores();
@@ -2792,7 +2802,7 @@ export class Deck {
   /** Redraws the full staff from the tab as it is now (only if it has changed since the last drawing). */
   private async renderStaff() {
     const text = this.scratchAreas.tab.value;
-    if (text === this.staffText && this.staffLayout) return;
+    if (text === this.staffText && this.staffLayout && this.staffZoom === this.tabZoom) return;
     const token = ++this.staffToken;
     const { notes, bars } = parseScore(text);
     const track = $('tabStaffTrack');
@@ -2805,8 +2815,9 @@ export class Deck {
     }
     // Drawn into a spare element first, so a stale or failed drawing never leaves the visible one half-finished.
     const spare = document.createElement('div');
-    const layout = await drawStaff(spare, notes, bars).catch(() => null);
+    const drawn = await drawStaff(spare, notes, bars).catch(() => null);
     if (token !== this.staffToken) return;
+    const layout = drawn && zoomDrawing(spare, drawn, this.tabZoom);
     if (!layout) {
       track.replaceChildren(h('div', { class: 'tab-staff-note' }, "Couldn't draw the staff for this tab."));
       this.staffLayout = null;
@@ -2816,6 +2827,7 @@ export class Deck {
     track.replaceChildren(...spare.childNodes);
     this.staffLayout = layout;
     this.staffText = text;
+    this.staffZoom = this.tabZoom;
     $('tabStaffView').style.height = `${layout.height}px`;
     this.lastStaffPx = NaN;
     this.dirty = true;
@@ -3208,10 +3220,12 @@ export class Deck {
     pane.after(anchor);
 
     const place = (left: number, top: number) => {
+      if (pane.classList.contains('full')) return; // the full-window view ignores (and must not overwrite) the floating window's own spot
       pane.style.left = `${clamp(left, 8, innerWidth - pane.offsetWidth - 8)}px`;
       pane.style.top = `${clamp(top, 8, innerHeight - pane.offsetHeight - 8)}px`;
     };
     const resizeTo = (width: number, height: number) => {
+      if (pane.classList.contains('full')) return;
       pane.style.width = `${clamp(width, 300, innerWidth - 16)}px`;
       pane.style.height = `${clamp(height, 240, innerHeight - 16)}px`;
       place(pane.offsetLeft, pane.offsetTop); // a growing panel can't be left hanging off the edge
@@ -3224,7 +3238,7 @@ export class Deck {
         // of the time, so docking (or a call before there's anything to measure) doesn't zero them
         // out and leave the next Float click restoring to a zero-sized panel in the corner.
         const geo =
-          floating && pane.offsetWidth > 0
+          floating && !pane.classList.contains('full') && pane.offsetWidth > 0
             ? { left: pane.offsetLeft, top: pane.offsetTop, width: pane.offsetWidth, height: pane.offsetHeight }
             : { left: load()?.left ?? 0, top: load()?.top ?? 0, width: load()?.width ?? 420, height: load()?.height ?? 480 };
         localStorage.setItem(KEY, JSON.stringify({ floating, ...geo }));
@@ -3262,6 +3276,39 @@ export class Deck {
       }
       save();
     };
+    // Full window: the same pane, floated and stretched over everything, with notation drawn larger and a play bar of its own. The
+    // zoom is remembered; closing goes back to wherever the Scratchpad was (docked, or its floating window).
+    let wasDocked = false;
+    this.setScratchFull = (on: boolean) => {
+      if (on === pane.classList.contains('full') || (on && !this.r)) return;
+      if (on) {
+        wasDocked = !pane.classList.contains('floating');
+        if (wasDocked) setFloating(true);
+        pane.classList.add('full');
+        this.tabZoom = Deck.loadFullZoom();
+      } else {
+        pane.classList.remove('full');
+        this.tabZoom = 1;
+        if (wasDocked) setFloating(false);
+      }
+      this.scratchFull = on;
+      this.updateTabView();
+      this.syncFull();
+    };
+    $('scratchFullBtn').onclick = () => this.setScratchFull(true);
+    $('scratchFullBtn2').onclick = () => this.setScratchFull(true);
+    $('fullClose').onclick = () => this.setScratchFull(false);
+    $('fullStart').onclick = () => $('toStartBtn').click();
+    $('fullBack').onclick = () => $('rewindBtn').click();
+    $('fullFwd').onclick = () => $('ffBtn').click();
+    $('fullPlay').onclick = () => this.toggle();
+    $('fullLoop').onclick = () => this.setLoop(!this.loop.on);
+    $('fullSlower').onclick = () => this.setTempoPitch(Math.max(0.5, Math.round((this.tempo - 0.05) * 100) / 100), this.pitch);
+    $('fullFaster').onclick = () => this.setTempoPitch(Math.min(1.5, Math.round((this.tempo + 0.05) * 100) / 100), this.pitch);
+    $('fullSmaller').onclick = () => this.stepFullZoom(-1);
+    $('fullLarger').onclick = () => this.stepFullZoom(1);
+    // The typing box and the engraved tab are the two states of Follow along, so Edit is that switch.
+    $('fullEdit').onclick = () => $('tabFollowBtn').click();
     $('scratchFloatBtn').onclick = () => setFloating(true);
     $('scratchDockBtn').onclick = () => setFloating(false);
 
@@ -3325,6 +3372,53 @@ export class Deck {
     this.restoreScratchFloat = () => {
       if (load()?.floating) setFloating(true);
     };
+  }
+
+  private static readonly FULL_ZOOMS = [1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+  private static readonly FULL_ZOOM_KEY = 'steminize.tabFullZoom';
+
+  private static loadFullZoom(): number {
+    try {
+      const z = Number(localStorage.getItem(Deck.FULL_ZOOM_KEY));
+      if (Deck.FULL_ZOOMS.includes(z)) return z;
+    } catch {
+      /* storage unavailable */
+    }
+    return 1.75;
+  }
+
+  /** A step bigger or smaller for the notation in the full-window view. */
+  private stepFullZoom(dir: 1 | -1) {
+    const zs = Deck.FULL_ZOOMS;
+    const i = Math.max(0, zs.indexOf(this.tabZoom));
+    const next = zs[Math.min(zs.length - 1, Math.max(0, i + dir))];
+    if (next === this.tabZoom) return;
+    this.tabZoom = next;
+    try {
+      localStorage.setItem(Deck.FULL_ZOOM_KEY, String(next));
+    } catch {
+      /* storage unavailable */
+    }
+    this.lastStripPx = NaN;
+    this.lastStaffPx = NaN;
+    this.updateTabView();
+  }
+
+  /** Brings the full-window view's own controls in line with the song: the box the tab is typed in shows when there is no engraved
+   * tab to look at (Edit, or no timing yet, so the view is never an empty page), and the buttons show the tempo, loop and play state. */
+  private syncFull() {
+    if (!this.scratchFull) return;
+    const pane = document.querySelector<HTMLElement>('.dpane[data-pane="scratch"]')!;
+    const engraved = $('tabStrip').hidden !== true;
+    pane.classList.toggle('editing', !engraved);
+    pressed($('fullEdit'), !engraved);
+    $('fullEdit').hidden = $('tabFollowBtn').hidden === true;
+    pressed($('fullLoop'), this.loop.on);
+    $('fullPlay').classList.toggle('on', this.player.state.playing);
+    $('fullTempo').textContent = `${Math.round(this.tempo * 100)}%`;
+    $('fullTotal').textContent = fmtTime(this.length / SR);
+    ($('fullSmaller') as HTMLButtonElement).disabled = this.tabZoom <= Deck.FULL_ZOOMS[0];
+    ($('fullLarger') as HTMLButtonElement).disabled = this.tabZoom >= Deck.FULL_ZOOMS[Deck.FULL_ZOOMS.length - 1];
   }
 
   /** One-line summaries on the drawer tabs, so closed panels still show what's on. */
@@ -4213,6 +4307,10 @@ export class Deck {
       // pedal mode — play/restart), but once a note is selected for editing, moving the selection is
       // the more useful thing for the arrow keys to do. Shift+arrow steps a whole bar at a time.
       else if (this.selectedRhythmNote && (k === 'ArrowLeft' || k === 'ArrowRight')) this.moveSelectedRhythmNote(k === 'ArrowRight' ? 1 : -1, e.shiftKey);
+      else if (this.scratchFull && k === 'Escape') this.setScratchFull(false);
+      else if (this.scratchFull && (k === '+' || k === '=')) this.stepFullZoom(1);
+      else if (this.scratchFull && (k === '-' || k === '_')) this.stepFullZoom(-1);
+      else if (k === 't' || k === 'T') this.setScratchFull(!this.scratchFull);
       else if (e.code === 'Space' || k === 'PageDown' || k === 'MediaPlayPause' || (this.pedal && ['ArrowRight', 'ArrowDown', 'Enter'].includes(k))) this.toggle();
       else if (k === 'PageUp' || k === 'Home' || (this.pedal && ['ArrowLeft', 'ArrowUp'].includes(k))) this.restart();
       else if (k === 'm' || k === 'M') this.addMarker();
@@ -4537,6 +4635,10 @@ export class Deck {
     this.dirty = false;
     const pos = this.player.state.pos;
     $('timeNow').textContent = fmtTime(pos / SR);
+    if (this.scratchFull) {
+      $('fullNow').textContent = fmtTime(pos / SR);
+      this.syncFull();
+    }
     this.updateLyricsFollow(pos);
     this.updateTabStrip();
     this.updateTabStaff();

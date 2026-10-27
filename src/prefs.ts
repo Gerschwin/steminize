@@ -9,6 +9,7 @@ export const APP_PREFERENCE_KEYS = [
   'steminize.drawer',
   'steminize.showPan',
   'steminize.scratchFloat',
+  'steminize.tabFullZoom',
   'steminize.pedal',
   'steminize.autoSave',
   'steminize.autoStart',

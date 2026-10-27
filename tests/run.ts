@@ -23,7 +23,7 @@ import { writeMidi } from '../src/encode/midi.ts';
 import { centsFrom, detectPitch, freqToNote } from '../src/analysis/pitch.ts';
 import { isNewer, parseVersion, pickUpdate, updateEndpoint } from '../src/version.ts';
 import { lineAt, parseLrc } from '../src/lyrics/lrc.ts';
-import { splitLength, staffX, vexKey } from '../src/ui/staff.ts';
+import { splitLength, staffX, vexKey, zoomDrawing } from '../src/ui/staff.ts';
 import { acceptedMidis, timeAtCoord, fromUnrolled, repeatPlan, toUnrolled, addAnchor, charOffsetAt, coordAtBpm, coordToPlace, coordToStripX, findNoteAt, noteCols, noteGroupAt, parseScore, parseTab, setRhythmLetter, stripLayout, isLockedAt, moveAnchor, offsetToCoord, removeAnchor, rowCol, tabBlocks, tabPositionAt, toggleAnchorLock, type TabAnchor, type TabNote } from '../src/lyrics/tabSync.ts';
 import { moveItem, nextSong, parseSetlists, prevSong, pruneSongs, totalSeconds, uniqueName, type Setlist } from '../src/setlists.ts';
 import { detectLatency } from '../src/player/latency.ts';
@@ -960,6 +960,14 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('staff: guitar is written an octave above where it sounds', vexKey(40) === 'e/3' && vexKey(64) === 'e/5' && vexKey(61) === 'c#/5');
   const map = [{ u: 0, x: 10 }, { u: 4, x: 50 }, { u: 12, x: 130 }];
   ok('staff: the cursor joins note positions with straight lines', staffX(map, 2) === 30 && staffX(map, 8) === 90 && staffX(map, -5) === 10 && staffX(map, 99) === 130);
+  {
+    const layout = { map: [{ u: 0, x: 10 }, { u: 4, x: 50 }], notes: [{ u: 0, len: 4, x: 10, y: 20, w: 8, h: 30 }], width: 100, height: 60 };
+    const attrs: Record<string, string> = {};
+    const svg = { setAttribute: (k: string, v: string) => (attrs[k] = v), style: {} as Record<string, string> };
+    const big = zoomDrawing({ querySelector: () => svg } as unknown as HTMLElement, layout, 2);
+    ok('staff: zooming a drawing scales every position and the picture itself', big.map[1].x === 100 && big.notes[0].y === 40 && big.notes[0].w === 16 && big.width === 200 && big.height === 120 && attrs.width === '200' && attrs.height === '120' && svg.style.width === '200px');
+    ok('staff: zoom 1 leaves the layout as it was', zoomDrawing({} as HTMLElement, layout, 1) === layout);
+  }
 }
 
 // ---- tab+ playing trainer: which note(s) are expected right now, and how close a live pitch is

@@ -2,6 +2,8 @@
 
 (nothing waiting)
 
+**Songsterr-style plan (2026-10-27), step 1 built on `native-audio`:** the full-window Tab view (`T`; `Deck.setScratchFull`, `zoomDrawing` in staff.ts, `.full` CSS, `#fullBar`). One part at a time. Still to do, in this order: (2) Guitar Pro / MusicXML import, aligned to the detected tempo and bars; (3) a wrapped-rows (page) layout as well as the scrolling strip, current bar highlighted; (4) several parts stacked at once (needs the single tab editor / strip split into per-part views); (5) auto-transcription of bass (then guitar) from the stems into the tab editor as a draft. A shared tab catalogue / accounts is not planned (licensing, and the app is on-device).
+
 **JACK buffer size changes live (2026-10-26):** with the JACK host a change of the buffer choice calls `native_jack_set_buffer` (`JackRun::set_buffer_size`, `Ctl::SetBuffer`), so it applies while the monitor and the song run, no restart (works through PipeWire: ignored test `jack_buffer_changes_live` went 128 -> 64 -> 256 -> 128 with the song still moving). Other audio systems still restart the engine for a buffer change, and refuse while the monitor is on.
 
 **Native audio panel applies changes by itself (2026-10-26):** changing the input or input channel while native playback is on re-points the running engine's input (`Player.retargetNativeInput`, `native_input_start` again; the monitor carries on, refused during a take); changing host, output, buffer or rate restarts the engine and hands the open song back (not while the monitor is on: it says to stop it first). Debounced 300 ms in `nativeAudio.ts` (`applyChange`). Not run in the app yet.

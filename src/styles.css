@@ -1000,3 +1000,37 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 @media (min-width: 901px) {
   .deck-top { margin-top: -13px; padding-top: 13px; margin-bottom: -6px; padding-bottom: 6px; }
 }
+
+/* ---- Full-window Tab view ----
+   The Scratchpad (already floated to <body>) stretched over the whole window. The notation is redrawn larger (deck.ts tabZoom), the
+   typing box is put away unless asked for, and a play bar along the bottom runs the song. */
+.scratch-float-btns { display: flex; gap: 6px; }
+.full-bar { display: none; }
+.dpane[data-pane='scratch'].full {
+  left: 0 !important; top: 0 !important; width: 100vw !important; height: 100vh !important; max-height: none;
+  border: 0; border-radius: 0; box-shadow: none; z-index: 40; display: flex; flex-direction: column; gap: 10px;
+  overflow: hidden; padding: 10px 16px 12px;
+}
+.dpane[data-pane='scratch'].full .scratch-float-bar { cursor: default; }
+.dpane[data-pane='scratch'].full #scratchFullBtn, .dpane[data-pane='scratch'].full #scratchFullBtn2, .dpane[data-pane='scratch'].full #scratchFloatBtn, .dpane[data-pane='scratch'].full #scratchDockBtn { display: none; }
+.dpane[data-pane='scratch'].full .scratch-resize-handle { display: none; }
+.dpane[data-pane='scratch'].full .scratch-sticky-top { flex: none; }
+.dpane[data-pane='scratch'].full .tab-timeline { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+/* Centred with spacers rather than justify-content:center, so a drawing taller than the window can still be scrolled to its top. */
+.dpane[data-pane='scratch'].full .tab-timeline::before, .dpane[data-pane='scratch'].full .tab-timeline::after { content: ''; flex: 1 1 0; }
+.dpane[data-pane='scratch'].full .tab-timeline > .scratch-area { flex: none; }
+.dpane[data-pane='scratch'].full:not(.editing) textarea.scratch-area { display: none; }
+.dpane[data-pane='scratch'].full.editing textarea.scratch-area { flex: 0 0 auto; height: 28vh; }
+.dpane[data-pane='scratch'].full.editing textarea.scratch-area:only-of-type { flex: 1 1 auto; height: auto; }
+.dpane[data-pane='scratch'].full .lyrics-follow { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.dpane[data-pane='scratch'].full .full-bar {
+  display: flex; flex: none; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding-top: 10px; margin-top: auto; border-top: 1px solid var(--line);
+}
+.full-bar .full-time { font-variant-numeric: tabular-nums; min-width: 6.5em; }
+.full-bar .full-group { display: inline-flex; align-items: center; gap: 4px; }
+.full-bar output { display: inline-block; min-width: 3.2em; text-align: center; font-variant-numeric: tabular-nums; }
+.full-bar #fullClose { margin-left: auto; }
+@media (max-width: 900px) {
+  /* Phone width stacks everything in one column and docks the Scratchpad (see above), so there is no window to fill. */
+  #scratchFullBtn, #scratchFullBtn2 { display: none; }
+}

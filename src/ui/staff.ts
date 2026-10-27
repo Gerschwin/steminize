@@ -175,6 +175,30 @@ export async function drawStaff(host: HTMLElement, notes: TabNote[], bars: TabBa
   return { map, notes: notesOut, width: total, height: ROW };
 }
 
+/** Makes a finished drawing `z` times larger: the svg is stretched (it keeps its own coordinates through its viewBox) and the layout's
+ * positions are scaled to match, so everything that places things by the layout (the cursor, the highlight, clicks) stays right. */
+export function zoomDrawing<L extends { map: { u: number; x: number }[]; notes: { x: number; y: number; w: number; h: number }[]; width: number; height: number }>(
+  host: HTMLElement,
+  layout: L,
+  z: number,
+): L {
+  if (z === 1) return layout;
+  const svg = host.querySelector('svg');
+  if (svg) {
+    svg.setAttribute('width', String(layout.width * z));
+    svg.setAttribute('height', String(layout.height * z));
+    svg.style.width = `${layout.width * z}px`;
+    svg.style.height = `${layout.height * z}px`;
+  }
+  return {
+    ...layout,
+    map: layout.map.map((m) => ({ ...m, x: m.x * z })),
+    notes: layout.notes.map((n) => ({ ...n, x: n.x * z, y: n.y * z, w: n.w * z, h: n.h * z })),
+    width: layout.width * z,
+    height: layout.height * z,
+  };
+}
+
 /** The note (if any) sounding at `u`, for highlighting its actual notehead rather than just a position. */
 export function noteAt(notes: StaffLayout['notes'], u: number): StaffLayout['notes'][number] | null {
   let cur: StaffLayout['notes'][number] | null = null;

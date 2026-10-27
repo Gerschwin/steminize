@@ -551,10 +551,14 @@
                 <div class="scratch-sticky-top" id="scratchStickyTop">
                   <div class="scratch-float-bar" id="scratchFloatBar">
                     <span class="scratch-float-handle" id="scratchFloatHandle">⠿ Scratchpad</span>
-                    <button class="btn tiny ghost" id="scratchDockBtn" type="button" title="Dock back into the panel">Dock</button>
+                    <span class="scratch-float-btns">
+                      <button class="btn tiny ghost" id="scratchFullBtn2" type="button" title="Fill the whole window (T)">Full window ⛶</button>
+                      <button class="btn tiny ghost" id="scratchDockBtn" type="button" title="Dock back into the panel">Dock</button>
+                    </span>
                   </div>
                   <div class="tool scratch-tabs">
                   <button class="btn tiny ghost" type="button" id="scratchFloatBtn" title="Pop out into a moveable, resizable window">Float ⧉</button>
+                  <button class="btn tiny ghost" type="button" id="scratchFullBtn" title="Fill the whole window with the tab, and a play bar along the bottom (T)">Full window ⛶</button>
                   <button class="btn tiny ghost toggle" type="button" id="scratchTabLyrics" aria-pressed="true">Lyrics</button>
                   <button class="btn tiny ghost toggle" type="button" id="scratchTabGuitar" aria-pressed="false" title="Guitar tab. Double-click to rename">Guitar</button>
                   <button class="btn tiny ghost toggle" type="button" id="scratchTabBass" aria-pressed="false" title="Bass tab. Double-click to rename">Bass</button>
@@ -660,6 +664,32 @@
                 <textarea class="scratch-area mono" id="scratchDrums" placeholder="CC|--------------------|&#10;HH|--------------------|&#10;SN|--------------------|&#10;HT|--------------------|&#10;FT|--------------------|&#10;BD|--------------------|" spellcheck="false" wrap="off" hidden></textarea>
                 <textarea class="scratch-area" id="scratchNotes" placeholder="Notes, song sections, anything else…" spellcheck="true" hidden></textarea>
                 <div class="scratch-resize-handle" id="scratchResizeHandle" title="Drag to resize"></div>
+                <!-- Full-window Tab view only: the play controls, so the song can be run without leaving the notation. Each button
+                     presses the matching one of the main transport. -->
+                <div class="full-bar" id="fullBar">
+                  <button class="btn tbtn" id="fullStart" type="button" title="Back to the start (or the loop's start)" aria-label="Back to the start"><svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM19 5v14l-11-7z"/></svg></button>
+                  <button class="btn tbtn" id="fullBack" type="button" title="Skip back 5 s" aria-label="Skip back 5 s"><svg viewBox="0 0 24 24"><path d="M20 6v12l-8-6zM12 6v12l-8-6z"/></svg></button>
+                  <button class="play" id="fullPlay" type="button" aria-label="Play (Space)">
+                    <svg viewBox="0 0 24 24" class="i-play"><path d="M8 5v14l11-7z"/></svg>
+                    <svg viewBox="0 0 24 24" class="i-pause"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
+                  </button>
+                  <button class="btn tbtn" id="fullFwd" type="button" title="Skip forward 5 s" aria-label="Skip forward 5 s"><svg viewBox="0 0 24 24"><path d="M4 6v12l8-6zM12 6v12l8-6z"/></svg></button>
+                  <span class="full-time"><span id="fullNow">0:00</span><span class="muted"> / <span id="fullTotal">0:00</span></span></span>
+                  <button class="btn toggle" id="fullLoop" type="button" aria-pressed="false" title="Loop (L). Click a bar number in the tab to loop that bar">Loop</button>
+                  <span class="full-group">
+                    <span class="muted small">Tempo</span>
+                    <button class="btn tiny ghost" id="fullSlower" type="button" title="Slower by 5%" aria-label="Slower">−</button>
+                    <output id="fullTempo">100%</output>
+                    <button class="btn tiny ghost" id="fullFaster" type="button" title="Faster by 5%" aria-label="Faster">+</button>
+                  </span>
+                  <span class="full-group">
+                    <span class="muted small">Size</span>
+                    <button class="btn tiny ghost" id="fullSmaller" type="button" title="Smaller notation (−)" aria-label="Smaller notation">A−</button>
+                    <button class="btn tiny ghost" id="fullLarger" type="button" title="Larger notation (+)" aria-label="Larger notation">A+</button>
+                  </span>
+                  <button class="btn tiny ghost toggle" id="fullEdit" type="button" aria-pressed="false" title="Type or paste the tab (this is Follow along turned off; turn it on again to see the engraved tab)">Edit tab</button>
+                  <button class="btn" id="fullClose" type="button" title="Back to the normal window (Esc or T)">Close ✕</button>
+                </div>
               </div>
             </div>
           </div>
