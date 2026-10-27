@@ -580,6 +580,7 @@
                     <span class="muted small" id="lyricsOffsetVal" title="Timing adjustment"></span>
                     <button class="btn tiny ghost" type="button" id="lyricsLater" title="Show the lyrics a little later">+</button>
                   </span>
+                  <label class="btn tiny ghost" id="tabImportLabel" title="Bring in a tab from a Guitar Pro (.gp3 .gp4 .gp5 .gp .gpx) or MusicXML file: the notes, rhythm and techniques are written into this part, timed from the song's first bar"><span>Import tab…</span><input type="file" id="tabImportFile" accept=".gp3,.gp4,.gp5,.gp,.gpx,.musicxml,.xml,.mxl" hidden /></label>
                   <button class="btn tiny ghost" type="button" id="tabExtendBtn" title="Add more bars to every line, still lined up (or just press Tab in the box)">Extend line</button>
                   <button class="btn tiny ghost" type="button" id="tabRhythmBtn" title="Add a rhythm line under each block of strings. Put a letter under each note for how long it lasts: w whole, h half, q quarter, e eighth, s sixteenth (add a dot for dotted; capital letter = a rest). A note with no letter repeats the last one. Timing then follows the rhythm exactly.">Add rhythm line</button>
                   <button class="btn tiny ghost" type="button" id="tabTapBtn" hidden title="Tap this in time with the music to mark where the cursor is right now. One tap is usually enough — uses the song's own detected tempo (Tempo &amp; key) to work out everything else from the rhythm line. Tap a second spot too if the beat isn't steady enough for that alone, and timing will follow the taps instead (keyboard: Ctrl/⌘+Enter while the cursor is in the tab)">Tap ⏱</button>
@@ -784,6 +785,7 @@
           <li><a href="https://github.com/spotify/basic-pitch" target="_blank" rel="noopener noreferrer">Basic Pitch</a> by Spotify, for audio-to-MIDI <span class="muted">· Apache-2.0</span></li>
           <li><a href="https://github.com/cutterbl/SoundTouchJS" target="_blank" rel="noopener noreferrer">SoundTouchJS</a>, for tempo and pitch <span class="muted">· LGPL-2.1</span></li>
           <li><a href="https://github.com/shijinyu/lamejs" target="_blank" rel="noopener noreferrer">lamejs</a> (@breezystack fork), for MP3 export <span class="muted">· LGPL-3.0</span></li>
+<li><a href="https://github.com/CoderLine/alphaTab" target="_blank" rel="noopener noreferrer">alphaTab</a>, for reading Guitar Pro and MusicXML files <span class="muted">· MPL-2.0</span></li>
           <li><a href="https://github.com/101arrowz/fflate" target="_blank" rel="noopener noreferrer">fflate</a>, for ZIP files <span class="muted">· MIT</span></li>
           <li>Desktop app: <a href="https://tauri.app" target="_blank" rel="noopener noreferrer">Tauri</a> <span class="muted">· MIT / Apache-2.0</span> and <a href="https://github.com/yt-dlp/yt-dlp" target="_blank" rel="noopener noreferrer">yt-dlp</a> <span class="muted">· Unlicense</span></li>
         </ul>

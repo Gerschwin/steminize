@@ -1034,3 +1034,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   /* Phone width stacks everything in one column and docks the Scratchpad (see above), so there is no window to fill. */
   #scratchFullBtn, #scratchFullBtn2 { display: none; }
 }
+
+/* The track chooser of Import tab */
+.track-pick { display: flex; flex-direction: column; gap: 6px; }
+.track-pick .btn { text-align: left; justify-content: flex-start; }

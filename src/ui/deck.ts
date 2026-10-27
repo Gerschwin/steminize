@@ -58,6 +58,9 @@ import {
 } from '../lyrics/tabSync.ts';
 import { FLAT, isFlat, sameEq, type EqParams } from '../player/eq.ts';
 import { eqPanel, type EqPanel } from './eqPanel.ts';
+import { listTracks, scoreToTab, type Imported } from '../import/tabImport.ts';
+import { describeLoadError, loadScoreFile } from '../import/loadScore.ts';
+import { pickTrack } from './tabImportDialog.ts';
 import { drawStaff, drawTabScore, noteAt, staffU, staffX, zoomDrawing, type StaffLayout, type TabScoreLayout } from './staff.ts';
 import { $, activatable, fitCanvas, fmtDuration, fmtTime, h, openDialog, pressed, toast } from './dom.ts';
 import { Transcribe, type TxHost, type TxState } from './transcribePanel.ts';
@@ -2400,6 +2403,12 @@ export class Deck {
       this.emit();
     };
     $('tabTapBtn').onclick = tap;
+    ($('tabImportFile') as HTMLInputElement).onchange = (e) => {
+      const input = e.target as HTMLInputElement;
+      const file = input.files?.[0];
+      input.value = '';
+      if (file) void this.importTabFile(file);
+    };
     // Ctrl/Cmd+Enter taps from the keyboard while the cursor is in the tab text (a plain key would
     // type into it, and the deck's own shortcuts don't run inside a text box).
     areas.tab.addEventListener('keydown', (e) => {
@@ -2668,6 +2677,7 @@ export class Deck {
     const canFollow = anchors.length >= 1 && (anchors.length >= MIN_ANCHORS || !!this.r?.analysis?.bpm);
     const follow = canFollow && !!this.scratch.tabFollow;
     $('tabTapBtn').hidden = !onTab;
+    $('tabImportLabel').hidden = !onTab;
     $('tabRhythmBtn').hidden = !onTab;
     const count = $('tabAnchorCount');
     count.hidden = !onTab || anchors.length === 0;
@@ -3421,6 +3431,71 @@ export class Deck {
     $('fullTotal').textContent = fmtTime(this.length / SR);
     ($('fullSmaller') as HTMLButtonElement).disabled = this.tabZoom <= Deck.FULL_ZOOMS[0];
     ($('fullLarger') as HTMLButtonElement).disabled = this.tabZoom >= Deck.FULL_ZOOMS[Deck.FULL_ZOOMS.length - 1];
+  }
+
+  /** "Import tab…": reads a Guitar Pro or MusicXML file, asks which track if there are several, and writes it into the matching part. */
+  private async importTabFile(file: File) {
+    if (!this.r) return;
+    const note = toast('Reading the file…', false, 120_000);
+    let loaded: Awaited<ReturnType<typeof loadScoreFile>>;
+    try {
+      loaded = await loadScoreFile(new Uint8Array(await file.arrayBuffer()));
+    } catch (e) {
+      toast(`Couldn't read ${file.name}: ${describeLoadError(e)}.`, true, 9000);
+      return;
+    } finally {
+      note.remove();
+    }
+    const usable = listTracks(loaded.score).filter((t) => t.part);
+    if (!usable.length) {
+      toast(`${file.name} has no guitar, bass or drum track the tab editor can take (it does 6 strings, 4 strings or drums).`, true, 9000);
+      return;
+    }
+    const index = usable.length === 1 ? usable[0].index : await pickTrack(file.name, usable);
+    if (index === null) return;
+    let imp: Imported;
+    try {
+      imp = scoreToTab(loaded.score, index, loaded.order.length ? loaded.order : undefined);
+    } catch (e) {
+      toast((e as Error).message, true, 9000);
+      return;
+    }
+    this.applyImportedTab(imp, usable.find((t) => t.index === index)!.name);
+  }
+
+  /** Puts an imported tab in its part, timed from the song's first bar line (one tap at the first note, which the song's own tempo does the rest of), with Follow along on. */
+  private applyImportedTab(imp: Imported, trackName: string) {
+    this.showPart(imp.part);
+    const ta = this.scratchAreas.tab;
+    const before = { text: ta.value, anchors: this.scratch.tabAnchors, follow: this.scratch.tabFollow };
+    const a = this.r?.analysis;
+    const start = a?.beats[this.downbeat()] ?? 0;
+    const set = (text: string, anchors: typeof before.anchors, follow: boolean | undefined) => {
+      ta.value = text;
+      this.scratch.tab = text;
+      this.scratch.tabAnchors = anchors;
+      this.scratch.tabFollow = follow;
+      this.tabTimeline = null;
+      this.stripText = null;
+      this.staffText = null;
+      this.selectedTap = null;
+      this.selectedRhythmNote = null;
+      this.lastLoopBar = null;
+      this.updateTabView();
+      this.updateScratchSummary();
+      this.paintBarScores();
+      this.dirty = true;
+      this.emit();
+    };
+    set(imp.text, [{ charOffset: imp.firstNote, time: start }], true);
+    const bpm = a?.bpm;
+    const bits = [
+      `Imported ${trackName}: ${imp.bars} bar${imp.bars === 1 ? '' : 's'}, timed from the song's first bar line (${fmtTime(start)}).`,
+      bpm && imp.tempo && Math.abs(bpm - imp.tempo) / imp.tempo > 0.05 ? `The file is at ${Math.round(imp.tempo)} BPM and the song at about ${Math.round(bpm)}, which only matters if it is not the same piece.` : '',
+      'If the tab should start somewhere else, drag its T1 tag on the waveform, or tap its first note at the right moment.',
+      ...imp.notes.map((n) => `${n[0].toUpperCase()}${n.slice(1)}.`),
+    ].filter(Boolean);
+    toast(bits.join(' '), false, 16000, before.text.trim() ? { label: 'Undo', run: () => set(before.text, before.anchors, before.follow) } : undefined);
   }
 
   /** One-line summaries on the drawer tabs, so closed panels still show what's on. */

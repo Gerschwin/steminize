@@ -1720,6 +1720,75 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('sample song: taps are inside the tab, in order, and match the tempo', anchors.length >= 2 && anchors.every((a, i) => a.charOffset < tab.length && (i === 0 || (a.time > anchors[i - 1].time && a.charOffset > anchors[i - 1].charOffset))) && doc.analysis.bpm === 100 && doc.analysis.beats[1] === 0.6);
 }
 
+// ---- importing Guitar Pro / MusicXML (src/import): scores made from alphaTex text, read back through the real typed-tab parser
+{
+  const at = await import('@coderline/alphatab');
+  const { listTracks, playOrder, scoreToTab } = await import('../src/import/tabImport.ts');
+  const { parseDrums } = await import('../src/lyrics/drumTab.ts');
+  const score = (tex: string) => {
+    const imp = new at.importer.AlphaTexImporter();
+    imp.initFromString(tex, new at.Settings());
+    return imp.readScore() as never;
+  };
+  // What every sounding note of a track should be, worked out from the score itself: [start in sixteenths, string row from the top, fret].
+  const expected = (sc: any, ti: number, order: number[]) => {
+    const out: string[] = [];
+    let base = 0;
+    for (const bi of order) {
+      const mb = sc.masterBars[bi];
+      const bar = sc.tracks[ti].staves[0].bars[bi];
+      const voice = bar.voices.find((v: any) => v.beats.some((b: any) => !b.isRest && b.notes.length)) ?? bar.voices[0];
+      for (const b of voice.beats) {
+        if (b.isRest || b.graceType !== 0) continue;
+        for (const n of b.notes) if (!n.isTieDestination) out.push(`${base + Math.round(b.playbackStart / 120) / 2}:${sc.tracks[ti].staves[0].tuning.length - n.string}:${n.isDead ? 'x' : n.fret}`);
+      }
+      base += mb.calculateDuration() / 240;
+    }
+    return out.sort();
+  };
+  const read = (text: string) =>
+    parseScore(text)
+      .notes.map((n) => `${n.start}:${n.string}:${n.fret === null ? 'x' : n.fret}`)
+      .sort();
+
+  const guitar = score(`\\title "Riff"\n\\tempo 96\n\\tuning (e4 b3 g3 d3 a2 e2)\n.\n\\ts 4 4\n\\ro :8 5.2 {h} 7.2 :4 5.2 {v} 0.1 |\n(0.1 2.2).4 r.4 :8 3.3 {pm} 5.3 {pm} :16 3.2 5.2 7.2 x.2 |\n\\rc 2 :4 7.1 {b (0 4)} 5.2 {sl} 7.2 {tu 3} 3.3 |\n:2 3.6 {h} 5.6 |`);
+  const g = scoreToTab(guitar, 0);
+  const order = playOrder((guitar as any).masterBars);
+  ok('import: a guitar track comes in as the typed tab, every note on its own string and place', g.part === 'guitar' && JSON.stringify(read(g.text)) === JSON.stringify(expected(guitar, 0, order)));
+  ok('import: repeats are written out, so the tab stays level with a recording that plays them', g.bars === order.length && order.length === 7 && parseScore(g.text).bars.length === 7);
+  ok('import: hammer-on, slide, bend, vibrato and palm mute are written the way the tab format reads them', /5h7/.test(g.text) && /5\/7/.test(g.text) && /7b9/.test(g.text) && /5~/.test(g.text) && /PM/.test(g.text) && parseScore(g.text).notes.some((n) => n.link === 'h') && parseScore(g.text).notes.some((n) => n.link === '/') && parseScore(g.text).notes.some((n) => n.bend?.to === 9));
+  ok('import: the first note is where its offset points', g.text[g.firstNote] === '5' && g.text.slice(0, g.firstNote).includes('B|'));
+  ok('import: a triplet is rounded and the person is told', g.notes.some((n) => /half sixteenth/.test(n)));
+  ok('import: every bar adds up to the bar', parseScore(g.text).bars.every((b) => b.length === 16));
+
+  const bass = score(`\\tempo 90\n\\tuning (g2 d2 a1 e1)\n.\n\\ts 4 4\n:4 0.4 0.4 3.4 {h} 5.4 | :4 3.3 3.3 :8 5.3 5.3 5.3 5.3 |`);
+  const b = scoreToTab(bass, 0);
+  ok('import: a four-string track is the bass part', b.part === 'bass' && JSON.stringify(read(b.text)) === JSON.stringify(expected(bass, 0, playOrder((bass as any).masterBars))));
+
+  const alt = score(`\\tempo 100\n\\tuning (e4 b3 g3 d3 a2 e2)\n.\n\\ts 4 4\n\\ro :4 1.1 2.1 3.1 4.1 | 5.1 6.1 7.1 8.1 | \\rc 3 \\ae (1 2) 9.1 10.1 | \\ae 3 0.2 |`);
+  ok('import: numbered endings are played on their own passes', JSON.stringify(playOrder((alt as any).masterBars)) === JSON.stringify([0, 1, 2, 0, 1, 2, 0, 1, 3]));
+
+  const drums = score(`\\tempo 100\n\\track "Drums"\n\\staff {score}\n\\instrument percussion\n\\ts 4 4\n:8 36 42 38 42 36 42 38 42 | :4 36 (38 42) 36 (38 46) | \\ts 3 4 :4 49 38 36 |`);
+  const d = scoreToTab(drums, 0);
+  ok('import: a percussion track is the drum grid, with the kit pieces on their own rows', d.part === 'drums' && /^HH\|--x---x---x---x-\|/m.test(d.text) && /^BD\|x-------x-------\|/m.test(d.text) && /^3\/4$/m.test(d.text));
+  ok('import: the drum grid reads back as the same hits', parseDrums(d.text).notes.length === 8 + 6 + 3);
+  ok('import: tracks are listed with what each becomes', JSON.stringify(listTracks(drums).map((t) => t.part)) === '["drums"]' && listTracks(guitar)[0].part === 'guitar' && listTracks(bass)[0].part === 'bass');
+
+  // MusicXML with tab information (string and fret on each note)
+  {
+    const tun = [['E', 2], ['A', 2], ['D', 3], ['G', 3], ['B', 3], ['E', 4]].map(([st, o], i) => `<staff-tuning line="${i + 1}"><tuning-step>${st}</tuning-step><tuning-octave>${o}</tuning-octave></staff-tuning>`).join('');
+    const note = (step: string, oct: number, str: number, fret: number) => `<note><pitch><step>${step}</step><octave>${oct}</octave></pitch><duration>1</duration><type>quarter</type><notations><technical><string>${str}</string><fret>${fret}</fret></technical></notations></note>`;
+    const xml = `<?xml version="1.0" encoding="UTF-8"?><score-partwise version="3.1"><part-list><score-part id="P1"><part-name>Guitar</part-name></score-part></part-list><part id="P1"><measure number="1"><attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>TAB</sign><line>5</line></clef><staff-details><staff-lines>6</staff-lines>${tun}</staff-details></attributes>${note('E', 2, 6, 0)}${note('A', 2, 5, 0)}${note('C', 3, 5, 3)}${note('G', 3, 3, 0)}</measure></part></score-partwise>`;
+    const sc = at.importer.ScoreLoader.loadScoreFromBytes(new TextEncoder().encode(xml), new at.Settings()) as never;
+    ok('import: a MusicXML file with tab information gives the same kind of tab', JSON.stringify(read(scoreToTab(sc, 0).text)) === JSON.stringify(['0:5:0', '12:2:0', '4:4:0', '8:4:3'].sort()));
+  }
+
+  // The same score saved as a Guitar Pro file and read back gives the same tab.
+  const bytes = new at.exporter.Gp7Exporter().export(guitar as never, new at.Settings());
+  const again = at.importer.ScoreLoader.loadScoreFromBytes(bytes, new at.Settings()) as never;
+  ok('import: a Guitar Pro (.gp) file gives the same tab as the score it was saved from', scoreToTab(again, 0).text === g.text);
+}
+
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');
 
 process.exit(failed ? 1 : 0);
