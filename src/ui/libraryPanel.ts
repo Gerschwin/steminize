@@ -299,16 +299,14 @@ export function initLibrary(deck: Deck) {
     if (!m) return false;
     try {
       const stems = await loadStems(m);
-      const takeGroups = m.takeGroups?.length
-        ? await Promise.all(
-            m.takeGroups.map(async (g: TakeGroupMeta) => ({
-              id: g.id,
-              activeTake: g.activeTake,
-              takes: await Promise.all(g.takes.map(async (t) => ({ id: t.id, data: await loadTake(m.id, g.id, t), note: t.note }))),
-            })),
-          )
-        : undefined;
-      const r: Result = { title: m.title, stems, settings: m.settings, seconds: m.seconds, took: m.took, libId: m.id, analysis: m.analysis, kind: m.kind, takeGroups };
+      // One file at a time: each take is as long as the song, and decoding them all at once ran the app out of memory.
+      const takeGroups: Result['takeGroups'] = [];
+      for (const g of m.takeGroups ?? []) {
+        const takes = [];
+        for (const t of g.takes) takes.push({ id: t.id, data: await loadTake(m.id, g.id, t), note: t.note });
+        takeGroups.push({ id: g.id, activeTake: g.activeTake, takes });
+      }
+      const r: Result = { title: m.title, stems, settings: m.settings, seconds: m.seconds, took: m.took, libId: m.id, analysis: m.analysis, kind: m.kind, takeGroups: takeGroups.length ? takeGroups : undefined };
       deck.open(r, m.state as DeckState | undefined);
       onOpen(r);
       // Songs saved before key detection existed: work it out now, keep any tempo corrections.

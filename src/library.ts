@@ -113,6 +113,18 @@ export async function writeMeta(meta: LibMeta) {
   await backend().writeMeta(meta.id, JSON.stringify(meta));
 }
 
+/** The two channels of a decoded file with its stored scale undone. Uses the decoder's own arrays rather than copying them (a
+ * song's takes are each the length of the whole song); a mono file gets a copy for its second side. */
+function channels(buf: AudioBuffer, k: number): Stereo {
+  const ch = (i: number) => {
+    const a = buf.getChannelData(Math.min(i, buf.numberOfChannels - 1));
+    return i >= buf.numberOfChannels ? a.slice() : a;
+  };
+  const out: Stereo = [ch(0), ch(1)];
+  if (k !== 1) for (const a of out) for (let j = 0; j < a.length; j++) a[j] *= k;
+  return out;
+}
+
 export async function loadStems(meta: LibMeta): Promise<{ name: string; data: Stereo }[]> {
   const b = backend();
   const ctx = new OfflineAudioContext(2, 1, 44100);
@@ -120,13 +132,7 @@ export async function loadStems(meta: LibMeta): Promise<{ name: string; data: St
   for (const s of meta.stems) {
     const bytes = await b.readFile(meta.id, `${s.name}.flac`);
     const buf = await ctx.decodeAudioData(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
-    const k = 1 / s.scale;
-    const ch = (i: number) => {
-      const a = buf.getChannelData(Math.min(i, buf.numberOfChannels - 1)).slice();
-      if (k !== 1) for (let j = 0; j < a.length; j++) a[j] *= k;
-      return a;
-    };
-    out.push({ name: s.name, data: [ch(0), ch(1)] });
+    out.push({ name: s.name, data: channels(buf, 1 / s.scale) });
   }
   return out;
 }
@@ -158,13 +164,7 @@ export async function loadTake(songId: string, groupId: string, take: TakeMeta):
   const bytes = await backend().readFile(songId, `${groupId}-${take.id}.flac`);
   const ctx = new OfflineAudioContext(2, 1, 44100);
   const buf = await ctx.decodeAudioData(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
-  const k = 1 / take.scale;
-  const ch = (i: number) => {
-    const a = buf.getChannelData(Math.min(i, buf.numberOfChannels - 1)).slice();
-    if (k !== 1) for (let j = 0; j < a.length; j++) a[j] *= k;
-    return a;
-  };
-  return [ch(0), ch(1)];
+  return channels(buf, 1 / take.scale);
 }
 
 /** Zips the whole library (as stored: FLAC stems + meta.json per song) for backup. */

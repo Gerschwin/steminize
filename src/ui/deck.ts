@@ -1024,7 +1024,7 @@ export class Deck {
 
   /** Makes `take` the active, audible one for its take-group lane: swaps the displayed waveform
    * and the mixer's audio at that one shared slot, and rebuilds the collapsed-takes strip. */
-  private selectTake(lane: Lane, take: Take) {
+  private selectTake(lane: Lane, take: Take, push = true) {
     lane.activeTakeId = take.id;
     lane.data = take.data;
     lane.peaks = take.peaks;
@@ -1032,7 +1032,7 @@ export class Deck {
     const badge = lane.el.querySelector('.take-badge');
     if (badge) badge.textContent = (lane.takes?.length ?? 0) > 1 ? ` · ${take.id}` : '';
     this.laneScale = 1 / Math.max(1e-3, ...this.lanes.flatMap((l) => Math.max(...l.peaks)));
-    this.player.replaceTrack(this.lanes.indexOf(lane), take.data);
+    if (push) this.player.replaceTrack(this.lanes.indexOf(lane), take.data);
     this.renderTakeStrip(lane);
     this.dirty = true;
     this.emit();
@@ -1233,10 +1233,6 @@ export class Deck {
     if (!r.takeGroups?.length) return;
     for (const g of r.takeGroups) {
       if (!g.takes.length) continue;
-      const placeholder: Stereo = [new Float32Array(this.length), new Float32Array(this.length)];
-      const lane = this.buildLane({ name: `Track ${this.findRecordGroups().length + 1}`, data: placeholder }, this.lanes.length, '#ef4444');
-      lane.recordGroup = true;
-      lane.groupId = g.id;
       const takes: Take[] = g.takes.map((t) => ({ id: t.id, data: t.data, peaks: peaksOf(t.data), note: t.note }));
       const active = takes.find((t) => t.id === g.activeTake) ?? takes[takes.length - 1];
       // The "Keep last" cap may have been lowered since these were saved: trim down to it now,
@@ -1248,10 +1244,15 @@ export class Deck {
         if (i < 0) break;
         dropped.push(takes.splice(i, 1)[0]);
       }
+      // The lane starts out on the active take itself, so no silent stand-in the length of the song is made (a long song with many
+      // takes ran the app out of memory that way), and the track goes to the player once.
+      const lane = this.buildLane({ name: `Track ${this.findRecordGroups().length + 1}`, data: active.data }, this.lanes.length, '#ef4444');
+      lane.recordGroup = true;
+      lane.groupId = g.id;
       lane.takes = takes;
       this.lanes.push(lane);
-      this.player.addTrack(placeholder);
-      this.selectTake(lane, active);
+      this.player.addTrack(active.data);
+      this.selectTake(lane, active, false);
       for (const d of dropped) void this.onTakeRemoved(g.id, d.id).catch(() => {});
     }
     this.refreshRecordTargetsUi();

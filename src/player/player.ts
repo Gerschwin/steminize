@@ -186,6 +186,9 @@ export class Player {
     await this.nativeInvoke('native_engine_stop');
   }
 
+  private nativeLoading = 0;
+  private skippedTracks: PlayerMsg[] = [];
+
   private nativeTrack(mode: 'add' | 'replace', stem: Stereo, index?: number) {
     const n = stem[0].length;
     const both = new Float32Array(n * 2);
@@ -267,13 +270,24 @@ export class Player {
       this.state = { ...this.state, pos: 0, playing: false, passes: 0 };
       // The song that was playing stops at once instead of carrying on while the new one is read from disk.
       this.nativeCall('native_engine_unload');
-      this.nativeInvoke('native_engine_load', { id: libId, gains }).catch((e) => {
-        if (String(e).includes('a newer song was opened')) return; // another song was opened while this one loaded; that one counts
-        // Couldn't load it natively (files missing, say): play it in the webview instead.
-        this.onNativeError(`Native playback couldn't load this song, using the web player: ${e}`);
-        this.nativeSong = false;
-        this.webLoad(stems, gains);
-      });
+      // The engine reads the whole song, recorded takes included, from its files; tracks the deck adds or swaps while that happens are
+      // already in it, so they are not sent over as well (a long song with many takes is hundreds of megabytes each).
+      this.nativeLoading++;
+      this.skippedTracks = [];
+      this.nativeInvoke('native_engine_load', { id: libId, gains })
+        .finally(() => this.nativeLoading--)
+        .then(() => {
+          this.skippedTracks = [];
+        })
+        .catch((e) => {
+          if (String(e).includes('a newer song was opened')) return; // another song was opened while this one loaded; that one counts
+          // Couldn't load it natively (files missing, say): play it in the webview instead, tracks and all.
+          this.onNativeError(`Native playback couldn't load this song, using the web player: ${e}`);
+          this.nativeSong = false;
+          this.webLoad(stems, gains);
+          for (const m of this.skippedTracks) this.send(m);
+          this.skippedTracks = [];
+        });
       return;
     }
     if (this.nativeRunning && !libId) this.onNativeNote('This song is not saved in the library, so it plays in the normal engine. Keep it (Keep new songs) to use native audio.');
@@ -292,11 +306,13 @@ export class Player {
   }
   /** Adds a track to the playing song in place, without resetting playback (unlike load()). Follow up with setGains() to size the gain/pan/EQ arrays to match. */
   addTrack(stem: Stereo) {
+    if (this.nativeSong && this.nativeLoading) return void this.skippedTracks.push({ type: 'addTrack', stem });
     if (this.nativeSong) return this.nativeTrack('add', stem);
     this.send({ type: 'addTrack', stem });
   }
   /** Swaps the audio at an existing track slot (e.g. switching which take is active) without resetting playback or touching gain/pan/EQ. */
   replaceTrack(index: number, stem: Stereo) {
+    if (this.nativeSong && this.nativeLoading) return void this.skippedTracks.push({ type: 'replaceTrack', index, stem });
     if (this.nativeSong) return this.nativeTrack('replace', stem, index);
     this.send({ type: 'replaceTrack', index, stem });
   }
