@@ -994,3 +994,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .btn.toggle.rec.arming { background: color-mix(in srgb, var(--warn) 25%, var(--panel-2)); border-color: var(--warn); color: var(--warn-text); }
 /* The small status words on the drawer tabs ("on", "off") keep their room, so a tab doesn't change width and move its neighbours. */
 #sumLive, #sumPractice { display: inline-block; min-width: 2.4ch; }
+
+/* The pinned top of the open song pulls itself flush with the card's border and padding (now 12px, not 18px), and its bottom padding
+   must stay inside the gap to the first track (now 8px, not 16px) or it covers the top of that track. */
+@media (min-width: 901px) {
+  .deck-top { margin-top: -13px; padding-top: 13px; margin-bottom: -6px; padding-bottom: 6px; }
+}
