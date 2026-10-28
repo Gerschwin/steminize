@@ -167,9 +167,10 @@ export interface RhythmEvent {
   rest: boolean;
 }
 
-/** Length in sixteenth notes of each rhythm letter (upper case is a rest of that length). */
+/** Length in sixteenth notes of each rhythm letter (upper case is a rest of that length). A `.` after the letter makes it dotted (one and
+ * a half times as long), a `3` makes it a triplet note (two thirds as long: `e3` is an eighth of a triplet, three of them to a quarter). */
 const RHYTHM_UNITS: Record<string, number> = { w: 16, h: 8, q: 4, e: 2, s: 1, t: 0.5 };
-export const isRhythmRow = (line: string) => /^[ whqestWHQEST.]*$/.test(line) && /[whqestWHQEST]/.test(line);
+export const isRhythmRow = (line: string) => /^[ whqestWHQEST.3]*$/.test(line) && /[whqestWHQEST]/.test(line);
 
 /** A "4/4"-style time signature on a line of its own (see tabBlocks). */
 export const isTimeSigRow = (line: string) => /^\s*\d+\s*\/\s*\d+\s*$/.test(line);
@@ -207,13 +208,14 @@ function rhythmEvents(line: string, noteCol: boolean[], barLine: boolean[], labe
       const base = RHYTHM_UNITS[ch.toLowerCase()];
       let d = lastLen;
       if (base !== undefined) {
-        d = base * (line[c + 1] === '.' ? 1.5 : 1);
+        d = base * (line[c + 1] === '.' ? 1.5 : line[c + 1] === '3' ? 2 / 3 : 1);
         lastLen = d;
       }
       const rest = base !== undefined && ch !== ch.toLowerCase() && !noteCol[c];
       events.push({ col: c, u: u + bar, d, rest });
       bar += d;
     }
+    bar = Math.round(bar * 1e6) / 1e6; // triplets are thirds: keep a bar that adds up to 16 at exactly 16, not 15.999999999999996
     if (!cols.length) {
       // a bar of nothing but dashes: one bar of silence, as long as the last one
       if (end > col) {
@@ -711,8 +713,8 @@ export function noteCols(notes: TabNote[]): { bar: number; col: number; start: n
 /** Sets (or replaces) one note's rhythm letter at its own column, inserting a rhythm line for the
  * block first if it doesn't have one yet — the same shape "Add rhythm line" itself inserts (see
  * tabRhythmBtn in deck.ts), just with this specific note's own column set instead of only the
- * block's first note. A trailing dot is cleared if there was one, since setting a plain length this
- * way always means "exactly this," not whatever dotted status happened to be there before. Returns
+ * block's first note. A trailing dot (or triplet 3) is cleared if there was one, since setting a plain length this
+ * way always means "exactly this," not whatever dotted status happened to be there before. A letter given with a 3 (`e3`) sets a triplet. Returns
  * the full new text, plus where the change starts and how much the text grew there, for shifting any
  * tap anchors past that point the same way "Add rhythm line"'s own insertion already does. */
 export function setRhythmLetter(text: string, block: TabBlock, col: number, letter: string): { text: string; insertAt: number; grew: number } {
@@ -727,8 +729,13 @@ export function setRhythmLetter(text: string, block: TabBlock, col: number, lett
     const row = block.rhythmRow;
     const old = lines[row];
     const padded = col < old.length ? old : old.padEnd(col + 1, ' ');
-    const hadDot = padded[col + 1] === '.';
-    const newLine = padded.slice(0, col) + letter + padded.slice(col + 1 + (hadDot ? 1 : 0));
+    const hadMod = padded[col + 1] === '.' || padded[col + 1] === '3';
+    // a two-character letter (a triplet, `e3`) needs the column after it free
+    if (letter.length > 1 && !hadMod && col + 1 < padded.length && padded[col + 1] !== ' ') return { text, insertAt: col, grew: 0 };
+    const span = Math.max(letter.length, hadMod ? 2 : 1);
+    const tail = padded.slice(col + span);
+    // a dot or 3 that is left behind is blanked, not removed, so the letters after it stay under their notes
+    const newLine = padded.slice(0, col) + letter + (tail ? ' '.repeat(span - letter.length) + tail : '');
     lines[row] = newLine;
     return { text: lines.join('\n'), insertAt: starts[row] + Math.min(col, old.length), grew: newLine.length - old.length };
   }

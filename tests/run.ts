@@ -24,8 +24,8 @@ import { writeMidi } from '../src/encode/midi.ts';
 import { centsFrom, detectPitch, freqToNote } from '../src/analysis/pitch.ts';
 import { isNewer, parseVersion, pickUpdate, updateEndpoint } from '../src/version.ts';
 import { lineAt, parseLrc } from '../src/lyrics/lrc.ts';
-import { pageRowAt, planRows, planStack, splitLength, staffX, vexKey, zoomDrawing } from '../src/ui/staff.ts';
-import { acceptedMidis, timeAtCoord, fromUnrolled, repeatPlan, toUnrolled, addAnchor, charOffsetAt, coordAtBpm, coordToPlace, coordToStripX, findNoteAt, noteCols, noteGroupAt, parseScore, parseTab, setRhythmLetter, stripLayout, isLockedAt, moveAnchor, offsetToCoord, removeAnchor, rowCol, tabBlocks, tabPositionAt, toggleAnchorLock, type TabAnchor, type TabNote } from '../src/lyrics/tabSync.ts';
+import { pageRowAt, planRows, planStack, splitLength, splitPieces, staffX, tupletRuns, vexKey, zoomDrawing } from '../src/ui/staff.ts';
+import { isRhythmRow, acceptedMidis, timeAtCoord, fromUnrolled, repeatPlan, toUnrolled, addAnchor, charOffsetAt, coordAtBpm, coordToPlace, coordToStripX, findNoteAt, noteCols, noteGroupAt, parseScore, parseTab, setRhythmLetter, stripLayout, isLockedAt, moveAnchor, offsetToCoord, removeAnchor, rowCol, tabBlocks, tabPositionAt, toggleAnchorLock, type TabAnchor, type TabNote } from '../src/lyrics/tabSync.ts';
 import { moveItem, nextSong, parseSetlists, prevSong, pruneSongs, totalSeconds, uniqueName, type Setlist } from '../src/setlists.ts';
 import { detectLatency } from '../src/player/latency.ts';
 import { placeTake, shiftTake } from '../src/player/placement.ts';
@@ -1763,7 +1763,7 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
       const voice = bar.voices.find((v: any) => v.beats.some((b: any) => !b.isRest && b.notes.length)) ?? bar.voices[0];
       for (const b of voice.beats) {
         if (b.isRest || b.graceType !== 0) continue;
-        for (const n of b.notes) if (!n.isTieDestination) out.push(`${base + Math.round(b.playbackStart / 120) / 2}:${sc.tracks[ti].staves[0].tuning.length - n.string}:${n.isDead ? 'x' : n.fret}`);
+        for (const n of b.notes) if (!n.isTieDestination) out.push(`${+(base + b.playbackStart / 240).toFixed(6)}:${sc.tracks[ti].staves[0].tuning.length - n.string}:${n.isDead ? 'x' : n.fret}`);
       }
       base += mb.calculateDuration() / 240;
     }
@@ -1771,7 +1771,7 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   };
   const read = (text: string) =>
     parseScore(text)
-      .notes.map((n) => `${n.start}:${n.string}:${n.fret === null ? 'x' : n.fret}`)
+      .notes.map((n) => `${+n.start.toFixed(6)}:${n.string}:${n.fret === null ? 'x' : n.fret}`)
       .sort();
 
   const guitar = score(`\\title "Riff"\n\\tempo 96\n\\tuning (e4 b3 g3 d3 a2 e2)\n.\n\\ts 4 4\n\\ro :8 5.2 {h} 7.2 :4 5.2 {v} 0.1 |\n(0.1 2.2).4 r.4 :8 3.3 {pm} 5.3 {pm} :16 3.2 5.2 7.2 x.2 |\n\\rc 2 :4 7.1 {b (0 4)} 5.2 {sl} 7.2 {tu 3} 3.3 |\n:2 3.6 {h} 5.6 |`);
@@ -1781,8 +1781,15 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   ok('import: repeats are written out, so the tab stays level with a recording that plays them', g.bars === order.length && order.length === 7 && parseScore(g.text).bars.length === 7);
   ok('import: hammer-on, slide, bend, vibrato and palm mute are written the way the tab format reads them', /5h7/.test(g.text) && /5\/7/.test(g.text) && /7b9/.test(g.text) && /5~/.test(g.text) && /PM/.test(g.text) && parseScore(g.text).notes.some((n) => n.link === 'h') && parseScore(g.text).notes.some((n) => n.link === '/') && parseScore(g.text).notes.some((n) => n.bend?.to === 9));
   ok('import: the first note is where its offset points', g.text[g.firstNote] === '5' && g.text.slice(0, g.firstNote).includes('B|'));
-  ok('import: a triplet is rounded and the person is told', g.notes.some((n) => /half sixteenth/.test(n)));
+  ok('import: a triplet is written as a triplet, not rounded', /e3|q3/.test(g.text) && !g.notes.some((n) => /grid/.test(n)));
   ok('import: every bar adds up to the bar', parseScore(g.text).bars.every((b) => b.length === 16));
+  {
+    const mix = score(`\\tempo 100\n\\tuning (e4 b3 g3 d3 a2 e2)\n.\n\\ts 4 4\n:16 5.2 5.2 5.2 5.2 :8 7.2 {tu 3} 7.2 {tu 3} 7.2 {tu 3} 5.2 5.2 :16 3.2 {tu 3} 3.2 {tu 3} 3.2 {tu 3} 3.2 {tu 3} 3.2 {tu 3} 3.2 {tu 3} | :4 0.1 {tu 3} 2.1 {tu 3} 3.1 {tu 3} :2 5.1 |`);
+    const m = scoreToTab(mix, 0);
+    ok('import: triplet eighths and sixteenths next to plain notes keep their exact places', JSON.stringify(read(m.text)) === JSON.stringify(expected(mix, 0, playOrder((mix as any).masterBars))), `${read(m.text)} vs ${expected(mix, 0, playOrder((mix as any).masterBars))}`);
+    ok('import: and are written with triplet letters, in bars that add up', /e3/.test(m.text) && /s3/.test(m.text) && /q3/.test(m.text) && parseScore(m.text).bars.every((b) => Math.abs(b.length - 16) < 1e-6));
+    ok('import: triplets that are drawn as triplets come back through the typed format as they went in', parseScore(m.text).notes.filter((n) => Math.abs(n.length - 4 / 3) < 1e-6).length === 3);
+  }
 
   const bass = score(`\\tempo 90\n\\tuning (g2 d2 a1 e1)\n.\n\\ts 4 4\n:4 0.4 0.4 3.4 {h} 5.4 | :4 3.3 3.3 :8 5.3 5.3 5.3 5.3 |`);
   const b = scoreToTab(bass, 0);
@@ -1854,6 +1861,43 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   const gn = parseScore(g.imp.text).notes.filter((n) => n.midi !== null);
   ok('auto tab: a guitar chord is written as one shape on six strings', stringCount(g.imp.text) === 6 && JSON.stringify(gn.filter((n) => n.start === 0).map((n) => n.midi).sort()) === JSON.stringify([45, 52, 57, 60, 64]) && gn.filter((n) => n.start === 0).every((n) => (n.fret ?? 0) <= 5));
   ok('auto tab: each string holds one note of the chord', new Set(gn.filter((n) => n.start === 0).map((n) => n.string)).size === 5);
+}
+
+// ---- triplets: the `3` on a rhythm letter, drawing lengths, the groups of a triplet ----
+{
+  const trip = 'e|-5--7--5--0-|\nB|------------|\n   e3 e3 e3 q';
+  const sc = parseScore(trip);
+  const starts = sc.notes.map((n) => +n.start.toFixed(6));
+  ok('triplets: e3 is two thirds of an eighth, so three of them fill a quarter', JSON.stringify(starts) === JSON.stringify([0, 1.333333, 2.666667, 4]) && Math.abs(sc.notes[0].length - 4 / 3) < 1e-9);
+  ok('triplets: the bar adds up (three triplet eighths and a quarter are eight sixteenths)', sc.bars.length === 1 && Math.abs(sc.bars[0].length - 8) < 1e-9);
+  ok('triplets: q3 and s3 and a rest E3', (() => {
+    const t = parseScore('e|-5--7--5--0-|\nB|------------|\n   q3 E3 s3 s3');
+    return Math.abs(t.notes[0].length - 8 / 3) < 1e-9;
+  })());
+  ok('triplets: a rhythm row with a 3 in it is still a rhythm row, and one with only digits is not', isRhythmRow('   e3 e3 e3 q') && !isRhythmRow('   3 3 3'));
+  ok('triplets: a note with no letter of its own repeats the last length, triplet included', (() => {
+    const t = parseScore('e|-5--7--5--0-|\nB|------------|\n   e3');
+    return t.notes.every((n) => Math.abs(n.length - 4 / 3) < 1e-9);
+  })());
+  ok('triplets: a plain length splits as before, a triplet length into triplet notes', JSON.stringify(splitPieces(2)) === JSON.stringify([{ code: '8', tri: false }]) && JSON.stringify(splitPieces(4 / 3)) === JSON.stringify([{ code: '8', tri: true }]) && JSON.stringify(splitPieces(8 / 3)) === JSON.stringify([{ code: 'q', tri: true }]) && JSON.stringify(splitPieces(2 / 3)) === JSON.stringify([{ code: '16', tri: true }]));
+  ok('triplets: a length made of a triplet note and a straight one is cut into notes that add up', (() => {
+    const ps = splitPieces(10 / 3); // a quarter triplet and a sixteenth triplet
+    return ps.length === 2 && ps.every((p) => p.tri) && Math.abs(ps.reduce((a, p) => a + { q: 8 / 3, '16': 2 / 3 }[p.code as 'q' | '16'], 0) - 10 / 3) < 1e-9;
+  })());
+  const T = (code: string) => ({ code, tri: true });
+  const S = (code: string) => ({ code, tri: false });
+  ok('triplets: three triplet eighths are one group, a straight note ends one, a cut-short run is still a group', JSON.stringify(tupletRuns([T('8'), T('8'), T('8'), S('q'), T('8'), T('8'), S('q')])) === '[[0,3],[4,6]]');
+  ok('triplets: two groups in a row, and a group of quarter triplets with eighth triplets inside it', JSON.stringify(tupletRuns([T('8'), T('8'), T('8'), T('8'), T('8'), T('8')])) === '[[0,3],[3,6]]' && JSON.stringify(tupletRuns([T('q'), T('8'), T('8'), T('q')])) === '[[0,4]]');
+  {
+    const t0 = 'e|--5--7--5-|\nB|-----------|\n    q  q  q';
+    const trip = setRhythmLetter(t0, tabBlocks(t0)[0], 4, 'e3');
+    ok('triplets: setting a triplet letter writes both characters and keeps the letters after it under their notes', trip.text.split('\n')[2] === '    e3 q  q' && parseScore(trip.text).notes.map((n) => n.col).join() === '4,7,10');
+    const back = setRhythmLetter(trip.text, tabBlocks(trip.text)[0], 4, 'e');
+    ok('triplets: and setting a plain letter again takes the 3 off without moving the rest', back.text.split('\n')[2] === '    e  q  q');
+    const tight = 'e|-57-|\nB|-----|\n   qq';
+    ok('triplets: no room for the 3 next to another letter leaves the text alone', setRhythmLetter(tight, tabBlocks(tight)[0], 3, 'e3').text === tight);
+  }
+  ok('triplets: nothing but plain notes has no groups', tupletRuns([S('q'), S('8'), S('8')]).length === 0);
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

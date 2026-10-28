@@ -2,9 +2,10 @@
 // guitar and bass as strings with a rhythm line under each block, drums as the drum grid. The text is the ordinary typed tab, so
 // everything that works on a tab you wrote yourself (Follow along, the Staff, bar loops, the full-window view) works on it.
 //
-// The score's notes are placed exactly: every note's start is worked out in half sixteenths and the rhythm line gives each note
-// (and each rest) its length, so a bar adds up to the bar. What the typed format cannot say is written as near as it can (a
-// triplet is rounded to the half-sixteenth grid) and counted in `notes`, for the person to be told.
+// The score's notes are placed exactly: every note's start is worked out in ticks (960 to a quarter note) and the rhythm line gives
+// each note (and each rest) its length, so a bar adds up to the bar. Notes sit on the sixteenth grid (down to a thirty-second) or on the
+// triplet grid (a triplet eighth is 320 ticks, written `e3`); what the typed format cannot say is written as near as it can and counted
+// in `notes`, for the person to be told.
 //
 // Only what is read here is used from the score, as plain structural types, so the converter can be tested with a score made by hand.
 
@@ -121,50 +122,67 @@ export function playOrder(masterBars: TMasterBar[]): number[] {
   return order;
 }
 
-const TICKS_PER_HALF_SIXTEENTH = 120;
-/** Lengths (in half sixteenths) the rhythm line can write, longest first, with their letters. */
+/** Ticks in a thirty-second note (the finest straight length the rhythm line writes) and in a triplet thirty-second (the finest triplet length). */
+const STRAIGHT_TICK = 120;
+const TRIPLET_TICK = 80;
+/** Lengths (in ticks, 960 to a quarter note) the rhythm line can write, longest first, with their letters; the ones ending in 3 are triplet notes. */
 const LENGTHS: [number, string][] = [
-  [32, 'w'],
-  [24, 'h.'],
-  [16, 'h'],
-  [12, 'q.'],
-  [8, 'q'],
-  [6, 'e.'],
-  [4, 'e'],
-  [3, 's.'],
-  [2, 's'],
-  [1, 't'],
+  [3840, 'w'],
+  [2880, 'h.'],
+  [1920, 'h'],
+  [1440, 'q.'],
+  [1280, 'h3'],
+  [960, 'q'],
+  [720, 'e.'],
+  [640, 'q3'],
+  [480, 'e'],
+  [360, 's.'],
+  [320, 'e3'],
+  [240, 's'],
+  [160, 's3'],
+  [120, 't'],
+  [80, 't3'],
 ];
+const lengthOf = (letter: string) => LENGTHS.find(([, l]) => l === letter)![0];
 
-/** A length as the letters it takes (longest first). */
-function pieces(len: number): string[] {
+/** A length (ticks) as the letters it takes (longest first), or null when the rhythm line cannot write it: a straight length uses straight
+ * letters, a triplet length triplet ones, and anything in between is made of both (every multiple of 40 ticks from 80 up can be). */
+function pieces(len: number): string[] | null {
+  const table = len % STRAIGHT_TICK === 0 ? LENGTHS.filter(([, l]) => !l.endsWith('3')) : len % TRIPLET_TICK === 0 ? LENGTHS.filter(([, l]) => l.endsWith('3')) : LENGTHS;
   const out: string[] = [];
   let left = len;
   while (left > 0) {
-    const [n, l] = LENGTHS.find(([n]) => n <= left)!;
-    out.push(l);
-    left -= n;
+    const fit = table.find(([n]) => n <= left && (n === left || left - n >= TRIPLET_TICK));
+    if (!fit) return null;
+    out.push(fit[1]);
+    left -= fit[0];
   }
   return out;
 }
 
+/** The nearest place a note can start: on the straight grid or the triplet grid, whichever is closer (the straight one when they tie). */
+function snapTick(t: number): number {
+  const a = Math.round(t / STRAIGHT_TICK) * STRAIGHT_TICK;
+  const b = Math.round(t / TRIPLET_TICK) * TRIPLET_TICK;
+  return Math.abs(b - t) < Math.abs(a - t) ? b : a;
+}
+
 interface Event {
-  at: number; // half sixteenths from the bar's start
+  at: number; // ticks from the bar's start
   len: number; // how long it is held, as far as the next event allows
   notes: TNote[];
   reach: number; // the end of the beat, or of the tied notes that carry it on
 }
 
-/** The sounding beats of a bar as events on the half-sixteenth grid. */
+/** The sounding beats of a bar as events on the tick grid. */
 function barEvents(bar: TBar | undefined, barLen: number, approx: { n: number }): Event[] {
   const voice = bar?.voices.find((v) => v.beats.some((b) => !b.isRest && b.notes.length)) ?? bar?.voices[0];
   const events: Event[] = [];
   for (const b of voice?.beats ?? []) {
     if (b.isRest || !b.notes.length || b.graceType !== 0) continue;
-    const exact = b.playbackStart / TICKS_PER_HALF_SIXTEENTH;
-    const at = Math.min(barLen - 1, Math.max(0, Math.round(exact)));
-    if (Math.abs(exact - at) > 0.01) approx.n++;
-    const end = Math.max(at + 1, Math.round((b.playbackStart + b.playbackDuration) / TICKS_PER_HALF_SIXTEENTH));
+    const at = Math.min(barLen - TRIPLET_TICK, Math.max(0, snapTick(b.playbackStart)));
+    if (Math.abs(at - b.playbackStart) > 1) approx.n++;
+    const end = Math.max(at + TRIPLET_TICK, snapTick(b.playbackStart + b.playbackDuration));
     const last = events[events.length - 1];
     // Every note is the end of a tie: the sound carries on from before, nothing new is played.
     if (b.notes.every((n) => n.isTieDestination)) {
@@ -172,14 +190,19 @@ function barEvents(bar: TBar | undefined, barLen: number, approx: { n: number })
       continue;
     }
     const fresh = b.notes.filter((n) => !n.isTieDestination);
-    if (last && last.at === at) {
+    // Two events closer than the finest length are one chord (the rhythm line cannot write the gap between them).
+    if (last && at - last.at < TRIPLET_TICK) {
       last.notes.push(...fresh);
       last.reach = Math.max(last.reach, end);
     } else events.push({ at, len: 0, notes: fresh, reach: end });
   }
   events.forEach((e, i) => {
     const gap = (events[i + 1]?.at ?? barLen) - e.at;
-    e.len = Math.max(1, Math.min(gap, e.reach - e.at));
+    let len = Math.max(TRIPLET_TICK, Math.min(gap, e.reach - e.at));
+    len = Math.round(len / 40) * 40;
+    // a rest of 40 ticks after the note could not be written: hold the note to the next event instead
+    if (gap - len === 40 || len > gap) len = gap;
+    e.len = len;
   });
   return events;
 }
@@ -226,14 +249,14 @@ function stringsText(track: TTrack, score: TScore, order: number[], notes: strin
     const mb = score.masterBars[bi];
     const bar = staff.bars[bi];
     if (bar && bar.voices.filter((v) => v.beats.some((b) => !b.isRest && b.notes.length)).length > 1) multiVoice = true;
-    const barLen = Math.round(mb.calculateDuration() / TICKS_PER_HALF_SIXTEENTH);
+    const barLen = Math.round(mb.calculateDuration());
     const events = barEvents(bar, barLen, approx);
     const cols: Col[] = [];
     let cursor = 0;
     const restCol = (len: number) => {
-      for (const l of pieces(len)) {
+      for (const l of pieces(len) ?? []) {
         cols.push({ cells: labels.map(() => '--'), letter: l.toUpperCase(), pm: false, link: labels.map(() => '') });
-        cursor += LENGTHS.find(([, x]) => x === l)![0];
+        cursor += lengthOf(l);
       }
     };
     let before: TNote[] = []; // the notes of the event just written
@@ -252,11 +275,11 @@ function stringsText(track: TTrack, score: TScore, order: number[], notes: strin
           else if (m.slideTarget === n) link[row] = n.fret > m.fret ? '/' : '\\';
         }
       }
-      const [first, ...rest] = pieces(e.len);
+      const [first, ...rest] = pieces(e.len) ?? ['t'];
       const width = Math.max(...cells.map((c) => c.length));
       cols.push({ cells: cells.map((c) => c.padEnd(width, '-')), letter: first, pm: e.notes.some((n) => n.isPalmMute), link });
-      cursor += LENGTHS.find(([, x]) => x === first)![0];
-      if (rest.length) restCol(rest.reduce((a, l) => a + LENGTHS.find(([, x]) => x === l)![0], 0));
+      cursor += lengthOf(first);
+      if (rest.length) restCol(rest.reduce((a, l) => a + lengthOf(l), 0));
       before = e.notes;
     }
     if (cursor < barLen) restCol(barLen - cursor);
@@ -283,9 +306,9 @@ function stringsText(track: TTrack, score: TScore, order: number[], notes: strin
       } else pmOn = false;
     });
     for (let r = 0; r < labels.length; r++) rows[r] += '-';
-    rhythm += ' ';
-    pm += ' ';
-    bars.push({ rows, pm: pm.trimEnd(), rhythm: rhythm });
+    // (a letter with a dot or a 3 after it is two characters wide: the dash after the last note is where its second one goes, so no
+    // space is added here, or the rhythm row would run a column ahead of the bar line)
+    bars.push({ rows, pm: pm.trimEnd(), rhythm: rhythm.trimEnd() });
   }
 
   // blocks: as many bars on a line as fit
@@ -303,7 +326,7 @@ function stringsText(track: TTrack, score: TScore, order: number[], notes: strin
     cur.rhythm += b.rhythm.padEnd(b.rows[0].length, ' ') + ' ';
   });
   const text = blocks.map((blk) => [...(/PM/.test(blk.pm) ? [blk.pm.trimEnd()] : []), ...blk.rows, blk.rhythm.trimEnd()].join('\n')).join('\n\n');
-  if (approx.n) notes.push(`${approx.n} note${approx.n === 1 ? '' : 's'} that don't sit on a sixteenth (triplets, say) were put on the nearest half sixteenth`);
+  if (approx.n) notes.push(`${approx.n} note${approx.n === 1 ? '' : 's'} that sit on neither a thirty-second nor a triplet grid (a quintuplet, say) ${approx.n === 1 ? 'was' : 'were'} put on the nearest place that does`);
   if (multiVoice) notes.push('some bars have a second voice, which was left out');
   return { text, firstNote: firstNoteOffset(text), bars: bars.length };
 }

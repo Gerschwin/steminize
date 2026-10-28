@@ -4746,6 +4746,8 @@ export class Deck {
       // its length from w/h/q/e/s directly — checked ahead of the rest so it doesn't fight with them
       // (a bare "e", for instance, isn't bound to anything else here, but being explicit costs nothing).
       if (this.selectedRhythmNote && /^[whqes]$/.test(k)) this.setSelectedNoteDuration(k);
+      // 3: makes the selected note a triplet note (two thirds of its length), or a plain one again if it is
+      else if (this.selectedRhythmNote && k === '3') this.toggleSelectedTriplet();
       // Same precedence reasoning: Left/Right already means something else below (skip ±5s, or — in
       // pedal mode — play/restart), but once a note is selected for editing, moving the selection is
       // the more useful thing for the arrow keys to do. Shift+arrow steps a whole bar at a time.
@@ -4862,6 +4864,36 @@ export class Deck {
     }
     const block = tabBlocks(text)[note.block];
     const { text: newText, insertAt, grew } = setRhythmLetter(text, block, sel.col, letter);
+    this.scratchAreas.tab.value = newText;
+    this.scratch.tab = newText;
+    this.scratch.tabAnchors = (this.scratch.tabAnchors ?? []).map((a) => (a.charOffset >= insertAt ? { ...a, charOffset: a.charOffset + grew } : a));
+    void this.renderTabStrip();
+    this.updateTabStrip();
+    this.updateScratchSummary();
+    this.emit();
+  }
+
+  /** The 3 key on a selected note: a plain w / h / q / e / s becomes the triplet of it (`e` → `e3`, two thirds as long), and a triplet becomes plain again. */
+  private toggleSelectedTriplet() {
+    const sel = this.selectedRhythmNote;
+    if (!sel) return;
+    const text = this.scratchAreas.tab.value;
+    const note = findNoteAt(this.parseActive(text).notes, sel.bar, sel.col);
+    if (!note || this.isDrums()) return;
+    const letters: Record<number, string> = { 16: 'w', 8: 'h', 4: 'q', 2: 'e', 1: 's', 0.5: 't' };
+    const triplet = Math.abs(note.length * 2 - Math.round(note.length * 2)) > 1e-6;
+    const base = letters[+(triplet ? note.length * 1.5 : note.length).toFixed(6)];
+    if (!base) {
+      toast('Only a plain whole, half, quarter, eighth or sixteenth note can be made a triplet: set its length first (w h q e s).');
+      return;
+    }
+    const letter = triplet ? base : `${base}3`;
+    const block = tabBlocks(text)[note.block];
+    const { text: newText, insertAt, grew } = setRhythmLetter(text, block, sel.col, letter);
+    if (newText === text) {
+      toast("There is no room in the rhythm line beside that note for the 3: space the notes out by a column and try again.");
+      return;
+    }
     this.scratchAreas.tab.value = newText;
     this.scratch.tab = newText;
     this.scratch.tabAnchors = (this.scratch.tabAnchors ?? []).map((a) => (a.charOffset >= insertAt ? { ...a, charOffset: a.charOffset + grew } : a));

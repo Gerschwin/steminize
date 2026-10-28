@@ -43,6 +43,62 @@ export function splitLength(units: number): string[] {
   return out;
 }
 
+/** A drawable piece of a length: the note value, and whether it is a triplet note (two thirds of its written length). */
+export interface Piece {
+  code: string;
+  tri: boolean;
+}
+
+/** Written length (sixteenths) of the plain note values a triplet note can have. */
+const TRIPLET_VALUES: [number, string][] = [
+  [8, 'h'],
+  [4, 'q'],
+  [2, '8'],
+  [1, '16'],
+  [0.5, '32'],
+];
+
+/** Like splitLength, but a length that is not a multiple of a thirty-second (a triplet: an eighth of one is 4/3 of a sixteenth) is
+ * drawn as triplet notes instead of being cut short. */
+export function splitPieces(units: number): Piece[] {
+  if (Math.abs(units * 2 - Math.round(units * 2)) < 1e-6) return splitLength(units).map((code) => ({ code, tri: false }));
+  const out: Piece[] = [];
+  let left = units * 1.5; // the length these notes are written at
+  while (left >= 0.5 - 1e-6) {
+    const fit = TRIPLET_VALUES.find(([n]) => n <= left + 1e-6);
+    if (!fit) break;
+    out.push({ code: fit[1], tri: true });
+    left -= fit[0];
+  }
+  return out;
+}
+
+/** Which side of its notes a triplet's "3" goes: away from the heads, so on the side the stems point to (VexFlow's STEM_UP is 1, STEM_DOWN -1). */
+export const tupletSide = (stemDirections: number[]) => (stemDirections.filter((d) => d === -1).length > stemDirections.length / 2 ? -1 : 1);
+
+/**
+ * Which runs of pieces are one triplet group each, as [from, to) index pairs: a group is the triplet pieces in a row, closed once they add
+ * up to three of the first one's written length (three eighths of a triplet, say), so a bar of triplet eighths is a bracket to a beat.
+ * A run that stops short (a triplet cut off by a straight note, or by the end of the bar) is still a group.
+ */
+export function tupletRuns(pieces: Piece[]): [number, number][] {
+  const written = (p: Piece) => TRIPLET_VALUES.find(([, c]) => c === p.code)?.[0] ?? 0;
+  const runs: [number, number][] = [];
+  for (let i = 0; i < pieces.length; ) {
+    if (!pieces[i].tri) {
+      i++;
+      continue;
+    }
+    const target = 3 * written(pieces[i]);
+    let j = i;
+    let sum = 0;
+    while (j < pieces.length && pieces[j].tri && sum < target - 1e-6) sum += written(pieces[j++]);
+    runs.push([i, j]);
+    i = j;
+  }
+  return runs;
+}
+
 const NAMES = ['c', 'c#', 'd', 'd#', 'e', 'f', 'f#', 'g', 'g#', 'a', 'a#', 'b'];
 
 /** VexFlow key for a sounding MIDI pitch. Guitar is written an octave above where it sounds. */
@@ -85,7 +141,7 @@ export async function drawStaff(host: HTMLElement, notes: TabNote[], bars: TabBa
   const below = Math.max(0, MIDDLE_LINE - lo) * PX_PER_SEMITONE + MARGIN;
   const ROW = Math.round(above + below);
   const staveY = Math.round(above - 20); // the stave's own 5 lines span ~40px, centred on the middle line
-  const { Renderer, Stave, StaveNote, Voice, Formatter, Accidental, Dot, Beam } = vf;
+  const { Renderer, Stave, StaveNote, Voice, Formatter, Accidental, Dot, Beam, Tuplet } = vf;
   host.replaceChildren();
   const CLEF = 64;
   const widthOf = (b: TabBar) => Math.max(96, b.length * 14 + 40);
@@ -117,7 +173,8 @@ export async function drawStaff(host: HTMLElement, notes: TabNote[], bars: TabBa
     // The first (only real, not-a-tie-continuation-rest — see note in BACKLOG) piece of each group, for
     // the notehead-highlight overlay: which tickable to measure, over how long a stretch of time.
     const groupFirst: { u: number; len: number; idx: number }[] = [];
-    const add = (code: string, rest: boolean, midis: number[], u: number) => {
+    const pieceOf: Piece[] = []; // parallel to tickables
+    const add = ({ code, tri }: Piece, rest: boolean, midis: number[], u: number) => {
       const dots = code.endsWith('d') ? 1 : 0;
       const base = dots ? code.slice(0, -1) : code;
       const note = new StaveNote({
@@ -128,22 +185,28 @@ export async function drawStaff(host: HTMLElement, notes: TabNote[], bars: TabBa
       });
       if (dots) Dot.buildAndAttach([note], { all: true });
       tickables.push(note);
+      pieceOf.push({ code, tri });
       startsOf.push(rest ? NaN : u);
     };
     let at = bar.start;
     for (const s of starts) {
-      if (s > at + 1e-6) for (const code of splitLength(s - at)) add(code, true, [], NaN);
+      if (s > at + 1e-6) for (const p of splitPieces(s - at)) add(p, true, [], NaN);
       const group = groups.get(s)!;
       const room = bar.start + bar.length - s;
       const len = Math.min(Math.min(...group.map((n) => n.length)), room);
-      const pieces = splitLength(len);
+      const pieces = splitPieces(len);
       const midis = [...new Set(group.map((n) => n.midi!))].sort((a, b) => a - b);
       if (pieces.length) groupFirst.push({ u: s, len, idx: tickables.length });
-      pieces.forEach((code, i) => add(code, i > 0, midis, s));
+      pieces.forEach((p, i) => add(p, i > 0, midis, s));
       at = s + (pieces.length ? len : 0);
     }
-    if (bar.start + bar.length > at + 1e-6) for (const code of splitLength(bar.start + bar.length - at)) add(code, true, [], NaN);
-    if (!tickables.length) for (const code of splitLength(bar.length || 16)) add(code, true, [], NaN);
+    if (bar.start + bar.length > at + 1e-6) for (const p of splitPieces(bar.start + bar.length - at)) add(p, true, [], NaN);
+    if (!tickables.length) for (const p of splitPieces(bar.length || 16)) add(p, true, [], NaN);
+    // Triplets: the notes in each group share the space of two, and get a "3" over them.
+    const tuplets = tupletRuns(pieceOf).map(([a, b]) => {
+      const run = tickables.slice(a, b);
+      return new Tuplet(run, { numNotes: 3, notesOccupied: 2, location: tupletSide(run.filter((n) => !n.isRest()).map((n) => n.getStemDirection())) });
+    });
 
     const voice = new Voice({ numBeats: Math.max(1, Math.round(bar.length)) || 16, beatValue: 16 });
     voice.setStrict(false);
@@ -153,6 +216,10 @@ export async function drawStaff(host: HTMLElement, notes: TabNote[], bars: TabBa
     new Formatter().joinVoices([voice]).format([voice], Math.max(40, w - (bi === 0 ? CLEF : 0) - 30));
     voice.draw(ctx, stave);
     beams.forEach((bm) => bm.setContext(ctx).draw());
+    tuplets.forEach((tp) => {
+      tp.setBracketed(!tp.getNotes().every((n) => (n as InstanceType<typeof StaveNote>).isRest() || (n as InstanceType<typeof StaveNote>).getBeam()));
+      tp.setContext(ctx).draw();
+    });
     tickables.forEach((t, i) => {
       if (!Number.isNaN(startsOf[i])) map.push({ u: startsOf[i], x: t.getAbsoluteX() });
     });
@@ -400,7 +467,7 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
   vex ??= import('vexflow/bravura');
   const vf = await vex;
   if (typeof document !== 'undefined' && document.fonts) await document.fonts.ready.catch(() => {});
-  const { Renderer, Stave, TabStave, StaveNote, TabNote: VFTabNote, GhostNote, Voice, Formatter, Accidental, Dot, Beam, Stem, Barline, Metrics, MetricsDefaults, Bend, Vibrato, Annotation, TabTie, TabSlide } = vf;
+  const { Renderer, Stave, TabStave, StaveNote, TabNote: VFTabNote, GhostNote, Voice, Formatter, Accidental, Dot, Beam, Stem, Barline, Metrics, MetricsDefaults, Bend, Vibrato, Annotation, TabTie, TabSlide, Tuplet } = vf;
   // A dead/muted note ('x') isn't drawn as the character "x" — VexFlow draws it as a music-font glyph
   // (the "double sharp" symbol, conventionally used for a muted string) under the plain 'TabNote'
   // category, not 'TabNote.text' (the fret digits' own category). VexFlow's own metrics table sizes
@@ -483,7 +550,7 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
   // content sitting before bar 1 would.
   const introSvg = host.querySelector('svg');
   if (introSvg && !page) {
-    const introLines = ['Click a note, then:', 'w h q e s — set length', '← → note   ⇧ bar'];
+    const introLines = ['Click a note, then:', 'w h q e s — set length', '3 — triplet', '← → note   ⇧ bar'];
     const lineH = 26;
     const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     text.setAttribute('font-size', '17px');
@@ -558,7 +625,9 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
     const startsOf: number[] = []; // parallel to rhythmTickables/tabTickables: tab time (rests: NaN)
     const realTabs: { tNote: InstanceType<typeof VFTabNote>; group: TabNote[] }[] = []; // the actual (non-rest) tab notes, in order, for joining h/p/slides below
     const groupFirst: { u: number; len: number; idx: number; col: number }[] = [];
-    const add = (code: string, rest: boolean, group: TabNote[], u: number) => {
+    const pieceOf: Piece[] = []; // parallel to rhythmTickables / tabTickables
+    const add = ({ code, tri }: Piece, rest: boolean, group: TabNote[], u: number) => {
+      pieceOf.push({ code, tri });
       const dots = code.endsWith('d') ? 1 : 0;
       const base = dots ? code.slice(0, -1) : code;
       const midis = pitched ? [...new Set(group.filter((n) => n.midi !== null).map((n) => n.midi!))].sort((a, b) => a - b) : [];
@@ -617,17 +686,27 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
     };
     let at = bar.start;
     for (const s of starts) {
-      if (s > at + 1e-6) for (const code of splitLength(s - at)) add(code, true, [], NaN);
+      if (s > at + 1e-6) for (const p of splitPieces(s - at)) add(p, true, [], NaN);
       const group = groups.get(s)!;
       const room = bar.start + bar.length - s;
       const len = Math.min(Math.min(...group.map((n) => n.length)), room);
-      const pieces = splitLength(len);
+      const pieces = splitPieces(len);
       if (pieces.length) groupFirst.push({ u: s, len, idx: rhythmTickables.length, col: group[0].col });
-      pieces.forEach((code, i) => add(code, i > 0, group, s));
+      pieces.forEach((p, i) => add(p, i > 0, group, s));
       at = s + (pieces.length ? len : 0);
     }
-    if (bar.start + bar.length > at + 1e-6) for (const code of splitLength(bar.start + bar.length - at)) add(code, true, [], NaN);
-    if (!rhythmTickables.length) for (const code of splitLength(bar.length || 16)) add(code, true, [], NaN);
+    if (bar.start + bar.length > at + 1e-6) for (const p of splitPieces(bar.start + bar.length - at)) add(p, true, [], NaN);
+    if (!rhythmTickables.length) for (const p of splitPieces(bar.length || 16)) add(p, true, [], NaN);
+    // Triplets: each group's notes share the space of two, in both rows (the tab row's notes are given the same shortening so the rows stay
+    // lined up); only the rhythm row draws the "3".
+    const triRuns = tupletRuns(pieceOf);
+    const tuplets = triRuns.map(([a, b]) => {
+      new Tuplet(tabTickables.slice(a, b) as never, { numNotes: 3, notesOccupied: 2 });
+      const run = rhythmTickables.slice(a, b);
+      // An unpitched row has every stem forced down from just under the tab, so the "3" goes above them, nudged down into the gap between
+      // the tab's bottom line and the stems (VexFlow puts it level with that line otherwise); a pitched row leaves each stem to its pitch.
+      return pitched ? new Tuplet(run, { numNotes: 3, notesOccupied: 2, location: tupletSide(run.filter((n) => !n.isRest()).map((n) => n.getStemDirection())) }) : new Tuplet(run, { numNotes: 3, notesOccupied: 2, location: Tuplet.LOCATION_TOP, yOffset: 12 });
+    });
 
     const numBeats = Math.max(1, Math.round(bar.length)) || 16;
     const rhythmVoice = new Voice({ numBeats, beatValue: 16 });
@@ -819,6 +898,10 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
     const rhythmRowGroup = ctx.openGroup('tab-rhythm-row');
     rhythmVoice.draw(ctx, rhythmStave);
     beams.forEach((bm) => bm.setContext(ctx).draw());
+    tuplets.forEach((tp) => {
+      tp.setBracketed(!tp.getNotes().every((n) => (n as InstanceType<typeof StaveNote>).isRest() || (n as InstanceType<typeof StaveNote>).getBeam()));
+      tp.setContext(ctx).draw();
+    });
     ctx.closeGroup();
     const newStavenotes = [...host.querySelectorAll('g.vf-stavenote')].slice(stavenotesBefore);
     // Beam.draw() opens one '.vf-beam' group per beam, in the same order as `beams`, and
