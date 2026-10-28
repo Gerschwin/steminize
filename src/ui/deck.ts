@@ -22,7 +22,7 @@ import { initNativeAudio } from './nativeAudio.ts';
 import { parseDrums, type DrumNote } from '../lyrics/drumTab.ts';
 import { DRUM_ROW, drawDrumScore, drumBarWidth } from './drumStaff.ts';
 import { createDropdown, type Dropdown } from './dropdown.ts';
-import { DEFAULT_PART_NAMES, PART_IDS, TAB_FIELDS, defaultTrack, isBuiltinPart, newPartId, normaliseScratch, stringCount, type ExtraPart, type PartId, type TabPartId } from '../lyrics/tabParts.ts';
+import { DEFAULT_PART_NAMES, PART_IDS, TAB_FIELDS, defaultTrack, isBuiltinPart, instrumentFor, newPartId, normaliseScratch, type ExtraPart, type PartId, type TabPartId } from '../lyrics/tabParts.ts';
 import { placeTake, shiftTake } from '../player/placement.ts';
 import { lineAt, parseLrc, type Lrc } from '../lyrics/lrc.ts';
 import { segmentsFor } from '../lyrics/lyricChords.ts';
@@ -3777,7 +3777,7 @@ export class Deck {
     const r = this.r;
     if (!r) return;
     const part = this.activeTabPart();
-    const inst: TabInstrument = part === 'bass' || stringCount(this.scratch.tab ?? '') === 4 ? 'bass' : 'guitar';
+    const inst: TabInstrument = instrumentFor(part, this.partName(part), this.partTrackName(part), this.scratch.tab ?? '');
     const a = r.analysis;
     if (!a || a.beats.length < 4) {
       toast("The song's beats are still being worked out: try again in a moment.", true);
@@ -3825,7 +3825,7 @@ export class Deck {
     this.applyImportedTab(res.imp, stem.name, {
       partId: part,
       anchors: res.anchors,
-      summary: `Draft from ${stem.name}: ${stats.bars} bar${stats.bars === 1 ? '' : 's'}, ${stats.written} notes, starting at ${fmtTime(res.start)}, lined up with the song's beats. It is only a starting point: check it against the recording and correct what is wrong. If it looks twice as fast or slow as the song, the beat grid is at double or half tempo.`,
+      summary: `Draft from ${stem.name} as a ${inst === 'bass' ? '4-string bass' : '6-string guitar'} tab: ${stats.bars} bar${stats.bars === 1 ? '' : 's'}, ${stats.written} notes, starting at ${fmtTime(res.start)}, lined up with the song's beats. It is only a starting point: check it against the recording and correct what is wrong. If it looks twice as fast or slow as the song, the beat grid is at double or half tempo.`,
     });
   }
 

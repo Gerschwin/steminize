@@ -38,7 +38,7 @@ import { INCOMPLETE_GRACE_MS, backupNote, canCleanIncompleteSong, fmtBytes, spac
 import { parseMeta } from '../src/library/meta.ts';
 import { voiceSlots } from '../src/ui/drumStaff.ts';
 import { DRUM_VOICES, drumMidi, hitStyle, parseDrums, voiceOfLabel } from '../src/lyrics/drumTab.ts';
-import { PART_IDS, defaultTrack, isBuiltinPart, legacyTabPart, newPartId, normaliseScratch, partKind, stringCount } from '../src/lyrics/tabParts.ts';
+import { PART_IDS, defaultTrack, instrumentFor, isBuiltinPart, legacyTabPart, newPartId, normaliseScratch, partKind, stringCount } from '../src/lyrics/tabParts.ts';
 import { CHORD_TONES, chordCost, fretShape, pianoKeys, shapeIsRight, suggestCapo } from '../src/analysis/chordShapes.ts';
 import { QUALITIES } from '../src/analysis/chords.ts';
 import { segmentsFor, snapToWord, sungSeconds } from '../src/lyrics/lyricChords.ts';
@@ -1861,6 +1861,15 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   const gn = parseScore(g.imp.text).notes.filter((n) => n.midi !== null);
   ok('auto tab: a guitar chord is written as one shape on six strings', stringCount(g.imp.text) === 6 && JSON.stringify(gn.filter((n) => n.start === 0).map((n) => n.midi).sort()) === JSON.stringify([45, 52, 57, 60, 64]) && gn.filter((n) => n.start === 0).every((n) => (n.fret ?? 0) <= 5));
   ok('auto tab: each string holds one note of the chord', new Set(gn.filter((n) => n.start === 0).map((n) => n.string)).size === 5);
+}
+
+{
+  const six = 'e|-5-|\nB|---|\nG|---|\nD|---|\nA|---|\nE|---|';
+  const four = 'G|-5-|\nD|---|\nA|---|\nE|---|';
+  ok('instrument: the Bass part is a bass whatever it holds', instrumentFor('bass', 'Bass', 'Bass', six) === 'bass' && instrumentFor('bass', 'Bass', undefined, '') === 'bass');
+  ok('instrument: an added part is a bass if it already has four strings, or is called one, or follows a bass track', instrumentFor('p1', 'Part', undefined, four) === 'bass' && instrumentFor('p1', 'Bass 2', undefined, '') === 'bass' && instrumentFor('p1', 'Part', 'DI Bass', '') === 'bass');
+  ok('instrument: an existing six-string tab, or a guitar track, stays a guitar', instrumentFor('p1', 'Bass 2', 'Bass', six) === 'guitar' && instrumentFor('guitar', 'Guitar', 'Guitar', '') === 'guitar' && instrumentFor('guitar', 'Guitar', 'other', '') === 'guitar');
+  ok('instrument: a track that is the drums is not a bass', instrumentFor('p1', 'Part', 'Bass drum', '') === 'guitar');
 }
 
 // ---- triplets: the `3` on a rhythm letter, drawing lengths, the groups of a triplet ----
