@@ -287,7 +287,7 @@ export interface AutoTab {
   anchors: TabAnchor[];
   /** Time (seconds) of the first written bar, where the tab starts. */
   start: number;
-  stats: { detected: number; written: number; moved: number; dropped: number; filtered: number; offsetMs: number; bars: number };
+  stats: { detected: number; written: number; moved: number; dropped: number; filtered: number; offsetMs: number; bars: number; /** Which bar of the tab the first note is in (1 = the first). */ firstNoteBar: number };
 }
 
 interface Ev {
@@ -422,7 +422,9 @@ export function autoTab(notesIn: NoteEvent[], grid: BeatGrid, inst: TabInstrumen
   });
   const used = [...beatsOut.keys()];
   if (!used.length) return null;
-  const firstBar = Math.min(...used);
+  // The tab starts at the song's first bar (or the bar before it, when notes come in as a pick-up), not at the first bar with a note: bars of
+  // rest are written until the part comes in, so bar numbers on the tab are the song's.
+  const firstBar = Math.min(0, ...used);
   const lastBar = Math.max(...used);
   const count = lastBar - firstBar + 1;
 
@@ -459,6 +461,6 @@ export function autoTab(notesIn: NoteEvent[], grid: BeatGrid, inst: TabInstrumen
     imp: { ...imp, notes: [...lines, ...imp.notes] },
     anchors,
     start: times[0],
-    stats: { detected: notesIn.length, written, moved, dropped, filtered, offsetMs: Math.round(off * 1000), bars: count },
+    stats: { detected: notesIn.length, written, moved, dropped, filtered, offsetMs: Math.round(off * 1000), bars: count, firstNoteBar: Math.min(...used) - firstBar + 1 },
   };
 }

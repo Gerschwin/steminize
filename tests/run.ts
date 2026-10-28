@@ -1853,6 +1853,13 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   for (let t = 0, p = 0.5; accel.length < 80; t += p, p *= 0.985) accel.push(t);
   const fast = autoTab([0, 4, 8, 12, 16, 20].map((b) => mk(accel[b], 33)), { beats: accel, downbeat: 0, perBar: 4 }, 'bass')!;
   ok('auto tab: a drifting tempo gets taps along the way, the last at the last bar', fast.anchors.length >= 3 && Math.abs(fast.anchors[fast.anchors.length - 1].time - accel[20]) < 0.02);
+  {
+    // a part that comes in on the fourth bar: three bars of rest first, so its bar numbers are the song's
+    const late4 = autoTab([mk(6, 33, 0.4), mk(6.5, 33, 0.4), mk(7, 36, 0.4), mk(8, 38, 0.4)], grid, 'bass')!;
+    const bars = parseScore(late4.imp.text).bars;
+    ok('auto tab: bars of rest are written before a part comes in, so the bar numbers match the song', late4.stats.bars === 5 && late4.stats.firstNoteBar === 4 && bars.length === 5 && parseScore(late4.imp.text).notes[0].bar === 3);
+    ok('auto tab: and the tab is timed from the first bar of the song', Math.abs(late4.start) < 0.012 && late4.anchors.length === 2 && Math.abs(late4.anchors[0].time) < 0.012 && Math.abs(late4.anchors[1].time - 8) < 0.012);
+  }
   ok('auto tab: nothing to write gives nothing', autoTab([], grid, 'bass') === null && autoTab(line, { beats: [0, 0.5], downbeat: 0, perBar: 4 }, 'bass') === null);
 
   // guitar: an A minor chord on the first beat, then a single note

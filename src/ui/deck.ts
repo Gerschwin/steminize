@@ -3825,7 +3825,7 @@ export class Deck {
     this.applyImportedTab(res.imp, stem.name, {
       partId: part,
       anchors: res.anchors,
-      summary: `Draft from ${stem.name} as a ${inst === 'bass' ? '4-string bass' : '6-string guitar'} tab: ${stats.bars} bar${stats.bars === 1 ? '' : 's'}, ${stats.written} notes, starting at ${fmtTime(res.start)}, lined up with the song's beats. It is only a starting point: check it against the recording and correct what is wrong. If it looks twice as fast or slow as the song, the beat grid is at double or half tempo.`,
+      summary: `Draft from ${stem.name} as a ${inst === 'bass' ? '4-string bass' : '6-string guitar'} tab: ${stats.bars} bar${stats.bars === 1 ? '' : 's'}, ${stats.written} notes, ${stats.firstNoteBar > 1 ? `coming in at bar ${stats.firstNoteBar} (the bars before are rests, so the numbers match the song)` : 'starting at the song\'s first bar'}, lined up with the song's beats. It is only a starting point: check it against the recording and correct what is wrong. If it looks twice as fast or slow as the song, the beat grid is at double or half tempo.`,
     });
   }
 

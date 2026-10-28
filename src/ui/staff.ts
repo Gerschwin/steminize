@@ -1002,6 +1002,9 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
     });
     // Where the line begins and ends, so the cursor has somewhere to be before a line's first note and after its last.
     if (first) rowMaps[row].push({ u: bar.start, x: tabStave.getNoteStartX() });
+    // The same for the tab as a whole: a part that comes in after some bars of rest has its cursor travel across them, not sit on the first
+    // note until the song reaches it.
+    if (bi === 0 && !map.some((m) => Math.abs(m.u - bar.start) < 1e-6)) map.push({ u: bar.start, x: tabStave.getNoteStartX() });
     if (plan && bi === plan[row].bars[plan[row].bars.length - 1]) rowMaps[row].push({ u: bar.start + bar.length, x: tabStave.getX() + tabStave.getWidth() - 6 });
     for (const g of groupFirst) {
       const rect = rectByIdx.get(g.idx);
