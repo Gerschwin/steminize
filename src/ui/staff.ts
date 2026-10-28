@@ -445,8 +445,9 @@ function tabMetrics(vf: typeof import('vexflow/bravura'), notes: TabNote[]) {
   // real last line by a good 50-60px, enough to read as a stray gap once something (the rhythm row)
   // is meant to sit right underneath it rather than just needing to clear it.
   const TAB_H = new TabStave(0, 0, 100).addTabGlyph().getBottomLineY() + 10;
+  const LINE_SPACING = new TabStave(0, 0, 100).getSpacingBetweenLines();
   const ROW = RHYTHM_H + GAP + TAB_H + ABOVE;
-  return { ABOVE, GAP, TAB_H, ROW, belowMarkRows };
+  return { ABOVE, GAP, TAB_H, ROW, belowMarkRows, LINE_SPACING };
 }
 
 /** How tall one line of this tab is drawn (before any zoom): needed up front to stack parts. */
@@ -463,7 +464,7 @@ export async function tabRowHeight(notes: TabNote[]): Promise<number> {
  * moving it into the real page once it's finished) — which rules out anything here that needs to look
  * its own output back up via document.getElementById() (VexFlow's Element.getSVGElement() does
  * exactly that), a trap the unpitched rhythm row's blanked-out noteheads fell into once already. */
-export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: TabBar[], pitched = false, spec?: PageSpec): Promise<TabScoreLayout> {
+export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: TabBar[], pitched = false, spec?: PageSpec, strings = 6): Promise<TabScoreLayout> {
   vex ??= import('vexflow/bravura');
   const vf = await vex;
   if (typeof document !== 'undefined' && document.fonts) await document.fonts.ready.catch(() => {});
@@ -486,7 +487,7 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
   host.replaceChildren();
 
   const CLEF = 64;
-  const { ABOVE, GAP, TAB_H, ROW, belowMarkRows } = tabMetrics(vf, notes);
+  const { ABOVE, GAP, TAB_H, ROW, belowMarkRows, LINE_SPACING } = tabMetrics(vf, notes);
   // The unpitched placeholder note's own pitch/line doesn't mean anything — the notehead is invisible
   // — but VexFlow still uses it to decide the note's vertical position, so it's pinned to the stave's
   // own bottom line ('e/4': the lowest line that still needs no ledger line, which a *forced* line
@@ -581,8 +582,20 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
     const yOff = row * pitch + offset;
     if (first) prevRealTabs = []; // a join does not reach across a line break
     const tabY = 10 + ABOVE + yOff;
-    const tabStave = new TabStave(x, tabY, w);
-    if (first) tabStave.addTabGlyph();
+    // A bass tab has four lines, not six: the stave keeps its bottom line where a six-line one has it (everything below is placed from
+    // there), so the missing lines are the top ones.
+    const lines = strings >= 2 && strings <= 6 ? strings : 6;
+    const tabStave = new TabStave(x, tabY + (6 - lines) * LINE_SPACING, w, lines === 6 ? undefined : { numLines: lines });
+    if (first) {
+      tabStave.addTabGlyph();
+      // VexFlow's tab clef is the six-string glyph whatever the stave; the music font has a smaller four-string one for a bass.
+      if (lines === 4) {
+        for (const m of tabStave.getModifiers(undefined, 'Clef') as unknown as { code: string; text: string; line: number }[]) {
+          m.code = m.text = '\uE06E'; // SMuFL fourStringTabClef
+          m.line = 1.5;
+        }
+      }
+    }
     tabStave.setMeasure(bi + 1); // bars is the whole score's list, already numbered across every system
     if (bar.repeatStart) tabStave.setBegBarType(Barline.type.REPEAT_BEGIN);
     if (bar.repeatEnd) tabStave.setEndBarType(Barline.type.REPEAT_END);

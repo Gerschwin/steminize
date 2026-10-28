@@ -22,7 +22,7 @@ import { initNativeAudio } from './nativeAudio.ts';
 import { parseDrums, type DrumNote } from '../lyrics/drumTab.ts';
 import { DRUM_ROW, drawDrumScore, drumBarWidth } from './drumStaff.ts';
 import { createDropdown, type Dropdown } from './dropdown.ts';
-import { DEFAULT_PART_NAMES, PART_IDS, TAB_FIELDS, defaultTrack, isBuiltinPart, instrumentFor, newPartId, normaliseScratch, type ExtraPart, type PartId, type TabPartId } from '../lyrics/tabParts.ts';
+import { DEFAULT_PART_NAMES, PART_IDS, TAB_FIELDS, defaultTrack, isBuiltinPart, instrumentFor, newPartId, normaliseScratch, stringCount, type ExtraPart, type PartId, type TabPartId } from '../lyrics/tabParts.ts';
 import { placeTake, shiftTake } from '../player/placement.ts';
 import { lineAt, parseLrc, type Lrc } from '../lyrics/lrc.ts';
 import { segmentsFor } from '../lyrics/lyricChords.ts';
@@ -2842,12 +2842,12 @@ export class Deck {
       if (token !== this.stripToken) return;
       if (stack) spec = stack.parts.find((p) => p.active)!.spec;
     }
-    const drawPart = (host: HTMLElement, n: TabNote[] | DrumNote[], b: TabBar[], isDrums: boolean, sp?: PageSpec) =>
-      (isDrums ? drawDrumScore(host, n as DrumNote[], b, sp) : drawTabScore(host, n as TabNote[], b, false, sp)).catch(() => null);
-    const drawn = await drawPart(spare, notes, bars, drums, spec);
+    const drawPart = (host: HTMLElement, n: TabNote[] | DrumNote[], b: TabBar[], isDrums: boolean, sp: PageSpec | undefined, partText: string) =>
+      (isDrums ? drawDrumScore(host, n as DrumNote[], b, sp) : drawTabScore(host, n as TabNote[], b, false, sp, stringCount(partText) || 6)).catch(() => null);
+    const drawn = await drawPart(spare, notes, bars, drums, spec, text);
     const others = stack ? stack.parts.filter((p) => !p.active) : [];
     const spares = others.map(() => document.createElement('div'));
-    const drawnOthers = await Promise.all(others.map((p, i) => drawPart(spares[i], p.notes, p.bars, p.drums, p.spec)));
+    const drawnOthers = await Promise.all(others.map((p, i) => drawPart(spares[i], p.notes, p.bars, p.drums, p.spec, p.text)));
     if (token !== this.stripToken) return;
     const layout = drawn && zoomDrawing(spare, drawn, this.tabZoom);
     if (!layout) {
