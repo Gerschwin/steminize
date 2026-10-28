@@ -23,7 +23,7 @@ import { writeMidi } from '../src/encode/midi.ts';
 import { centsFrom, detectPitch, freqToNote } from '../src/analysis/pitch.ts';
 import { isNewer, parseVersion, pickUpdate, updateEndpoint } from '../src/version.ts';
 import { lineAt, parseLrc } from '../src/lyrics/lrc.ts';
-import { splitLength, staffX, vexKey, zoomDrawing } from '../src/ui/staff.ts';
+import { pageRowAt, planRows, splitLength, staffX, vexKey, zoomDrawing } from '../src/ui/staff.ts';
 import { acceptedMidis, timeAtCoord, fromUnrolled, repeatPlan, toUnrolled, addAnchor, charOffsetAt, coordAtBpm, coordToPlace, coordToStripX, findNoteAt, noteCols, noteGroupAt, parseScore, parseTab, setRhythmLetter, stripLayout, isLockedAt, moveAnchor, offsetToCoord, removeAnchor, rowCol, tabBlocks, tabPositionAt, toggleAnchorLock, type TabAnchor, type TabNote } from '../src/lyrics/tabSync.ts';
 import { moveItem, nextSong, parseSetlists, prevSong, pruneSongs, totalSeconds, uniqueName, type Setlist } from '../src/setlists.ts';
 import { detectLatency } from '../src/player/latency.ts';
@@ -967,6 +967,24 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
     const big = zoomDrawing({ querySelector: () => svg } as unknown as HTMLElement, layout, 2);
     ok('staff: zooming a drawing scales every position and the picture itself', big.map[1].x === 100 && big.notes[0].y === 40 && big.notes[0].w === 16 && big.width === 200 && big.height === 120 && attrs.width === '200' && attrs.height === '120' && svg.style.width === '200px');
     ok('staff: zoom 1 leaves the layout as it was', zoomDrawing({} as HTMLElement, layout, 1) === layout);
+    const paged = { ...layout, rows: [{ y: 0, h: 50, u0: 0, u1: 8, map: [{ u: 0, x: 10 }] }, { y: 60, h: 50, u0: 8, u1: 16, map: [{ u: 8, x: 12 }] }] };
+    const bigPaged = zoomDrawing({ querySelector: () => null } as unknown as HTMLElement, paged, 2);
+    ok('staff: zooming a page scales its lines too', bigPaged.rows?.[1].y === 120 && bigPaged.rows[1].h === 100 && bigPaged.rows[1].map[0].x === 24 && bigPaged.rows[1].u0 === 8);
+  }
+  // Wrapping bars into lines
+  {
+    const widths = [100, 100, 100, 100, 100];
+    const rows = planRows(widths, 50, 360);
+    ok('page: bars fill a line until the next would not fit, the clef counted on each line', rows.length === 2 && rows[0].bars.join() === '0,1,2' && rows[1].bars.join() === '3,4');
+    ok('page: a well-filled line is stretched to the full width', Math.abs(rows[0].widths.reduce((a, b) => a + b, 0) - 360) < 1e-6);
+    ok('page: the clef is only extra width on a line\'s first bar, however much it is stretched', rows[0].widths[0] > rows[0].widths[1] && Math.abs(rows[0].widths[1] - rows[0].widths[2]) < 1e-6);
+    const sparse = planRows([100, 100, 100, 100], 50, 400);
+    ok('page: a short last line is left at its natural width', sparse.length === 2 && sparse[1].widths.join() === '150');
+    ok('page: a bar wider than the page still gets a line of its own', planRows([900, 100], 50, 400).map((r) => r.bars.join()).join('|') === '0|1');
+    ok('page: no bars, no lines', planRows([], 50, 400).length === 0);
+    const lines = [{ y: 0, h: 10, u0: 0, u1: 16, map: [] }, { y: 20, h: 10, u0: 16, u1: 32, map: [] }, { y: 40, h: 10, u0: 32, u1: 48, map: [] }];
+    ok('page: a position belongs to the line holding it', pageRowAt(lines, 0) === lines[0] && pageRowAt(lines, 15.9) === lines[0] && pageRowAt(lines, 16) === lines[1] && pageRowAt(lines, 47) === lines[2]);
+    ok('page: before the start is the first line, after the end the last', pageRowAt(lines, -3) === lines[0] && pageRowAt(lines, 999) === lines[2]);
   }
 }
 

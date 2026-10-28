@@ -61,7 +61,7 @@ import { eqPanel, type EqPanel } from './eqPanel.ts';
 import { listTracks, scoreToTab, type Imported } from '../import/tabImport.ts';
 import { describeLoadError, loadScoreFile } from '../import/loadScore.ts';
 import { pickTrack } from './tabImportDialog.ts';
-import { drawStaff, drawTabScore, noteAt, staffU, staffX, zoomDrawing, type StaffLayout, type TabScoreLayout } from './staff.ts';
+import { drawStaff, drawTabScore, noteAt, pageRowAt, staffU, staffX, zoomDrawing, type StaffLayout, type TabScoreLayout } from './staff.ts';
 import { $, activatable, fitCanvas, fmtDuration, fmtTime, h, openDialog, pressed, toast } from './dom.ts';
 import { Transcribe, type TxHost, type TxState } from './transcribePanel.ts';
 import type { Chord } from '../analysis/chords.ts';
@@ -490,6 +490,15 @@ export class Deck {
   private tabZoom = 1;
   private stripZoom = 1;
   private staffZoom = 1;
+  /** Full-window view only: the tab wrapped into lines like a printed page, instead of one line sliding past a fixed cursor. */
+  private tabPage = Deck.loadTabPage();
+  /** The wrap width (layout px) the current drawing was made at; undefined for the one-line drawing. */
+  private stripWrap: number | undefined;
+  /** The line the page cursor was last on, so the view only scrolls when playback moves to another line. */
+  private pageRowShown = -1;
+  /** Whether the strip's cursor currently has page-style inline sizing (to be cleared when going back to the one-line drawing). */
+  private cursorPaged = false;
+  private pageResizeTimer: number | undefined;
   private staffText: string | null = null;
   private staffToken = 0;
   private staffTimer: number | undefined;
@@ -2699,7 +2708,7 @@ export class Deck {
     // and their own legend instead of the guitar's symbols.
     const drums = onTab && this.isDrums();
     $('tabRhythmBtn').hidden = !onTab || drums;
-    const staff = onTab && !drums && !!this.scratch.tabStaff;
+    const staff = onTab && !drums && !!this.scratch.tabStaff && !this.pageMode;
     $('tabSymbolsBtn').hidden = !onTab;
     $('tabSymbols').hidden = !onTab || drums || !this.tabSymbolsOpen;
     $('tabDrumSymbols').hidden = !drums || !this.tabSymbolsOpen;
@@ -2775,7 +2784,8 @@ export class Deck {
    * a moment, and a token guards against two overlapping redraws (typing fast) finishing out of order. */
   private async renderTabStrip() {
     const text = this.scratchAreas.tab.value;
-    if (text === this.stripText && this.stripLayout && this.stripZoom === this.tabZoom) return;
+    const wrap = this.pageMode ? this.pageWidth() : undefined;
+    if (text === this.stripText && this.stripLayout && this.stripZoom === this.tabZoom && this.stripWrap === wrap) return;
     const token = ++this.stripToken;
     const drums = this.isDrums();
     const { notes, bars } = this.parseActive(text);
@@ -2789,7 +2799,7 @@ export class Deck {
       return;
     }
     const spare = document.createElement('div');
-    const drawn = await (drums ? drawDrumScore(spare, notes as DrumNote[], bars) : drawTabScore(spare, notes, bars)).catch(() => null);
+    const drawn = await (drums ? drawDrumScore(spare, notes as DrumNote[], bars, wrap) : drawTabScore(spare, notes, bars, false, wrap)).catch(() => null);
     if (token !== this.stripToken) return;
     const layout = drawn && zoomDrawing(spare, drawn, this.tabZoom);
     if (!layout) {
@@ -2803,6 +2813,8 @@ export class Deck {
     this.stripLayout = layout;
     this.stripText = text;
     this.stripZoom = this.tabZoom;
+    this.stripWrap = wrap;
+    this.pageRowShown = -1; // a fresh drawing: bring the current line into view on the next frame
     this.stripNotes = notes;
     this.stripBars = bars;
     this.paintBarScores();
@@ -2921,11 +2933,35 @@ export class Deck {
     if (!layout || $('tabStrip').hidden) return;
     const coord = this.coordAt(this.smoothStripPos() / SR);
     const stripView = $('tabStripView');
-    const holdAt = stripView.clientWidth * 0.4; // matches .tab-staff-cursor's left: 40%
-    const x = coord === null ? 0 : staffX(layout.map, this.viewCoord(coord));
-    const px = coord === null ? 0 : holdAt - x;
-    $('tabStripCursor').style.left = `${holdAt}px`;
-    $('tabStripCursor').hidden = coord === null;
+    const cursor = $('tabStripCursor');
+    let px = 0;
+    if (layout.rows) {
+      // Page style: the cursor moves along its own line and the view scrolls down the page, so nothing slides sideways.
+      const row = coord === null ? null : pageRowAt(layout.rows, coord);
+      cursor.hidden = !row;
+      if (row && coord !== null) {
+        cursor.style.left = `${staffX(row.map, coord)}px`;
+        cursor.style.top = `${row.y}px`;
+        cursor.style.height = `${row.h}px`;
+        cursor.style.bottom = 'auto';
+        this.cursorPaged = true;
+        const at = layout.rows.indexOf(row);
+        if (at !== this.pageRowShown) {
+          this.pageRowShown = at;
+          this.revealPageRow(row, at === layout.rows.length - 1);
+        }
+      }
+    } else {
+      if (this.cursorPaged) {
+        cursor.style.top = cursor.style.height = cursor.style.bottom = '';
+        this.cursorPaged = false;
+      }
+      const holdAt = stripView.clientWidth * 0.4; // matches .tab-staff-cursor's left: 40%
+      const x = coord === null ? 0 : staffX(layout.map, this.viewCoord(coord));
+      px = coord === null ? 0 : holdAt - x;
+      cursor.style.left = `${holdAt}px`;
+      cursor.hidden = coord === null;
+    }
     const note = coord === null ? null : noteAt(layout.notes, coord);
     const box = $('tabStripNoteBox');
     box.hidden = !note;
@@ -2951,6 +2987,51 @@ export class Deck {
     if (Math.abs(px - this.lastStripPx) < 0.05) return;
     this.lastStripPx = px;
     $('tabStripTrack').style.transform = `translateX(${px}px)`;
+  }
+
+  /** The tab is being shown as a page (full-window view with Page on), not as a single line. */
+  private get pageMode(): boolean {
+    return this.scratchFull && this.tabPage;
+  }
+
+  /** How wide (in the drawing's own px) a line of the page can be: the window's width less the pane's padding and room for a
+   * scrollbar, so the drawing fits whether or not one is showing and a scrollbar appearing never changes the wrapping. */
+  private pageWidth(): number {
+    return Math.max(300, Math.floor(($('tabTimeline').offsetWidth - 46) / this.tabZoom));
+  }
+
+  /** Scrolls the page so the line being played is on screen, with a glimpse of the one after it (the view scrolls as
+   * playback moves onto a new line; between lines it is left alone, so it can still be scrolled by hand). */
+  private revealPageRow(row: { y: number; h: number }, isLast: boolean) {
+    const tl = $('tabTimeline');
+    const base = $('tabStripView').getBoundingClientRect().top - tl.getBoundingClientRect().top + tl.scrollTop;
+    const top = base + row.y;
+    const bottom = top + row.h + (isLast ? 0 : row.h * 0.5);
+    if (top >= tl.scrollTop + 4 && bottom <= tl.scrollTop + tl.clientHeight - 4) return;
+    tl.scrollTo({ top: Math.max(0, top - tl.clientHeight * 0.15), behavior: this.player.state.playing ? 'smooth' : 'auto' });
+  }
+
+  private static readonly PAGE_KEY = 'steminize.tabPage';
+
+  private static loadTabPage(): boolean {
+    try {
+      return localStorage.getItem(Deck.PAGE_KEY) !== '0';
+    } catch {
+      return true;
+    }
+  }
+
+  /** Page or one line, in the full-window view. Remembered. */
+  private setTabPage(on: boolean) {
+    if (on === this.tabPage) return;
+    this.tabPage = on;
+    try {
+      localStorage.setItem(Deck.PAGE_KEY, on ? '1' : '0');
+    } catch {
+      /* storage unavailable */
+    }
+    this.lastStripPx = NaN;
+    this.updateTabView();
   }
 
   // ---------- scratchpad parts: Guitar / Bass / Drums, each linked to its track ----------
@@ -3310,6 +3391,13 @@ export class Deck {
     $('scratchFullBtn').onclick = () => this.setScratchFull(true);
     $('scratchFullBtn2').onclick = () => this.setScratchFull(true);
     $('fullClose').onclick = () => this.setScratchFull(false);
+    $('fullPage').onclick = () => this.setTabPage(!this.tabPage);
+    // The page is wrapped to the window's width, so it is drawn again when the window changes size (not for every pixel of a drag).
+    new ResizeObserver(() => {
+      if (!this.pageMode || $('tabStrip').hidden || Math.abs(this.pageWidth() - (this.stripWrap ?? 0)) < 6) return;
+      window.clearTimeout(this.pageResizeTimer);
+      this.pageResizeTimer = window.setTimeout(() => void this.renderTabStrip(), 150);
+    }).observe($('tabTimeline'));
     $('fullStart').onclick = () => $('toStartBtn').click();
     $('fullBack').onclick = () => $('rewindBtn').click();
     $('fullFwd').onclick = () => $('ffBtn').click();
@@ -3425,6 +3513,8 @@ export class Deck {
     pane.classList.toggle('editing', !engraved);
     pressed($('fullEdit'), !engraved);
     $('fullEdit').hidden = $('tabFollowBtn').hidden === true;
+    $('fullPage').hidden = !engraved;
+    pressed($('fullPage'), this.tabPage);
     pressed($('fullLoop'), this.loop.on);
     $('fullPlay').classList.toggle('on', this.player.state.playing);
     $('fullTempo').textContent = `${Math.round(this.tempo * 100)}%`;
@@ -4387,6 +4477,7 @@ export class Deck {
       else if (this.scratchFull && k === 'Escape') this.setScratchFull(false);
       else if (this.scratchFull && (k === '+' || k === '=')) this.stepFullZoom(1);
       else if (this.scratchFull && (k === '-' || k === '_')) this.stepFullZoom(-1);
+      else if (this.scratchFull && (k === 'p' || k === 'P')) this.setTabPage(!this.tabPage);
       else if (k === 't' || k === 'T') this.setScratchFull(!this.scratchFull);
       else if (e.code === 'Space' || k === 'PageDown' || k === 'MediaPlayPause' || (this.pedal && ['ArrowRight', 'ArrowDown', 'Enter'].includes(k))) this.toggle();
       else if (k === 'PageUp' || k === 'Home' || (this.pedal && ['ArrowLeft', 'ArrowUp'].includes(k))) this.restart();
@@ -4543,6 +4634,13 @@ export class Deck {
     const note = layout.notes.find((n) => n.bar === sel.bar && n.col === sel.col);
     const coord = this.coordAt(this.smoothStripPos() / SR);
     if (!note || coord === null) return;
+    if (layout.rows) {
+      // Page style: scroll down to the note's line if it is off screen.
+      const tl = $('tabTimeline');
+      const top = $('tabStripView').getBoundingClientRect().top - tl.getBoundingClientRect().top + tl.scrollTop + note.y;
+      if (top < tl.scrollTop + 8 || top + note.h > tl.scrollTop + tl.clientHeight - 8) tl.scrollTo({ top: Math.max(0, top - tl.clientHeight * 0.3), behavior: 'auto' });
+      return;
+    }
     const margin = 24;
     const left = note.x + this.lastStripPx;
     if (left >= margin && left + note.w <= $('tabStripView').clientWidth - margin) return; // already comfortably visible
@@ -4560,6 +4658,7 @@ export class Deck {
     const view = $(viewId);
     view.addEventListener('pointerdown', (e) => {
       this.tabPanMoved = false;
+      if (viewId === 'tabStripView' && this.stripLayout?.rows) return; // a page has nothing to slide: scroll it instead
       if (e.button !== 0 || this.player.state.playing || (e.target as HTMLElement).closest('[data-col]')) return;
       const layout = layoutOf();
       const coord = this.coordAt(this.smoothStripPos() / SR);

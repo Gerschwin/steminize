@@ -177,7 +177,7 @@ export async function drawStaff(host: HTMLElement, notes: TabNote[], bars: TabBa
 
 /** Makes a finished drawing `z` times larger: the svg is stretched (it keeps its own coordinates through its viewBox) and the layout's
  * positions are scaled to match, so everything that places things by the layout (the cursor, the highlight, clicks) stays right. */
-export function zoomDrawing<L extends { map: { u: number; x: number }[]; notes: { x: number; y: number; w: number; h: number }[]; width: number; height: number }>(
+export function zoomDrawing<L extends { map: { u: number; x: number }[]; notes: { x: number; y: number; w: number; h: number }[]; width: number; height: number; rows?: PageRow[] }>(
   host: HTMLElement,
   layout: L,
   z: number,
@@ -194,9 +194,60 @@ export function zoomDrawing<L extends { map: { u: number; x: number }[]; notes: 
     ...layout,
     map: layout.map.map((m) => ({ ...m, x: m.x * z })),
     notes: layout.notes.map((n) => ({ ...n, x: n.x * z, y: n.y * z, w: n.w * z, h: n.h * z })),
+    ...(layout.rows ? { rows: layout.rows.map((r) => ({ ...r, y: r.y * z, h: r.h * z, map: r.map.map((m) => ({ ...m, x: m.x * z })) })) } : {}),
     width: layout.width * z,
     height: layout.height * z,
   };
+}
+
+/** One line of a page-style drawing (bars wrapped into rows, like printed tab): where it sits down the page, the stretch of music it
+ * holds, and the same u -> x map as the one-line drawing has, but for this row alone. */
+export interface PageRow {
+  y: number;
+  h: number;
+  u0: number;
+  u1: number;
+  map: { u: number; x: number }[];
+}
+
+/** Which bars go on which line when the bars are wrapped to `wrap` px, and how wide each comes out. `widths` are the bars' natural
+ * widths; the first bar of every line also carries `clef` (the TAB/clef glyph repeated at the start of a line). A line is filled
+ * until the next bar would not fit, then stretched to the full width so the bar lines line up down the page; the last line is only
+ * stretched when it is already well filled, so a couple of bars at the end are not smeared across the page. */
+export function planRows(widths: number[], clef: number, wrap: number): { bars: number[]; widths: number[] }[] {
+  const rows: { bars: number[]; widths: number[] }[] = [];
+  let cur: { bars: number[]; widths: number[] } | null = null;
+  let used = 0;
+  widths.forEach((w, bi) => {
+    if (cur && used + w > wrap) cur = null;
+    if (!cur) {
+      cur = { bars: [], widths: [] };
+      rows.push(cur);
+      used = clef;
+    }
+    cur.bars.push(bi);
+    cur.widths.push(w + (cur.bars.length === 1 ? clef : 0));
+    used += w;
+  });
+  rows.forEach((r, ri) => {
+    const sum = r.widths.reduce((a, b) => a + b, 0);
+    if (ri === rows.length - 1 && sum < wrap * 0.7) return;
+    const extra = wrap - sum;
+    if (extra <= 0) return;
+    const body = sum - clef;
+    r.widths = r.widths.map((w, k) => w + (extra * (w - (k === 0 ? clef : 0))) / body);
+  });
+  return rows;
+}
+
+/** The line of a page-style drawing holding the music at `u` (the first line before it starts, the last after it ends). */
+export function pageRowAt(rows: PageRow[], u: number): PageRow {
+  let cur = rows[0];
+  for (const r of rows) {
+    if (r.u0 > u + 1e-6) break;
+    cur = r;
+  }
+  return cur;
 }
 
 /** The note (if any) sounding at `u`, for highlighting its actual notehead rather than just a position. */
@@ -252,6 +303,9 @@ export interface TabScoreLayout {
    * same note's own TabNote (and the data-bar/data-col attributes on its drawn elements, below) — for
    * looking its box up again given a click rather than a playback position. */
   notes: { u: number; len: number; x: number; y: number; w: number; h: number; bar: number; col: number }[];
+  /** Only in a page-style drawing (see drawTabScore's `wrap`): the lines the bars were wrapped onto. `map` then holds x within
+   * its own line, so a position is looked up through the line (pageRowAt) rather than across the whole drawing. */
+  rows?: PageRow[];
   width: number;
   height: number;
 }
@@ -280,7 +334,7 @@ const bendText = (semis: number): string => {
  * moving it into the real page once it's finished) — which rules out anything here that needs to look
  * its own output back up via document.getElementById() (VexFlow's Element.getSVGElement() does
  * exactly that), a trap the unpitched rhythm row's blanked-out noteheads fell into once already. */
-export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: TabBar[], pitched = false): Promise<TabScoreLayout> {
+export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: TabBar[], pitched = false, wrap?: number): Promise<TabScoreLayout> {
   vex ??= import('vexflow/bravura');
   const vf = await vex;
   if (typeof document !== 'undefined' && document.fonts) await document.fonts.ready.catch(() => {});
@@ -352,9 +406,35 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
   // the auto-scroll holds the current position at 40% from the left) is just empty, and these
   // shortcuts aren't discoverable anywhere else in Follow along itself.
   const INTRO = 230;
-  const total = INTRO + CLEF + bars.reduce((n, b) => n + widthOf(b), 0) + 20;
+  // Page style (`wrap` given): the bars are wrapped onto lines of that width, each starting with the TAB glyph again, instead of
+  // running on as one long line. No shortcut reminder then, and no join drawn across a line break.
+  const page = wrap !== undefined && wrap > 0;
+  const PAGE_MARGIN = 4;
+  const PAGE_GAP = 14;
+  const pitch = ROW + (page ? PAGE_GAP : 0);
+  const plan = page ? planRows(bars.map(widthOf), CLEF, wrap! - PAGE_MARGIN * 2) : null;
+  const place: { row: number; x: number; w: number; first: boolean }[] = [];
+  if (plan) {
+    plan.forEach((r, ri) => {
+      let px = PAGE_MARGIN;
+      r.bars.forEach((bi, k) => {
+        place[bi] = { row: ri, x: px, w: r.widths[k], first: k === 0 };
+        px += r.widths[k];
+      });
+    });
+  } else {
+    let px = INTRO;
+    bars.forEach((b, bi) => {
+      const w = widthOf(b) + (bi === 0 ? CLEF : 0);
+      place[bi] = { row: 0, x: px, w, first: bi === 0 };
+      px += w;
+    });
+  }
+  const total = page ? wrap! : INTRO + CLEF + bars.reduce((n, b) => n + widthOf(b), 0) + 20;
+  const rowCount = plan ? Math.max(1, plan.length) : 1;
+  const height = pitch * rowCount - (page ? PAGE_GAP : 0);
   const renderer = new Renderer(host as HTMLDivElement, Renderer.Backends.SVG);
-  renderer.resize(total, ROW);
+  renderer.resize(total, height);
   const ctx = renderer.getContext();
   ctx.setFillStyle('currentColor');
   ctx.setStrokeStyle('currentColor');
@@ -363,7 +443,7 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
   // away with everything else once playback or a selection moves past it — exactly like real musical
   // content sitting before bar 1 would.
   const introSvg = host.querySelector('svg');
-  if (introSvg) {
+  if (introSvg && !page) {
     const introLines = ['Click a note, then:', 'w h q e s — set length', '← → note   ⇧ bar'];
     const lineH = 26;
     const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -388,13 +468,15 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
 
   const map: { u: number; x: number }[] = [];
   const notesOut: TabScoreLayout['notes'] = [];
-  let x = INTRO;
+  const rowMaps: { u: number; x: number }[][] = Array.from({ length: rowCount }, () => []);
   let prevRealTabs: { tNote: InstanceType<typeof VFTabNote>; group: TabNote[] }[] = []; // the bar before's tab notes, for joins across the bar line
   bars.forEach((bar, bi) => {
-    const w = widthOf(bar) + (bi === 0 ? CLEF : 0);
-    const tabY = 10 + ABOVE;
+    const { x, w, first, row } = place[bi];
+    const yOff = row * pitch;
+    if (first) prevRealTabs = []; // a join does not reach across a line break
+    const tabY = 10 + ABOVE + yOff;
     const tabStave = new TabStave(x, tabY, w);
-    if (bi === 0) tabStave.addTabGlyph();
+    if (first) tabStave.addTabGlyph();
     tabStave.setMeasure(bi + 1); // bars is the whole score's list, already numbered across every system
     if (bar.repeatStart) tabStave.setBegBarType(Barline.type.REPEAT_BEGIN);
     if (bar.repeatEnd) tabStave.setEndBarType(Barline.type.REPEAT_END);
@@ -416,9 +498,9 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
     // height, 10px further down than the content actually needs. Unpitched, the stave itself is
     // shifted up by RHYTHM_KEY_OFFSET so the placeholder note (always on the same line) lands right
     // at TAB_H + GAP rather than that much further down.
-    const rhythmY = (pitched ? TAB_H + GAP : TAB_H + GAP - RHYTHM_KEY_OFFSET) + ABOVE;
+    const rhythmY = (pitched ? TAB_H + GAP : TAB_H + GAP - RHYTHM_KEY_OFFSET) + ABOVE + yOff;
     const rhythmStave = new Stave(x, rhythmY, w, pitched ? undefined : { numLines: 0 });
-    if (bi === 0 && pitched) rhythmStave.addClef('treble', 'default', '8vb');
+    if (first && pitched) rhythmStave.addClef('treble', 'default', '8vb');
     // The rhythm row is its own Stave underneath the tab, and by default draws its own begin/end bar
     // lines too — a short stub that, even with numLines:0 hiding its 5 string lines, still pokes out
     // a few px below the tab's own bar line into the gap between the two rows, reading as one
@@ -517,7 +599,7 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
     tabVoice.addTickables(tabTickables);
     if (pitched) Accidental.applyAccidentals([rhythmVoice], 'C');
     const beams = Beam.generateBeams(rhythmTickables.filter((t) => !t.isRest()));
-    new Formatter().joinVoices([rhythmVoice, tabVoice]).format([rhythmVoice, tabVoice], Math.max(40, w - (bi === 0 ? CLEF : 0) - 30));
+    new Formatter().joinVoices([rhythmVoice, tabVoice]).format([rhythmVoice, tabVoice], Math.max(40, w - (first ? CLEF : 0) - 30));
     // Tab drawn first, before the rhythm row underneath it, so the row's own notes can be measured
     // against the fret digits' *actual drawn position* right after — see the comment below, where
     // that measurement is used.
@@ -778,8 +860,14 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
     });
 
     tabTickables.forEach((t, i) => {
-      if (!Number.isNaN(startsOf[i])) map.push({ u: startsOf[i], x: t.getAbsoluteX() });
+      if (!Number.isNaN(startsOf[i])) {
+        map.push({ u: startsOf[i], x: t.getAbsoluteX() });
+        rowMaps[row].push({ u: startsOf[i], x: t.getAbsoluteX() });
+      }
     });
+    // Where the line begins and ends, so the cursor has somewhere to be before a line's first note and after its last.
+    if (first) rowMaps[row].push({ u: bar.start, x: tabStave.getNoteStartX() });
+    if (plan && bi === plan[row].bars[plan[row].bars.length - 1]) rowMaps[row].push({ u: bar.start + bar.length, x: tabStave.getX() + tabStave.getWidth() - 6 });
     for (const g of groupFirst) {
       const rect = rectByIdx.get(g.idx);
       let bb: { getX(): number; getY(): number; getW(): number; getH(): number };
@@ -796,12 +884,15 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
       notesOut.push({ u: g.u, len: g.len, x: bb.getX(), y: bb.getY(), w: bb.getW(), h: bb.getH(), bar: bi, col: g.col });
     }
     prevRealTabs = realTabs;
-    x += w;
   });
   const last = bars[bars.length - 1];
   if (last) map.push({ u: last.start + last.length, x: total - 20 });
   map.sort((a, b) => a.u - b.u);
   notesOut.sort((a, b) => a.u - b.u);
+  const rows: PageRow[] | undefined = plan?.map((r, ri) => {
+    const lastBar = bars[r.bars[r.bars.length - 1]];
+    return { y: ri * pitch, h: ROW, u0: bars[r.bars[0]].start, u1: lastBar.start + lastBar.length, map: rowMaps[ri].sort((a, b) => a.u - b.u) };
+  });
   const svg = host.querySelector('svg');
   if (svg) {
     svg.style.overflow = 'visible';
@@ -832,5 +923,5 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
       if (el.textContent?.codePointAt(0) === 0xe263) el.setAttribute('y', String(Number(el.getAttribute('y')) + 0.5 + MUTED_X_INK_RISE_EM * ((MUTED_X_PT * 4) / 3)));
     }
   }
-  return { map, notes: notesOut, width: total, height: ROW };
+  return { map, notes: notesOut, ...(rows ? { rows } : {}), width: total, height };
 }
