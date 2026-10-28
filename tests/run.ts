@@ -1868,7 +1868,7 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   const four = 'G|-5-|\nD|---|\nA|---|\nE|---|';
   ok('instrument: the Bass part is a bass whatever it holds', instrumentFor('bass', 'Bass', 'Bass', six) === 'bass' && instrumentFor('bass', 'Bass', undefined, '') === 'bass');
   ok('instrument: an added part is a bass if it already has four strings, or is called one, or follows a bass track', instrumentFor('p1', 'Part', undefined, four) === 'bass' && instrumentFor('p1', 'Bass 2', undefined, '') === 'bass' && instrumentFor('p1', 'Part', 'DI Bass', '') === 'bass');
-  ok('instrument: an existing six-string tab, or a guitar track, stays a guitar', instrumentFor('p1', 'Bass 2', 'Bass', six) === 'guitar' && instrumentFor('guitar', 'Guitar', 'Guitar', '') === 'guitar' && instrumentFor('guitar', 'Guitar', 'other', '') === 'guitar');
+  ok('instrument: an earlier six-string draft does not keep a bass part at six strings, and a guitar part with a guitar track stays a guitar', instrumentFor('p1', 'Bass 2', 'Bass', six) === 'bass' && instrumentFor('guitar', 'Guitar', 'Bass', six) === 'bass' && instrumentFor('guitar', 'Guitar', 'Guitar', six) === 'guitar' && instrumentFor('guitar', 'Guitar', 'other', '') === 'guitar' && instrumentFor('p1', 'Part', undefined, four) === 'bass');
   ok('instrument: a track that is the drums is not a bass', instrumentFor('p1', 'Part', 'Bass drum', '') === 'guitar');
 }
 

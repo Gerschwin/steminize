@@ -53,15 +53,14 @@ export function stringCount(text: string): number {
 }
 
 /**
- * Four strings or six for a draft tab made from audio: the built-in Bass part is always a bass; otherwise an existing tab's own string count
- * decides, then the part's name or the linked track's name ("Bass 2", "DI Bass"); anything else is a guitar.
+ * Four strings or six for a draft tab made from audio: the built-in Bass part is always a bass; then the part's name or the linked track's
+ * name ("Bass 2", "DI Bass") decides, since the draft replaces whatever the part holds and an earlier six-string draft must not keep it at
+ * six; with no clue from either, the string count of what is already there (four is a bass), and otherwise a guitar.
  */
 export function instrumentFor(part: PartId, partName: string, trackName: string | undefined, text: string): 'bass' | 'guitar' {
   if (part === 'bass') return 'bass';
-  const strings = stringCount(text);
-  if (strings === 4) return 'bass';
-  if (strings >= 5) return 'guitar';
-  return /bass/i.test(partName) || (/bass/i.test(trackName ?? '') && !/drum/i.test(trackName ?? '')) ? 'bass' : 'guitar';
+  if (/bass/i.test(partName) || (/bass/i.test(trackName ?? '') && !/drum/i.test(trackName ?? ''))) return 'bass';
+  return stringCount(text) === 4 ? 'bass' : 'guitar';
 }
 
 /** Which part an existing single tab (from before parts existed) belongs to: a four-string tab is a bass line, anything else guitar. */
