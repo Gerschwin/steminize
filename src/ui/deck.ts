@@ -22,7 +22,7 @@ import { initNativeAudio } from './nativeAudio.ts';
 import { parseDrums, type DrumNote } from '../lyrics/drumTab.ts';
 import { DRUM_ROW, drawDrumScore, drumBarWidth } from './drumStaff.ts';
 import { createDropdown, type Dropdown } from './dropdown.ts';
-import { DEFAULT_PART_NAMES, PART_IDS, TAB_FIELDS, defaultTrack, isBuiltinPart, newPartId, normaliseScratch, type ExtraPart, type PartId, type TabPartId } from '../lyrics/tabParts.ts';
+import { DEFAULT_PART_NAMES, PART_IDS, TAB_FIELDS, defaultTrack, isBuiltinPart, newPartId, normaliseScratch, stringCount, type ExtraPart, type PartId, type TabPartId } from '../lyrics/tabParts.ts';
 import { placeTake, shiftTake } from '../player/placement.ts';
 import { lineAt, parseLrc, type Lrc } from '../lyrics/lrc.ts';
 import { segmentsFor } from '../lyrics/lyricChords.ts';
@@ -65,7 +65,10 @@ import { drawStaff, drawTabScore, noteAt, pageRowAt, PAGE_GAP, planStack, staffU
 import { $, activatable, fitCanvas, fmtDuration, fmtTime, h, openDialog, pressed, toast } from './dom.ts';
 import { Transcribe, type TxHost, type TxState } from './transcribePanel.ts';
 import type { Chord } from '../analysis/chords.ts';
-import type { NoteEvent } from '../analysis/basicPitch.ts';
+import { singleLine, type NoteEvent } from '../analysis/basicPitch.ts';
+import { autoTab, DETAILS, LISTEN, type Detail, type TabInstrument } from '../analysis/autoTab.ts';
+import { cancelTranscribe, transcribe } from '../analysis/transcribe.ts';
+import { monoOf } from '../analysis/resample.ts';
 import type { Cqt } from '../analysis/cqt.ts';
 import { noteName } from '../analysis/cqt.ts';
 import { centsFrom, detectPitch, freqToNote } from '../analysis/pitch.ts';
@@ -2426,6 +2429,21 @@ export class Deck {
       this.emit();
     };
     $('tabTapBtn').onclick = tap;
+    $('tabAutoBtn').onclick = () => void this.tabFromAudio();
+    const detail = $<HTMLSelectElement>('tabAutoDetail');
+    try {
+      const saved = localStorage.getItem('steminize.tabAutoDetail');
+      if (DETAILS.includes(saved as Detail)) detail.value = saved!;
+    } catch {
+      /* no storage: the default stays */
+    }
+    detail.onchange = () => {
+      try {
+        localStorage.setItem('steminize.tabAutoDetail', detail.value);
+      } catch {
+        /* not saved */
+      }
+    };
     ($('tabImportFile') as HTMLInputElement).onchange = (e) => {
       const input = e.target as HTMLInputElement;
       const file = input.files?.[0];
@@ -2695,6 +2713,7 @@ export class Deck {
     const follow = canFollow && !!this.scratch.tabFollow;
     $('tabTapBtn').hidden = !onTab;
     $('tabImportLabel').hidden = !onTab;
+    $('tabAutoBtn').hidden = $('tabAutoDetail').hidden = !onTab || this.isDrums();
     $('tabRhythmBtn').hidden = !onTab;
     const count = $('tabAnchorCount');
     count.hidden = !onTab || anchors.length === 0;
@@ -3745,9 +3764,74 @@ export class Deck {
     this.applyImportedTab(imp, usable.find((t) => t.index === index)!.name);
   }
 
+  private autoTabBusy = false;
+
+  /** "Tab from audio": listens to the track the open part is linked to (audio to MIDI, kept with the song so it is only done once), puts
+   * the notes on the song's bar grid and writes a draft tab, timed by the bars. */
+  private async tabFromAudio() {
+    const btn = $('tabAutoBtn');
+    if (this.autoTabBusy) {
+      cancelTranscribe();
+      return;
+    }
+    const r = this.r;
+    if (!r) return;
+    const part = this.activeTabPart();
+    const inst: TabInstrument = part === 'bass' || stringCount(this.scratch.tab ?? '') === 4 ? 'bass' : 'guitar';
+    const a = r.analysis;
+    if (!a || a.beats.length < 4) {
+      toast("The song's beats are still being worked out: try again in a moment.", true);
+      return;
+    }
+    const stem = r.stems.find((x) => x.name === this.partTrackName(part));
+    if (!stem) {
+      toast(`${this.partName(part)} is not linked to a track yet. Pick one in the track list beside the part tabs (the bass or guitar track), then try again.`, true, 9000);
+      return;
+    }
+    let notes = r.midi?.[stem.name];
+    if (!notes) {
+      this.autoTabBusy = true;
+      btn.textContent = 'Cancel';
+      const note = toast(`Listening to ${stem.name}…`, false, 600_000);
+      const t0 = performance.now();
+      try {
+        const raw = await transcribe(
+          monoOf([stem]),
+          (done, total) => {
+            const left = done ? ((performance.now() - t0) / 1000 / done) * (total - done) : 0;
+            note.firstChild!.textContent = `Listening to ${stem.name}: ${Math.round((100 * done) / total)}%${done > 2 ? ` · ${Math.ceil(left)} s left` : ''}`;
+          },
+          LISTEN[inst],
+        );
+        if (this.r !== r) return;
+        notes = inst === 'bass' ? singleLine(raw) : raw;
+        r.midi = { ...r.midi, [stem.name]: notes };
+        this.emit();
+      } catch (e) {
+        if ((e as Error).name !== 'Cancelled') toast(`Couldn't listen to ${stem.name}: ${(e as Error).message}`, true, 9000);
+        return;
+      } finally {
+        note.remove();
+        this.autoTabBusy = false;
+        btn.textContent = 'Tab from audio';
+      }
+    }
+    const res = autoTab(notes, { beats: a.beats, downbeat: this.downbeat(), perBar: this.pr.perBar }, inst, $<HTMLSelectElement>('tabAutoDetail').value as Detail);
+    if (!res) {
+      toast(`No notes found in ${stem.name} to write down.`, true);
+      return;
+    }
+    const { stats } = res;
+    this.applyImportedTab(res.imp, stem.name, {
+      partId: part,
+      anchors: res.anchors,
+      summary: `Draft from ${stem.name}: ${stats.bars} bar${stats.bars === 1 ? '' : 's'}, ${stats.written} notes, starting at ${fmtTime(res.start)}, lined up with the song's beats. It is only a starting point: check it against the recording and correct what is wrong. If it looks twice as fast or slow as the song, the beat grid is at double or half tempo.`,
+    });
+  }
+
   /** Puts an imported tab in its part, timed from the song's first bar line (one tap at the first note, which the song's own tempo does the rest of), with Follow along on. */
-  private applyImportedTab(imp: Imported, trackName: string) {
-    this.showPart(imp.part);
+  private applyImportedTab(imp: Imported, trackName: string, opts: { partId?: PartId; anchors?: TabAnchor[]; summary?: string } = {}) {
+    this.showPart(opts.partId ?? imp.part);
     const ta = this.scratchAreas.tab;
     const before = { text: ta.value, anchors: this.scratch.tabAnchors, follow: this.scratch.tabFollow };
     const a = this.r?.analysis;
@@ -3769,9 +3853,9 @@ export class Deck {
       this.dirty = true;
       this.emit();
     };
-    set(imp.text, [{ charOffset: imp.firstNote, time: start }], true);
+    set(imp.text, opts.anchors ?? [{ charOffset: imp.firstNote, time: start }], true);
     const bpm = a?.bpm;
-    const bits = [
+    const bits = opts.summary ? [opts.summary, ...imp.notes.map((n) => `${n[0].toUpperCase()}${n.slice(1)}.`)] : [
       `Imported ${trackName}: ${imp.bars} bar${imp.bars === 1 ? '' : 's'}, timed from the song's first bar line (${fmtTime(start)}).`,
       bpm && imp.tempo && Math.abs(bpm - imp.tempo) / imp.tempo > 0.05 ? `The file is at ${Math.round(imp.tempo)} BPM and the song at about ${Math.round(bpm)}, which only matters if it is not the same piece.` : '',
       'If the tab should start somewhere else, drag its T1 tag on the waveform, or tap its first note at the right moment.',

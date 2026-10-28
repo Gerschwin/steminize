@@ -19,6 +19,7 @@ import { BINS, CQT_FPS, NOTE_LO, cqt } from '../src/analysis/cqt.ts';
 import { chordName, chordSheet, detectChords, mergeSame, prefersSharps } from '../src/analysis/chords.ts';
 import { BP_PITCHES, BP_WINDOW, bpNotes, bpUnwrap, bpWindows, singleLine } from '../src/analysis/basicPitch.ts';
 import { decimate2 } from '../src/analysis/resample.ts';
+import { autoTab, barStartOffsets, beatPos, beatTime, fitOffset, mergeRetriggers, simplifyTimes } from '../src/analysis/autoTab.ts';
 import { writeMidi } from '../src/encode/midi.ts';
 import { centsFrom, detectPitch, freqToNote } from '../src/analysis/pitch.ts';
 import { isNewer, parseVersion, pickUpdate, updateEndpoint } from '../src/version.ts';
@@ -1809,6 +1810,50 @@ ok('version: garbage is never newer', !isNewer('latest', '1.0.0') && !isNewer('1
   const bytes = new at.exporter.Gp7Exporter().export(guitar as never, new at.Settings());
   const again = at.importer.ScoreLoader.loadScoreFromBytes(bytes, new at.Settings()) as never;
   ok('import: a Guitar Pro (.gp) file gives the same tab as the score it was saved from', scoreToTab(again, 0).text === g.text);
+}
+
+// ---- auto tab: notes found in a stem -> a draft tab on the song's bar grid ----
+{
+  const steady = Array.from({ length: 80 }, (_, i) => i * 0.5); // 120 BPM
+  ok('auto tab: beat position and time are each other\'s inverse, and carry on past the ends', Math.abs(beatPos(steady, beatTime(steady, 7.3)) - 7.3) < 1e-9 && Math.abs(beatTime(steady, -2) + 1) < 1e-9 && Math.abs(beatPos(steady, 41) - 82) < 1e-9);
+  ok('auto tab: a constant lateness is found and a grid that already fits is left alone', Math.abs(fitOffset([0, 1, 2.25, 3.5].map((x) => x + 0.04), [0.5, 0.5, 0.5, 0.5], [1, 1, 1, 1]) + 0.02) < 0.006 && fitOffset([0, 1, 2.25, 3.5], [0.5, 0.5, 0.5, 0.5], [1, 1, 1, 1]) === 0);
+  {
+    const n = (start: number, end: number, pitch: number, amp: number) => ({ start, end, pitch, amp });
+    const m = mergeRetriggers([n(0, 0.9, 33, 0.7), n(0.9, 1.1, 33, 0.3), n(1.1, 1.6, 33, 0.7), n(2, 2.3, 33, 0.3), n(2.4, 2.6, 36, 0.7), n(3, 3.2, 36, 0.7)]);
+    ok('auto tab: a faint repeat of the same pitch right after a note is joined to it, but a faint note after a gap, or a firm repeat, stays', m.length === 5 && m[0].end === 1.1 && m.some((x) => x.start === 2) && m.some((x) => x.start === 3));
+  }
+  ok('auto tab: a straight run of bars needs two taps, a tempo change more', simplifyTimes([0, 2, 4, 6, 8], 0.03).length === 2 && simplifyTimes([0, 2, 4, 6, 9, 12], 0.03).length >= 3);
+
+  // two bars of 4/4 bass: E1 on the beats of bar 1, then A1 / low D (below the E string: up an octave) on eighths in bar 2
+  const mk = (t: number, pitch: number, len = 0.2, amp = 0.8) => ({ start: t, end: t + len, pitch, amp });
+  const line = [mk(0, 28), mk(0.5, 28), mk(1, 31), mk(1.5, 33), mk(2, 28, 0.9), mk(3, 33, 0.9), mk(4, 33, 0.2), mk(4.25, 35, 0.2), mk(4.5, 38, 0.2), mk(5, 26, 0.4)];
+  const late = line.map((n, i) => ({ ...n, start: n.start + 0.03 + (i % 3 - 1) * 0.008, end: n.end + 0.03 }));
+  const grid = { beats: steady, downbeat: 0, perBar: 4 };
+  const r = autoTab(late, grid, 'bass')!;
+  ok('auto tab: a bass line comes back as a four-string tab', !!r && stringCount(r.imp.text) === 4 && r.stats.bars === 3);
+  const back = parseScore(r.imp.text).notes.filter((n) => n.midi !== null).map((n) => `${n.start}:${n.midi}`);
+  ok('auto tab: the notes sit on the right sixteenths with the right pitches (a note below the E string moved up an octave, the lateness removed)', JSON.stringify(back) === JSON.stringify(['0:28', '4:28', '8:31', '12:33', '16:28', '24:33', '32:33', '34:35', '36:38', '40:38']), back.join(' '));
+  ok('auto tab: a steady song is timed by two taps, on the first and last bar, at the time the notes were really played', r.anchors.length === 2 && Math.abs(r.anchors[0].time - 0.03) < 0.012 && Math.abs(r.anchors[1].time - 4.03) < 0.012);
+  ok('auto tab: bar starts are found in the text', barStartOffsets(r.imp.text).length === 3);
+  ok('auto tab: what was changed is told', r.imp.notes.some((n) => /octave/.test(n)));
+  {
+    const at = (m: number) => parseScore(r.imp.text).notes.find((n) => n.midi === m);
+    ok('auto tab: open strings and the lowest frets are preferred (G on the E string at 3, A open, the octave-moved note on the open D)', at(31)?.string === 3 && at(31)?.fret === 3 && at(33)?.string === 2 && at(33)?.fret === 0 && parseScore(r.imp.text).notes.filter((n) => n.midi === 38).every((n) => n.string === 1 && n.fret === 0));
+  }
+
+  // a song that speeds up: bar times follow it
+  const accel: number[] = [];
+  for (let t = 0, p = 0.5; accel.length < 80; t += p, p *= 0.985) accel.push(t);
+  const fast = autoTab([0, 4, 8, 12, 16, 20].map((b) => mk(accel[b], 33)), { beats: accel, downbeat: 0, perBar: 4 }, 'bass')!;
+  ok('auto tab: a drifting tempo gets taps along the way, the last at the last bar', fast.anchors.length >= 3 && Math.abs(fast.anchors[fast.anchors.length - 1].time - accel[20]) < 0.02);
+  ok('auto tab: nothing to write gives nothing', autoTab([], grid, 'bass') === null && autoTab(line, { beats: [0, 0.5], downbeat: 0, perBar: 4 }, 'bass') === null);
+
+  // guitar: an A minor chord on the first beat, then a single note
+  const chord = [45, 52, 57, 60, 64].map((p) => mk(0, p, 0.9));
+  const g = autoTab([...chord, mk(2, 67, 0.4)], grid, 'guitar')!;
+  const gn = parseScore(g.imp.text).notes.filter((n) => n.midi !== null);
+  ok('auto tab: a guitar chord is written as one shape on six strings', stringCount(g.imp.text) === 6 && JSON.stringify(gn.filter((n) => n.start === 0).map((n) => n.midi).sort()) === JSON.stringify([45, 52, 57, 60, 64]) && gn.filter((n) => n.start === 0).every((n) => (n.fret ?? 0) <= 5));
+  ok('auto tab: each string holds one note of the chord', new Set(gn.filter((n) => n.start === 0).map((n) => n.string)).size === 5);
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll tests passed');

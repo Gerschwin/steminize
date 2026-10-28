@@ -581,6 +581,12 @@
                     <button class="btn tiny ghost" type="button" id="lyricsLater" title="Show the lyrics a little later">+</button>
                   </span>
                   <label class="btn tiny ghost" id="tabImportLabel" title="Bring in a tab from a Guitar Pro (.gp3 .gp4 .gp5 .gp .gpx) or MusicXML file: the notes, rhythm and techniques are written into this part, timed from the song's first bar"><span>Import tab…</span><input type="file" id="tabImportFile" accept=".gp3,.gp4,.gp5,.gp,.gpx,.musicxml,.xml,.mxl" hidden /></label>
+                  <button class="btn tiny ghost" type="button" id="tabAutoBtn" title="Listen to the track this part is linked to and write a draft tab from it: the notes are found in the audio, put on the song's bars and beats, and worked out as strings and frets. A starting point to correct, not a finished transcription (works best on a clean, separated bass track)">Tab from audio</button>
+                  <select class="tiny" id="tabAutoDetail" title="How much of what is heard to write down. Everything: every note the listening found, including strings ringing on and overtones. Balanced: leaves out the faint and the very short ones. Clean: only the clearest notes." aria-label="Detail for Tab from audio">
+                    <option value="all">Everything</option>
+                    <option value="balanced" selected>Balanced</option>
+                    <option value="clean">Clean</option>
+                  </select>
                   <button class="btn tiny ghost" type="button" id="tabExtendBtn" title="Add more bars to every line, still lined up (or just press Tab in the box)">Extend line</button>
                   <button class="btn tiny ghost" type="button" id="tabRhythmBtn" title="Add a rhythm line under each block of strings. Put a letter under each note for how long it lasts: w whole, h half, q quarter, e eighth, s sixteenth (add a dot for dotted; capital letter = a rest). A note with no letter repeats the last one. Timing then follows the rhythm exactly.">Add rhythm line</button>
                   <button class="btn tiny ghost" type="button" id="tabTapBtn" hidden title="Tap this in time with the music to mark where the cursor is right now. One tap is usually enough — uses the song's own detected tempo (Tempo &amp; key) to work out everything else from the rhythm line. Tap a second spot too if the beat isn't steady enough for that alone, and timing will follow the taps instead (keyboard: Ctrl/⌘+Enter while the cursor is in the tab)">Tap ⏱</button>
