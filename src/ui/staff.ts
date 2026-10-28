@@ -194,7 +194,7 @@ export function zoomDrawing<L extends { map: { u: number; x: number }[]; notes: 
     ...layout,
     map: layout.map.map((m) => ({ ...m, x: m.x * z })),
     notes: layout.notes.map((n) => ({ ...n, x: n.x * z, y: n.y * z, w: n.w * z, h: n.h * z })),
-    ...(layout.rows ? { rows: layout.rows.map((r) => ({ ...r, y: r.y * z, h: r.h * z, map: r.map.map((m) => ({ ...m, x: m.x * z })) })) } : {}),
+    ...(layout.rows ? { rows: layout.rows.map((r) => ({ ...r, y: r.y * z, h: r.h * z, sy: r.sy * z, sh: r.sh * z, map: r.map.map((m) => ({ ...m, x: m.x * z })) })) } : {}),
     width: layout.width * z,
     height: layout.height * z,
   };
@@ -205,6 +205,10 @@ export function zoomDrawing<L extends { map: { u: number; x: number }[]; notes: 
 export interface PageRow {
   y: number;
   h: number;
+  /** The whole system this line is part of (the parts' lines stacked for the same bars, when parts are stacked): where it starts and how
+   * tall it is. The same as y and h for a part drawn on its own. */
+  sy: number;
+  sh: number;
   u0: number;
   u1: number;
   map: { u: number; x: number }[];
@@ -238,6 +242,19 @@ export function planRows(widths: number[], clef: number, wrap: number): { bars: 
     r.widths = r.widths.map((w, k) => w + (extra * (w - (k === 0 ? clef : 0))) / body);
   });
   return rows;
+}
+
+/** How a page-style drawing is laid out: the width to wrap to, and — when parts are stacked — the shared plan (which bars on which line,
+ * how wide), the height of one whole system (every part's line plus the gap) and how far down it this part's line sits. */
+export interface PageSpec {
+  width: number;
+  stack?: { plan: { bars: number[]; widths: number[] }[]; pitch: number; offset: number; margin: number };
+}
+
+/** The plan for several parts drawn on the same lines: each bar as wide as the widest part needs it, so bar lines line up down the page. */
+export function planStack(widthsPerPart: number[][], clef: number, wrap: number): { bars: number[]; widths: number[] }[] {
+  const count = Math.max(0, ...widthsPerPart.map((w) => w.length));
+  return planRows(Array.from({ length: count }, (_, i) => Math.max(...widthsPerPart.map((w) => w[i] ?? 0))), clef, wrap);
 }
 
 /** The line of a page-style drawing holding the music at `u` (the first line before it starts, the last after it ends). */
@@ -303,7 +320,7 @@ export interface TabScoreLayout {
    * same note's own TabNote (and the data-bar/data-col attributes on its drawn elements, below) — for
    * looking its box up again given a click rather than a playback position. */
   notes: { u: number; len: number; x: number; y: number; w: number; h: number; bar: number; col: number }[];
-  /** Only in a page-style drawing (see drawTabScore's `wrap`): the lines the bars were wrapped onto. `map` then holds x within
+  /** Only in a page-style drawing (see drawTabScore's `spec`): the lines the bars were wrapped onto. `map` then holds x within
    * its own line, so a position is looked up through the line (pageRowAt) rather than across the whole drawing. */
   rows?: PageRow[];
   width: number;
@@ -326,6 +343,51 @@ const bendText = (semis: number): string => {
   return semis % 2 ? `${whole} 1/2` : whole === 1 ? 'Full' : String(whole);
 };
 
+const RHYTHM_H = 90;
+
+/** How wide a bar of tab is drawn (before any zoom), and the room the TAB glyph takes at the start of a line. */
+export const tabBarWidth = (b: TabBar): number => Math.max(96, b.length * 14 + 40);
+export const TAB_CLEF = 64;
+/** The space left below each line of a page. */
+export const PAGE_GAP = 14;
+
+/** The heights a tab's rows are made from, shared by the drawing and by `tabRowHeight` (so a stack of parts can be laid out before any
+ * of them is drawn). `vf` is the loaded VexFlow module. */
+function tabMetrics(vf: typeof import('vexflow/bravura'), notes: TabNote[]) {
+  const { TabStave } = vf;
+  // Marks written *below* the strings (fingering, picking, a palm-mute run) need a band of their own
+  // between the tab and the rhythm row, which otherwise hangs its stems right up against the bottom line.
+  // How many rows of marks any one note has stacked above / below the strings (picking, fingering...); a
+  // palm-mute run below gets a row of its own under them. The bands reserved scale with that, and only
+  // exist when there's something in them: room above the strings so the top row isn't clipped, and room
+  // between the tab and the rhythm row, which otherwise hangs its stems and beams right under the bottom line.
+  const marksRows = (above: boolean) => Math.max(0, ...notes.map((n) => (n.marks ?? []).filter((m) => m.above === above).length));
+  const aboveRows = marksRows(true);
+  const belowMarkRows = marksRows(false);
+  const belowRows = belowMarkRows + (notes.some((n) => n.pm?.below !== undefined) ? 1 : 0);
+  const ABOVE = aboveRows ? 8 + 15 * (aboveRows - 1) : 0;
+  const GAP = 6 + (belowRows ? 3 + 15 * belowRows : 0);
+  // How tall a TabStave actually is, asked rather than guessed: the vertical "TAB" glyph at the start
+  // (addTabGlyph()) turned out to push the six string lines down by roughly 4 lines' worth of its own
+  // height, which a plain lines×spacing sum doesn't account for at all — the first version of this
+  // guessed too little, and the bottom two of six lines rendered past the SVG's own height, clipped
+  // off entirely (not a CSS/scrolling problem — nothing to scroll to, they were never in the picture).
+  // getBottomLineY() needs no context or drawing, just the stave's own line/glyph configuration — and
+  // is the actual last string line's own y, unlike its sibling getBottomY(), which measures down to
+  // the bottom of the stave's whole reserved area (room for ties, annotations, ...) and overshoots the
+  // real last line by a good 50-60px, enough to read as a stray gap once something (the rhythm row)
+  // is meant to sit right underneath it rather than just needing to clear it.
+  const TAB_H = new TabStave(0, 0, 100).addTabGlyph().getBottomLineY() + 10;
+  const ROW = RHYTHM_H + GAP + TAB_H + ABOVE;
+  return { ABOVE, GAP, TAB_H, ROW, belowMarkRows };
+}
+
+/** How tall one line of this tab is drawn (before any zoom): needed up front to stack parts. */
+export async function tabRowHeight(notes: TabNote[]): Promise<number> {
+  vex ??= import('vexflow/bravura');
+  return tabMetrics(await vex, notes).ROW;
+}
+
 /** Draws fret numbers on a tab stave (6 lines, a "TAB" glyph instead of a clef) with a compact rhythm
  * row under it showing the same notes' exact durations as stems, beams, dots and flags — no 5-line
  * staff, just enough notation to read the timing, unless `pitched` asks for real noteheads there too.
@@ -334,7 +396,7 @@ const bendText = (semis: number): string => {
  * moving it into the real page once it's finished) — which rules out anything here that needs to look
  * its own output back up via document.getElementById() (VexFlow's Element.getSVGElement() does
  * exactly that), a trap the unpitched rhythm row's blanked-out noteheads fell into once already. */
-export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: TabBar[], pitched = false, wrap?: number): Promise<TabScoreLayout> {
+export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: TabBar[], pitched = false, spec?: PageSpec): Promise<TabScoreLayout> {
   vex ??= import('vexflow/bravura');
   const vf = await vex;
   if (typeof document !== 'undefined' && document.fonts) await document.fonts.ready.catch(() => {});
@@ -357,19 +419,7 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
   host.replaceChildren();
 
   const CLEF = 64;
-  const RHYTHM_H = 90;
-  // Marks written *below* the strings (fingering, picking, a palm-mute run) need a band of their own
-  // between the tab and the rhythm row, which otherwise hangs its stems right up against the bottom line.
-  // How many rows of marks any one note has stacked above / below the strings (picking, fingering...); a
-  // palm-mute run below gets a row of its own under them. The bands reserved scale with that, and only
-  // exist when there's something in them: room above the strings so the top row isn't clipped, and room
-  // between the tab and the rhythm row, which otherwise hangs its stems and beams right under the bottom line.
-  const marksRows = (above: boolean) => Math.max(0, ...notes.map((n) => (n.marks ?? []).filter((m) => m.above === above).length));
-  const aboveRows = marksRows(true);
-  const belowMarkRows = marksRows(false);
-  const belowRows = belowMarkRows + (notes.some((n) => n.pm?.below !== undefined) ? 1 : 0);
-  const ABOVE = aboveRows ? 8 + 15 * (aboveRows - 1) : 0;
-  const GAP = 6 + (belowRows ? 3 + 15 * belowRows : 0);
+  const { ABOVE, GAP, TAB_H, ROW, belowMarkRows } = tabMetrics(vf, notes);
   // The unpitched placeholder note's own pitch/line doesn't mean anything — the notehead is invisible
   // — but VexFlow still uses it to decide the note's vertical position, so it's pinned to the stave's
   // own bottom line ('e/4': the lowest line that still needs no ledger line, which a *forced* line
@@ -387,32 +437,21 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
     probeNote.setStave(probeStave);
     return probeStave.getYForLine(probeNote.getKeyProps()[0].line);
   })();
-  // How tall a TabStave actually is, asked rather than guessed: the vertical "TAB" glyph at the start
-  // (addTabGlyph()) turned out to push the six string lines down by roughly 4 lines' worth of its own
-  // height, which a plain lines×spacing sum doesn't account for at all — the first version of this
-  // guessed too little, and the bottom two of six lines rendered past the SVG's own height, clipped
-  // off entirely (not a CSS/scrolling problem — nothing to scroll to, they were never in the picture).
-  // getBottomLineY() needs no context or drawing, just the stave's own line/glyph configuration — and
-  // is the actual last string line's own y, unlike its sibling getBottomY(), which measures down to
-  // the bottom of the stave's whole reserved area (room for ties, annotations, ...) and overshoots the
-  // real last line by a good 50-60px, enough to read as a stray gap once something (the rhythm row)
-  // is meant to sit right underneath it rather than just needing to clear it.
-  const TAB_H = new TabStave(0, 0, 100).addTabGlyph().getBottomLineY() + 10;
-  const ROW = RHYTHM_H + GAP + TAB_H + ABOVE;
-  const widthOf = (b: TabBar) => Math.max(96, b.length * 14 + 40);
+  const widthOf = tabBarWidth;
   // A reminder of this view's own keyboard shortcuts — click a note, a letter sets its length, arrows
   // move the selection — reserved as blank margin before bar 1, the same way CLEF reserves room for
   // the TAB glyph right after it. Otherwise that space (visible at/near the start of playback, where
   // the auto-scroll holds the current position at 40% from the left) is just empty, and these
   // shortcuts aren't discoverable anywhere else in Follow along itself.
   const INTRO = 230;
-  // Page style (`wrap` given): the bars are wrapped onto lines of that width, each starting with the TAB glyph again, instead of
+  // Page style (a `spec` given): the bars are wrapped onto lines of that width, each starting with the TAB glyph again, instead of
   // running on as one long line. No shortcut reminder then, and no join drawn across a line break.
-  const page = wrap !== undefined && wrap > 0;
-  const PAGE_MARGIN = 4;
-  const PAGE_GAP = 14;
-  const pitch = ROW + (page ? PAGE_GAP : 0);
-  const plan = page ? planRows(bars.map(widthOf), CLEF, wrap! - PAGE_MARGIN * 2) : null;
+  const page = spec !== undefined && spec.width > 0;
+  const wrap = spec?.width ?? 0;
+  const PAGE_MARGIN = spec?.stack?.margin ?? 4;
+  const pitch = spec?.stack?.pitch ?? ROW + (page ? PAGE_GAP : 0);
+  const offset = spec?.stack?.offset ?? 0;
+  const plan = page ? spec!.stack?.plan ?? planRows(bars.map(widthOf), CLEF, wrap - PAGE_MARGIN * 2) : null;
   const place: { row: number; x: number; w: number; first: boolean }[] = [];
   if (plan) {
     plan.forEach((r, ri) => {
@@ -430,7 +469,7 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
       px += w;
     });
   }
-  const total = page ? wrap! : INTRO + CLEF + bars.reduce((n, b) => n + widthOf(b), 0) + 20;
+  const total = page ? wrap : INTRO + CLEF + bars.reduce((n, b) => n + widthOf(b), 0) + 20;
   const rowCount = plan ? Math.max(1, plan.length) : 1;
   const height = pitch * rowCount - (page ? PAGE_GAP : 0);
   const renderer = new Renderer(host as HTMLDivElement, Renderer.Backends.SVG);
@@ -472,7 +511,7 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
   let prevRealTabs: { tNote: InstanceType<typeof VFTabNote>; group: TabNote[] }[] = []; // the bar before's tab notes, for joins across the bar line
   bars.forEach((bar, bi) => {
     const { x, w, first, row } = place[bi];
-    const yOff = row * pitch;
+    const yOff = row * pitch + offset;
     if (first) prevRealTabs = []; // a join does not reach across a line break
     const tabY = 10 + ABOVE + yOff;
     const tabStave = new TabStave(x, tabY, w);
@@ -891,7 +930,7 @@ export async function drawTabScore(host: HTMLElement, notes: TabNote[], bars: Ta
   notesOut.sort((a, b) => a.u - b.u);
   const rows: PageRow[] | undefined = plan?.map((r, ri) => {
     const lastBar = bars[r.bars[r.bars.length - 1]];
-    return { y: ri * pitch, h: ROW, u0: bars[r.bars[0]].start, u1: lastBar.start + lastBar.length, map: rowMaps[ri].sort((a, b) => a.u - b.u) };
+    return { y: ri * pitch + offset, h: ROW, sy: ri * pitch, sh: pitch - PAGE_GAP, u0: bars[r.bars[0]].start, u1: lastBar.start + lastBar.length, map: rowMaps[ri].sort((a, b) => a.u - b.u) };
   });
   const svg = host.querySelector('svg');
   if (svg) {

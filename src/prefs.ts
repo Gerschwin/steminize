@@ -11,6 +11,7 @@ export const APP_PREFERENCE_KEYS = [
   'steminize.scratchFloat',
   'steminize.tabFullZoom',
   'steminize.tabPage',
+  'steminize.tabStack',
   'steminize.pedal',
   'steminize.autoSave',
   'steminize.autoStart',

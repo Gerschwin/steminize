@@ -20,7 +20,7 @@ import { MAX_REC_LATENCY_MS, loadLiveChannel, loadLowLatencyAudio, loadRecLatenc
 import { BarTally, barColour, barCue, barTip, type BarScores, type BarVisit } from '../lyrics/barScores.ts';
 import { initNativeAudio } from './nativeAudio.ts';
 import { parseDrums, type DrumNote } from '../lyrics/drumTab.ts';
-import { drawDrumScore } from './drumStaff.ts';
+import { DRUM_ROW, drawDrumScore, drumBarWidth } from './drumStaff.ts';
 import { createDropdown, type Dropdown } from './dropdown.ts';
 import { DEFAULT_PART_NAMES, PART_IDS, TAB_FIELDS, defaultTrack, isBuiltinPart, newPartId, normaliseScratch, type ExtraPart, type PartId, type TabPartId } from '../lyrics/tabParts.ts';
 import { placeTake, shiftTake } from '../player/placement.ts';
@@ -61,7 +61,7 @@ import { eqPanel, type EqPanel } from './eqPanel.ts';
 import { listTracks, scoreToTab, type Imported } from '../import/tabImport.ts';
 import { describeLoadError, loadScoreFile } from '../import/loadScore.ts';
 import { pickTrack } from './tabImportDialog.ts';
-import { drawStaff, drawTabScore, noteAt, pageRowAt, staffU, staffX, zoomDrawing, type StaffLayout, type TabScoreLayout } from './staff.ts';
+import { drawStaff, drawTabScore, noteAt, pageRowAt, PAGE_GAP, planStack, staffU, staffX, tabBarWidth, TAB_CLEF, tabRowHeight, zoomDrawing, type PageSpec, type StaffLayout, type TabScoreLayout } from './staff.ts';
 import { $, activatable, fitCanvas, fmtDuration, fmtTime, h, openDialog, pressed, toast } from './dom.ts';
 import { Transcribe, type TxHost, type TxState } from './transcribePanel.ts';
 import type { Chord } from '../analysis/chords.ts';
@@ -105,6 +105,15 @@ export interface Result {
 }
 
 type Snap = 'off' | 'beat' | 'bar';
+/** A part drawn read-only under or over the open one when the parts are stacked: its own drawing, its own timing and its own cursor. */
+interface Companion {
+  id: PartId;
+  layout: TabScoreLayout;
+  timing: { plan: RepeatPlan | null; coordsU: TabAnchor[] };
+  cursor: HTMLElement;
+  box: HTMLElement;
+}
+
 interface PracticeUi {
   gap: number;
   countIn: boolean;
@@ -499,6 +508,11 @@ export class Deck {
   /** Whether the strip's cursor currently has page-style inline sizing (to be cleared when going back to the one-line drawing). */
   private cursorPaged = false;
   private pageResizeTimer: number | undefined;
+  /** Page layout only: show the other timed parts of the song on the same lines as the open one (guitar, bass and drums stacked). */
+  private tabStack = Deck.loadFlag('steminize.tabStack');
+  private companions: Companion[] = [];
+  /** What the stacked drawing was made from, so it is only redrawn when a part's text, the size or the width changes. */
+  private stackSig = '';
   private staffText: string | null = null;
   private staffToken = 0;
   private staffTimer: number | undefined;
@@ -2487,19 +2501,13 @@ export class Deck {
         this.tabPanMoved = false; // the click that ends a drag, not a selection
         return;
       }
-      // A bar number: loop that bar (Shift: from the last one clicked to this one) — see loopBars.
-      const barNum = (e.target as Element).closest<SVGElement>('[data-barnum]');
-      if (barNum) {
-        const bar = Number(barNum.dataset.barnum);
-        const from = e.shiftKey && this.lastLoopBar !== null ? this.lastLoopBar : bar;
-        this.lastLoopBar = bar;
-        this.loopBars(Math.min(from, bar), Math.max(from, bar));
-        return;
-      }
+      if (this.loopFromBarNumber(e)) return;
       const el = (e.target as HTMLElement).closest<HTMLElement>('[data-col]');
       this.selectedRhythmNote = el ? { bar: Number(el.dataset.bar), col: Number(el.dataset.col) } : null;
       this.updateTabStrip();
     });
+    // The bar numbers of the other parts on a stacked page loop that bar too (the bars are the same ones); their notes are not editable.
+    $('tabStackLayers').addEventListener('click', (e) => void this.loopFromBarNumber(e));
     // "Add rhythm line": a line under each block of strings for note lengths (see tabSync.ts). Taps are
     // positions in the text, so each insertion shifts the taps after it by the length of what went in.
     $('tabRhythmBtn').onclick = () => {
@@ -2747,14 +2755,19 @@ export class Deck {
     const anchors = this.scratch.tabAnchors ?? [];
     const t = this.tabTimeline;
     if (t && t.text === text && t.anchors === anchors) return t;
+    this.tabTimeline = { text, anchors, ...this.buildTimeline(text, anchors, this.isDrums()) };
+    return this.tabTimeline;
+  }
+
+  /** A part's tab blocks and tap coordinates (the open part's are cached by timeline(); a stacked part's are made once per drawing). */
+  private buildTimeline(text: string, anchors: TabAnchor[], drums: boolean) {
     const blocks = tabBlocks(text);
     const coords = anchorCoords(text, blocks, anchors);
     // Repeats: taps are on the written tab (the first time through); playback keeps counting up through
     // a repeat, so the taps are converted to that counting-up ("unrolled") position to work from.
-    const plan = repeatPlan(this.parseActive(text).bars);
+    const plan = repeatPlan((drums ? parseDrums(text) : parseScore(text)).bars);
     const coordsU = plan ? coords.map((a) => ({ ...a, charOffset: toUnrolled(plan, a.charOffset) })) : coords;
-    this.tabTimeline = { text, anchors, blocks, coords, plan, coordsU };
-    return this.tabTimeline;
+    return { blocks, coords, plan, coordsU };
   }
 
   /** The tab's current position (same u-space as TabNote.start), preferring the song's own tempo
@@ -2785,7 +2798,10 @@ export class Deck {
   private async renderTabStrip() {
     const text = this.scratchAreas.tab.value;
     const wrap = this.pageMode ? this.pageWidth() : undefined;
-    if (text === this.stripText && this.stripLayout && this.stripZoom === this.tabZoom && this.stripWrap === wrap) return;
+    const stackOn = wrap !== undefined && this.tabStack;
+    const sig = stackOn ? this.stackSignature(text) : '';
+    if (!stackOn) this.stackLeftOut = [];
+    if (text === this.stripText && this.stripLayout && this.stripZoom === this.tabZoom && this.stripWrap === wrap && this.stackSig === sig) return;
     const token = ++this.stripToken;
     const drums = this.isDrums();
     const { notes, bars } = this.parseActive(text);
@@ -2793,17 +2809,31 @@ export class Deck {
     if (!notes.length) {
       if (token !== this.stripToken) return;
       track.replaceChildren(h('div', { class: 'tab-staff-note' }, drums ? 'No hits to show yet: write x or o in the drum grid (one row per kit piece, one column per sixteenth).' : 'No notes to show yet: type some fret numbers on the strings above.'));
+      this.clearStack();
       this.stripLayout = null;
       this.stripText = null;
       this.stripNotes = null;
       return;
     }
     const spare = document.createElement('div');
-    const drawn = await (drums ? drawDrumScore(spare, notes as DrumNote[], bars, wrap) : drawTabScore(spare, notes, bars, false, wrap)).catch(() => null);
+    let spec: PageSpec | undefined = wrap === undefined ? undefined : { width: wrap };
+    let stack: Awaited<ReturnType<Deck['planStackParts']>> = null;
+    if (stackOn) {
+      stack = await this.planStackParts(text, notes, bars, wrap);
+      if (token !== this.stripToken) return;
+      if (stack) spec = stack.parts.find((p) => p.active)!.spec;
+    }
+    const drawPart = (host: HTMLElement, n: TabNote[] | DrumNote[], b: TabBar[], isDrums: boolean, sp?: PageSpec) =>
+      (isDrums ? drawDrumScore(host, n as DrumNote[], b, sp) : drawTabScore(host, n as TabNote[], b, false, sp)).catch(() => null);
+    const drawn = await drawPart(spare, notes, bars, drums, spec);
+    const others = stack ? stack.parts.filter((p) => !p.active) : [];
+    const spares = others.map(() => document.createElement('div'));
+    const drawnOthers = await Promise.all(others.map((p, i) => drawPart(spares[i], p.notes, p.bars, p.drums, p.spec)));
     if (token !== this.stripToken) return;
     const layout = drawn && zoomDrawing(spare, drawn, this.tabZoom);
     if (!layout) {
       track.replaceChildren(h('div', { class: 'tab-staff-note' }, drums ? "Couldn't draw the drums." : "Couldn't draw the tab."));
+      this.clearStack();
       this.stripLayout = null;
       this.stripText = null;
       this.stripNotes = null;
@@ -2814,13 +2844,149 @@ export class Deck {
     this.stripText = text;
     this.stripZoom = this.tabZoom;
     this.stripWrap = wrap;
+    this.stackSig = sig;
     this.pageRowShown = -1; // a fresh drawing: bring the current line into view on the next frame
     this.stripNotes = notes;
     this.stripBars = bars;
+    this.showStack(stack, others, spares, drawnOthers, layout);
     this.paintBarScores();
     $('tabStripView').style.height = `${layout.height}px`;
     this.lastStripPx = NaN;
     this.dirty = true;
+  }
+
+  /** What the stacked drawing depends on, cheaply (no parsing): every part's text, and which are in the stack. */
+  private stackSignature(activeText: string): string {
+    return this.allParts()
+      .map(({ id }) => `${id}\u0001${id === this.activeTabPart() ? activeText : this.partText(id)}\u0001${id === this.activeTabPart() ? '' : (this.scratch.tabParts?.[id]?.tabAnchors?.length ?? 0)}`)
+      .join('\u0002');
+  }
+
+  /** Works out which parts go on the page together and lays them out: every part's line for the same bars one under another, with the
+   * bar lines in step. A part joins only if it has a tab, is timed (so its cursor can follow) and has the same bars as the open one;
+   * the rest are left out, and the note under the page says why. Returns null when there is nothing to stack with. */
+  private async planStackParts(activeText: string, activeNotes: TabNote[] | DrumNote[], activeBars: TabBar[], wrap: number) {
+    const active = this.activeTabPart();
+    const bpm = this.r?.analysis?.bpm;
+    const same = (a: TabBar[], b: TabBar[]) => a.length === b.length && a.every((x, i) => Math.abs(x.start - b[i].start) < 1e-6 && Math.abs(x.length - b[i].length) < 1e-6);
+    const parts: { id: PartId; name: string; drums: boolean; active: boolean; text: string; anchors: TabAnchor[]; notes: TabNote[] | DrumNote[]; bars: TabBar[]; spec: PageSpec }[] = [];
+    const left: string[] = [];
+    for (const { id, name } of this.allParts()) {
+      const isActive = id === active;
+      const drums = id === 'drums';
+      const text = isActive ? activeText : this.partText(id);
+      if (!isActive && !text.trim()) continue;
+      const parsed = isActive ? { notes: activeNotes, bars: activeBars } : drums ? parseDrums(text) : parseScore(text);
+      if (!parsed.notes.length) continue;
+      const anchors = (isActive ? this.scratch.tabAnchors : this.scratch.tabParts?.[id]?.tabAnchors) ?? [];
+      if (!isActive) {
+        if (!(anchors.length >= 1 && (anchors.length >= MIN_ANCHORS || !!bpm))) {
+          left.push(`${name} (not timed yet)`);
+          continue;
+        }
+        if (!same(parsed.bars, activeBars)) {
+          left.push(`${name} (its bars are not the same as ${this.partName(active)}'s)`);
+          continue;
+        }
+      }
+      parts.push({ id, name, drums, active: isActive, text, anchors, notes: parsed.notes, bars: parsed.bars, spec: { width: wrap } });
+    }
+    this.stackLeftOut = left;
+    if (parts.length < 2) return null;
+    const INNER = 6;
+    const heights = await Promise.all(parts.map((p) => (p.drums ? DRUM_ROW : tabRowHeight(p.notes as TabNote[]))));
+    const margin = 18;
+    const plan = planStack(
+      parts.map((p) => p.bars.map(p.drums ? drumBarWidth : tabBarWidth)),
+      TAB_CLEF,
+      wrap - margin - 4,
+    );
+    const pitch = heights.reduce((a, b) => a + b, 0) + INNER * (parts.length - 1) + PAGE_GAP;
+    let offset = 0;
+    parts.forEach((p, i) => {
+      p.spec = { width: wrap, stack: { plan, pitch, offset, margin } };
+      offset += heights[i] + INNER;
+    });
+    return { parts };
+  }
+
+  private stackLeftOut: string[] = [];
+
+  /** Empties the stack: the other parts' layers and the note about what was left out. */
+  private clearStack() {
+    this.companions = [];
+    this.stackSig = '';
+    $('tabStackLayers').replaceChildren();
+    $('tabStackNote').textContent = '';
+    $('tabStackNote').hidden = true;
+  }
+
+  /** Puts the stacked parts on the page: each other part's drawing as a layer over the open one's, with its own cursor and highlight,
+   * and a small label down the side of every line saying which part it is. */
+  private showStack(
+    stack: Awaited<ReturnType<Deck['planStackParts']>>,
+    others: { id: PartId; text: string; anchors: TabAnchor[]; drums: boolean }[],
+    spares: HTMLElement[],
+    drawn: (TabScoreLayout | null)[],
+    mine: TabScoreLayout,
+  ) {
+    const layers = $('tabStackLayers');
+    layers.replaceChildren();
+    this.companions = [];
+    const note = $('tabStackNote');
+    note.textContent = this.stackLeftOut.length ? `Not stacked: ${this.stackLeftOut.join('; ')}.` : '';
+    note.hidden = !note.textContent;
+    if (!stack) return;
+    const labels: { name: string; active: boolean; rows: TabScoreLayout['rows'] }[] = [];
+    labels.push({ name: this.partName(this.activeTabPart()), active: true, rows: mine.rows });
+    others.forEach((o, i) => {
+      const lay = drawn[i] && zoomDrawing(spares[i], drawn[i]!, this.tabZoom);
+      if (!lay) return;
+      const layer = h('div', { class: 'stack-layer' });
+      const track = h('div', { class: 'tab-staff-track' });
+      track.replaceChildren(...spares[i].childNodes);
+      const box = h('div', { class: 'tab-staff-notebox' });
+      const cursor = h('div', { class: 'tab-staff-cursor' });
+      box.hidden = cursor.hidden = true;
+      layer.append(track, box, cursor);
+      layers.append(layer);
+      this.companions.push({ id: o.id, layout: lay, timing: this.buildTimeline(o.text, o.anchors, o.drums), cursor, box });
+      labels.push({ name: this.partName(o.id), active: false, rows: lay.rows });
+    });
+    for (const l of labels) {
+      for (const r of l.rows ?? []) {
+        const el = h('div', { class: `stack-label${l.active ? ' open' : ''}` }, l.name);
+        el.style.top = `${r.y}px`;
+        el.style.height = `${r.h}px`;
+        layers.append(el);
+      }
+    }
+  }
+
+  /** Moves each stacked part's cursor and note highlight to where its own timing says the music is. */
+  private updateCompanions(t: number) {
+    const bpm = this.r?.analysis?.bpm;
+    for (const c of this.companions) {
+      const rows = c.layout.rows;
+      const tl = c.timing;
+      const uu = tl.coordsU.length === 1 && bpm ? coordAtBpm(tl.coordsU[0], bpm, t) : charOffsetAt(tl.coordsU, t);
+      const coord = uu === null || !tl.plan ? uu : fromUnrolled(tl.plan, uu);
+      const row = coord === null || !rows ? null : pageRowAt(rows, coord);
+      c.cursor.hidden = !row;
+      if (row && coord !== null) {
+        c.cursor.style.left = `${staffX(row.map, coord)}px`;
+        c.cursor.style.top = `${row.y}px`;
+        c.cursor.style.height = `${row.h}px`;
+      }
+      const note = coord === null ? null : noteAt(c.layout.notes, coord);
+      c.box.hidden = !note;
+      if (note) {
+        c.box.style.left = `${note.x - 3}px`;
+        c.box.style.top = `${note.y - 4}px`;
+        c.box.style.width = `${note.w + 6}px`;
+        c.box.style.height = `${note.h + 8}px`;
+      }
+    }
   }
 
   /** Redraws the full staff from the tab as it is now (only if it has changed since the last drawing). */
@@ -2931,7 +3097,8 @@ export class Deck {
   private updateTabStrip() {
     const layout = this.stripLayout;
     if (!layout || $('tabStrip').hidden) return;
-    const coord = this.coordAt(this.smoothStripPos() / SR);
+    const tNow = this.smoothStripPos() / SR;
+    const coord = this.coordAt(tNow);
     const stripView = $('tabStripView');
     const cursor = $('tabStripCursor');
     let px = 0;
@@ -2984,6 +3151,7 @@ export class Deck {
       editBox.style.width = `${editNote.w + 6}px`;
       editBox.style.height = `${editNote.h + 8}px`;
     }
+    this.updateCompanions(tNow);
     if (Math.abs(px - this.lastStripPx) < 0.05) return;
     this.lastStripPx = px;
     $('tabStripTrack').style.transform = `translateX(${px}px)`;
@@ -3002,13 +3170,22 @@ export class Deck {
 
   /** Scrolls the page so the line being played is on screen, with a glimpse of the one after it (the view scrolls as
    * playback moves onto a new line; between lines it is left alone, so it can still be scrolled by hand). */
-  private revealPageRow(row: { y: number; h: number }, isLast: boolean) {
+  private revealPageRow(row: { sy: number; sh: number }, isLast: boolean) {
     const tl = $('tabTimeline');
     const base = $('tabStripView').getBoundingClientRect().top - tl.getBoundingClientRect().top + tl.scrollTop;
-    const top = base + row.y;
-    const bottom = top + row.h + (isLast ? 0 : row.h * 0.5);
+    const top = base + row.sy;
+    const bottom = top + row.sh + (isLast ? 0 : row.sh * 0.5);
     if (top >= tl.scrollTop + 4 && bottom <= tl.scrollTop + tl.clientHeight - 4) return;
     tl.scrollTo({ top: Math.max(0, top - tl.clientHeight * 0.15), behavior: this.player.state.playing ? 'smooth' : 'auto' });
+  }
+
+  /** A remembered on/off choice, on unless it was turned off. */
+  private static loadFlag(key: string): boolean {
+    try {
+      return localStorage.getItem(key) !== '0';
+    } catch {
+      return true;
+    }
   }
 
   private static readonly PAGE_KEY = 'steminize.tabPage';
@@ -3019,6 +3196,18 @@ export class Deck {
     } catch {
       return true;
     }
+  }
+
+  /** Stack the song's other timed parts on the page, or show the open part alone. Remembered. */
+  private setTabStack(on: boolean) {
+    if (on === this.tabStack) return;
+    this.tabStack = on;
+    try {
+      localStorage.setItem('steminize.tabStack', on ? '1' : '0');
+    } catch {
+      /* storage unavailable */
+    }
+    this.updateTabView();
   }
 
   /** Page or one line, in the full-window view. Remembered. */
@@ -3392,6 +3581,7 @@ export class Deck {
     $('scratchFullBtn2').onclick = () => this.setScratchFull(true);
     $('fullClose').onclick = () => this.setScratchFull(false);
     $('fullPage').onclick = () => this.setTabPage(!this.tabPage);
+    $('fullStack').onclick = () => this.setTabStack(!this.tabStack);
     // The page is wrapped to the window's width, so it is drawn again when the window changes size (not for every pixel of a drag).
     new ResizeObserver(() => {
       if (!this.pageMode || $('tabStrip').hidden || Math.abs(this.pageWidth() - (this.stripWrap ?? 0)) < 6) return;
@@ -3515,6 +3705,8 @@ export class Deck {
     $('fullEdit').hidden = $('tabFollowBtn').hidden === true;
     $('fullPage').hidden = !engraved;
     pressed($('fullPage'), this.tabPage);
+    $('fullStack').hidden = !engraved || !this.tabPage;
+    pressed($('fullStack'), this.tabStack);
     pressed($('fullLoop'), this.loop.on);
     $('fullPlay').classList.toggle('on', this.player.state.playing);
     $('fullTempo').textContent = `${Math.round(this.tempo * 100)}%`;
@@ -4690,6 +4882,17 @@ export class Deck {
       window.addEventListener('pointerup', up);
       window.addEventListener('pointercancel', up);
     });
+  }
+
+  /** A click on a bar number loops that bar (Shift: from the last one clicked to this one) — see loopBars. Returns whether it was one. */
+  private loopFromBarNumber(e: MouseEvent): boolean {
+    const barNum = (e.target as Element).closest<SVGElement>('[data-barnum]');
+    if (!barNum) return false;
+    const bar = Number(barNum.dataset.barnum);
+    const from = e.shiftKey && this.lastLoopBar !== null ? this.lastLoopBar : bar;
+    this.lastLoopBar = bar;
+    this.loopBars(Math.min(from, bar), Math.max(from, bar));
+    return true;
   }
 
   /** Loops the song over bars `first`..`last` (0-based, inclusive) of the tab — turning the tab's own

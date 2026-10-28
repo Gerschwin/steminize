@@ -4,7 +4,7 @@
 
 import type { TabBar } from '../lyrics/tabSync.ts';
 import { DRUM_VOICES, type DrumNote, type DrumStyle, type DrumVoice } from '../lyrics/drumTab.ts';
-import { planRows, type PageRow, type TabScoreLayout } from './staff.ts';
+import { PAGE_GAP, planRows, type PageRow, type PageSpec, type TabScoreLayout } from './staff.ts';
 
 let vex: Promise<typeof import('vexflow/bravura')> | undefined;
 
@@ -53,7 +53,12 @@ export function voiceSlots(hits: { slot: number; note: DrumNote }[], length: num
 
 const STYLE_FOR_HEAD: Record<string, string> = { x: 'x2', normal: '' };
 
-export async function drawDrumScore(host: HTMLElement, notes: DrumNote[], bars: TabBar[], wrap?: number): Promise<TabScoreLayout> {
+/** How tall one line of drum notation is drawn (before any zoom): the five lines, room for the cymbals above and the kick and its stems below. */
+export const DRUM_ROW = 50 + 44 + 60;
+/** How wide a bar of drums is drawn (before any zoom). */
+export const drumBarWidth = (b: TabBar): number => Math.max(120, b.length * 17 + 40);
+
+export async function drawDrumScore(host: HTMLElement, notes: DrumNote[], bars: TabBar[], spec?: PageSpec): Promise<TabScoreLayout> {
   vex ??= import('vexflow/bravura');
   const vf = await vex;
   if (typeof document !== 'undefined' && document.fonts) await document.fonts.ready.catch(() => {});
@@ -63,14 +68,15 @@ export async function drawDrumScore(host: HTMLElement, notes: DrumNote[], bars: 
   const CLEF = 56;
   const INTRO = 40;
   const TOP = 50; // room above the stave for cymbals and the bar number
-  const ROW = TOP + 44 + 60; // the five lines, then room for the kick and its stems
-  const widthOf = (b: TabBar) => Math.max(120, b.length * 17 + 40);
+  const ROW = DRUM_ROW;
+  const widthOf = drumBarWidth;
   // Page style (`wrap` given): the bars wrapped onto lines of that width, the clef repeated at the start of each (see drawTabScore).
-  const page = wrap !== undefined && wrap > 0;
-  const PAGE_MARGIN = 4;
-  const PAGE_GAP = 10;
-  const pitch = ROW + (page ? PAGE_GAP : 0);
-  const plan = page ? planRows(bars.map(widthOf), CLEF, wrap! - PAGE_MARGIN * 2) : null;
+  const page = spec !== undefined && spec.width > 0;
+  const wrap = spec?.width ?? 0;
+  const PAGE_MARGIN = spec?.stack?.margin ?? 4;
+  const pitch = spec?.stack?.pitch ?? ROW + (page ? PAGE_GAP : 0);
+  const offset = spec?.stack?.offset ?? 0;
+  const plan = page ? spec!.stack?.plan ?? planRows(bars.map(widthOf), CLEF, wrap - PAGE_MARGIN * 2) : null;
   const place: { row: number; x: number; w: number; first: boolean }[] = [];
   if (plan) {
     plan.forEach((r, ri) => {
@@ -88,7 +94,7 @@ export async function drawDrumScore(host: HTMLElement, notes: DrumNote[], bars: 
       px += w;
     });
   }
-  const total = page ? wrap! : INTRO + CLEF + bars.reduce((n, b) => n + widthOf(b), 0) + 20;
+  const total = page ? wrap : INTRO + CLEF + bars.reduce((n, b) => n + widthOf(b), 0) + 20;
   const rowCount = plan ? Math.max(1, plan.length) : 1;
   const height = pitch * rowCount - (page ? PAGE_GAP : 0);
   const renderer = new Renderer(host as HTMLDivElement, Renderer.Backends.SVG);
@@ -103,7 +109,7 @@ export async function drawDrumScore(host: HTMLElement, notes: DrumNote[], bars: 
   const rowMaps: { u: number; x: number }[][] = Array.from({ length: rowCount }, () => []);
   bars.forEach((bar, bi) => {
     const { x, w, first, row } = place[bi];
-    const stave = new Stave(x, TOP - 10 + row * pitch, w);
+    const stave = new Stave(x, TOP - 10 + row * pitch + offset, w);
     if (first) stave.addClef('percussion');
     stave.setMeasure(bi + 1);
     if (bar.repeatStart) stave.setBegBarType(Barline.type.REPEAT_BEGIN);
@@ -185,7 +191,7 @@ export async function drawDrumScore(host: HTMLElement, notes: DrumNote[], bars: 
   notesOut.sort((a, b) => a.u - b.u);
   const rows: PageRow[] | undefined = plan?.map((r, ri) => {
     const lastBar = bars[r.bars[r.bars.length - 1]];
-    return { y: ri * pitch, h: ROW, u0: bars[r.bars[0]].start, u1: lastBar.start + lastBar.length, map: rowMaps[ri].sort((a, b) => a.u - b.u) };
+    return { y: ri * pitch + offset, h: ROW, sy: ri * pitch, sh: pitch - PAGE_GAP, u0: bars[r.bars[0]].start, u1: lastBar.start + lastBar.length, map: rowMaps[ri].sort((a, b) => a.u - b.u) };
   });
   const svg = host.querySelector('svg');
   if (svg) {
